@@ -1,0 +1,16 @@
+MODEL: gemini-3-flash-preview
+IMAGE: MrBeast_Thumbnail.jpg
+------------------------------
+This image is a high-energy, vibrant YouTube thumbnail featuring the popular creator MrBeast and a large-scale competition setting.
+
+Here are the specific details:
+
+*   **Foreground (Left):** A large, close-up shot of Jimmy Donaldson (MrBeast) dominates the left side of the frame. He is smiling broadly with a direct gaze at the viewer, wearing a dark grey or black hoodie.
+*   **The Participants (Center/Right):** Behind MrBeast is a crowd of people dressed in matching light blue zip-up tracksuits with white stripes, reminiscent of the uniforms from the show *Squid Game*. Several individuals are prominent:
+    *   A man on the left wearing number **475** looks forward with a determined, slightly surprised expression.
+    *   A man in the center wearing number **001** has an excited, wide-eyed expression.
+    *   A woman on the right wearing number **219** is smiling and pointing enthusiastically. 
+    *   Other participants in the background have various expressions of shock, excitement, and celebration.
+*   **The Background (Center Top):** Behind the crowd is a massive, towering pile of bundled cash. Overlapping the money is a large digital scoreboard displaying the prize amount: **$5,000,000** in bright blue and white text.
+*   **Setting:** The scene appears to take place inside a large arena or stadium. Bright stadium lights are visible in the top corners, casting a glow over the entire scene.
+*   **Style:** The image is highly edited with saturated colors and exaggerated facial expressions to create a sense of scale, excitement, and high stakes.
