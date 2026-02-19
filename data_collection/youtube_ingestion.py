@@ -203,13 +203,13 @@ def save_to_dynamodb(dynamodb, table_name, channel_name, videos):
             seen_ids.add(video["videoId"])
             unique_videos.append(video)
 
-    # Write new items (put_item will skip if videoId already exists as partition key)
+    # Write new items (put_item will skip if PartitionKey already exists)
     written = 0
     skipped = 0
     try:
         for video in unique_videos:
             item = {
-                'videoId': video['videoId'],
+                'PartitionKey': video['videoId'],
                 'channel': channel_name,
                 'title': video.get('title', ''),
                 'description': video.get('description', ''),
@@ -224,10 +224,10 @@ def save_to_dynamodb(dynamodb, table_name, channel_name, videos):
             item = convert_to_decimal(item)
 
             try:
-                # Only write if videoId doesn't already exist (prevents overwriting old data)
+                # Only write if PartitionKey doesn't already exist (prevents overwriting old data)
                 table.put_item(
                     Item=item,
-                    ConditionExpression='attribute_not_exists(videoId)'
+                    ConditionExpression='attribute_not_exists(PartitionKey)'
                 )
                 written += 1
             except ClientError as e:
