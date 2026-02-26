@@ -1,9 +1,9 @@
 from googleapiclient.discovery import build
-from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
+import yt_dlp
 from config import NEWS_CHANNELS, YOUTUBE_API_KEY, MAX_VIDEOS_PER_CHANNEL, MIN_VIEW_COUNT, TIME_WINDOW_DAYS, COMMENTS_PER_VIDEO, MAX_VIDEO_DURATION_MINUTES
 import json
-from datetime import datetime, timedelta, timezone
+import re
+from datetime import datetime, time, timedelta, timezone
 import os
 import boto3
 from botocore.exceptions import ClientError
@@ -87,10 +87,9 @@ def get_video_statistics(youtube, video_ids):
 
 def is_within_duration_limit(duration_str, max_minutes=MAX_VIDEO_DURATION_MINUTES):
     """Check if an ISO 8601 duration is at most max_minutes.
-    
+
     Supports formats: PT#M#S, PT#H#M#S, P#DT#H#M#S
     """
-    import re
     match = re.match(r'P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', duration_str)
     if not match:
         return False
@@ -127,29 +126,70 @@ def get_top_comments(youtube, video_id, max_results):
         return []
 
 
+
 def get_video_transcript(video_id):
+    """Fetch transcript using yt-dlp Python API without writing to disk."""
+    import urllib.request
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    from time import sleep
+    sleep(1)  # Sleep to avoid hitting rate limits on yt-dlp or YouTube when processing multiple videos in a loop
+    ydl_opts = {
+        'skip_download': True,
+        'quiet': True,
+        'writesubtitles': True,
+        'writeautomaticsub': True,
+    }
+
     try:
-        # Fetch transcript from YouTube
-        ytt_api = YouTubeTranscriptApi()
-        transcript = ytt_api.fetch(video_id)
-        
-        if not transcript:
-            return ""
-        
-        transcript_text = ""
-        for entry in transcript:
-            if isinstance(entry, dict):
-                transcript_text += entry.get("text", "") + " "
-            else:
-                transcript_text += (entry.text if hasattr(entry, "text") else str(entry)) + " "
-        
-        return transcript_text.strip()
-        
-    except (TranscriptsDisabled, NoTranscriptFound):
-        return ""
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
     except Exception as e:
-        logger.warning(f"Error fetching transcript for {video_id}: {e}")
-        return ""
+        logger.warning(f"[{video_id}] yt-dlp error fetching transcript: {e}")
+        return None
+
+    # Get English subtitles (manual first, then auto)
+    subtitles = info.get("subtitles") or {}
+    auto_subs = info.get("automatic_captions") or {}
+
+    tracks = subtitles.get("en") or auto_subs.get("en")
+
+    if not tracks:
+        return None
+
+    # Get VTT subtitle URL
+    vtt_url = None
+    for track in tracks:
+        if track.get("ext") == "vtt":
+            vtt_url = track.get("url")
+            break
+
+    if not vtt_url:
+        return None
+
+    try:
+        # Download subtitle content directly
+        with urllib.request.urlopen(vtt_url) as response:
+            vtt_content = response.read().decode("utf-8")
+    except Exception as e:
+        logger.warning(f"[{video_id}] Error downloading VTT: {e}")
+        return None
+
+    lines = []
+    seen = set()
+
+    for line in vtt_content.splitlines():
+        line = line.strip()
+        if not line or line.startswith("WEBVTT") or "-->" in line or re.match(r"^\d+$", line):
+            continue
+
+        line = re.sub(r"<[^>]+>", "", line)
+
+        if line and line not in seen:
+            seen.add(line)
+            lines.append(line)
+
+    transcript = " ".join(lines)
+    return transcript if transcript else None
 
 
 def save_to_s3(channel_name, videos):
