@@ -22,8 +22,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL   = "gemini-2.5-flash"
 API_BASE       = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
-# Delay between each API call (seconds). Free tier allows ~15 RPM.
-# 5s keeps you safely under. Increase if still hitting limits.
+
 REQUEST_DELAY = 5
 
 # ── HELPERS ──────────────────────────────────────────────────────────────────
@@ -43,7 +42,7 @@ def gemini_request(contents: list, system_instruction: str = None) -> str:
     url = f"{API_BASE}?key={GEMINI_API_KEY}"
 
     max_retries = 6
-    wait = 15  # doubles each retry: 15 -> 30 -> 60 -> 120 -> 240 -> 480s
+    wait = 15  
 
     for attempt in range(max_retries):
         req = urllib.request.Request(
@@ -188,14 +187,14 @@ def main(json_path: str):
         log(txt, f"  Videos    : {len(videos)}")
         log(txt, sep)
 
-        # Step 1: Trend Analysis (1 API call)
+        
         log(txt, "\nSTEP 1 — Trend & Pattern Analysis")
         log(txt, "-" * 40)
         print("  Calling Gemini for trend analysis...")
         trends = analyze_trends(videos, channel)
         log(txt, trends)
 
-        # Step 2: Thumbnail Analysis (1 API call per video)
+        
         log(txt, "\n" + sep)
         log(txt, "STEP 2 — Thumbnail Image Analysis")
         log(txt, "-" * 40)
