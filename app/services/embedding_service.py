@@ -6,6 +6,7 @@ from app.core.config import settings
 class EmbeddingService:
     def __init__(self, client=None):
         self.model_id = settings.gemini_model_id
+        self.embedding_model_id = settings.embedding_model_id
         self.client = client or genai.Client(api_key=settings.genai_api_key)
 
     def chunk_text(self, text, chunk_size=None, overlap=None):
@@ -37,6 +38,24 @@ class EmbeddingService:
         if isinstance(text, str) and text.strip():
             return text.strip()
         return str(response)
+
+    def _extract_vector(self, response):
+        embeddings = getattr(response, "embeddings", None)
+        if embeddings and len(embeddings) > 0:
+            first_embedding = embeddings[0]
+            values = getattr(first_embedding, "values", None)
+            if values:
+                return [float(value) for value in values]
+            if isinstance(first_embedding, dict) and first_embedding.get("values"):
+                return [float(value) for value in first_embedding["values"]]
+
+        embedding = getattr(response, "embedding", None)
+        if embedding is not None:
+            values = getattr(embedding, "values", None)
+            if values:
+                return [float(value) for value in values]
+
+        raise ValueError("No embedding vector returned by model")
 
     def analyze_chunks(self, chunks):
         analyses = []
@@ -92,3 +111,13 @@ class EmbeddingService:
             "chunk_analyses": analyses,
             "final_summary": final_summary
         }
+
+    def embed_text(self, text):
+        response = self.client.models.embed_content(
+            model=self.embedding_model_id,
+            contents=text,
+        )
+        return self._extract_vector(response)
+
+    def embed_chunks(self, chunks):
+        return [self.embed_text(chunk) for chunk in chunks]
