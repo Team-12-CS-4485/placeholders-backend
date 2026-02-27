@@ -36,6 +36,7 @@ Backend services for the project.
   - `ingestion_service.py`: ingestion/filter orchestration.
   - `storage_service.py`: S3/DynamoDB read/write logic.
   - `embedding_service.py`: transcript chunking + Gemini analysis.
+  - `vector_service.py`: Qdrant collection management, upsert, and similarity search.
   - `pipeline_service.py`: runs multi-step pipeline flow.
 - `app/workers/`
   - Background/CLI job entrypoints.
@@ -61,8 +62,10 @@ Backend services for the project.
 - Gemini analysis:
   - Each chunk is sent to `gemini-3-flash-preview`.
   - Chunk analyses are merged into one final summary per transcript.
+- Qdrant indexing:
+  - Each chunk is embedded with `EMBEDDING_MODEL_ID` and upserted to `QDRANT_COLLECTION`.
 - Analysis map produced:
-  - `analysis_map[transcript_key] = {status, chunk_count, chunk_analyses, final_summary, error}`
+  - `analysis_map[transcript_key] = {status, chunk_count, chunk_analyses, final_summary, qdrant_points_indexed, error}`
 - Console output:
   - Prints per-transcript success/failure and final pipeline summary.
 - Runner: `app/workers/embedding_worker.py`.
@@ -74,10 +77,14 @@ Backend services for the project.
 - `S3_OBJECT_LIMIT` (default: `3`)
 - `GENAI_API_KEY`
 - `GEMINI_MODEL_ID` (default: `gemini-3-flash-preview`)
+- `EMBEDDING_MODEL_ID` (default: `text-embedding-004`)
 - `GEMINI_THINKING_LEVEL` (default: `medium`)
 - `CHUNK_SIZE_CHARS` (default: `6000`)
 - `CHUNK_OVERLAP_CHARS` (default: `400`)
 - `ANALYSIS_OUTPUT_FILE` (default: `transcript_analysis.txt`)
+- `QDRANT_URL` (default: `http://localhost:6333`)
+- `QDRANT_API_KEY` (optional)
+- `QDRANT_COLLECTION` (default: `transcript_chunks`)
 
 ## How to run
 
@@ -94,19 +101,31 @@ export S3_PREFIX="youtube-data/"
 export S3_OBJECT_LIMIT="3"
 ```
 
-3. Run API server:
+3. Start Qdrant:
+```bash
+docker compose -f docker-compose.qdrant.yml up -d
+```
+
+4. Run API server:
 ```bash
 uvicorn app.main:app --reload
 ```
 
-4. Trigger pipeline via API:
+5. Trigger pipeline via API:
 ```bash
 curl -X POST http://127.0.0.1:8000/api/pipeline/s3-transcript-analysis \
   -H "Content-Type: application/json" \
   -d '{"prefix":"youtube-data/","limit":3}'
 ```
 
-5. Optional: run pipeline directly (without API):
+6. Search similar chunks from Qdrant:
+```bash
+curl -X POST http://127.0.0.1:8000/api/pipeline/search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"climate policy reaction","limit":5}'
+```
+
+7. Optional: run pipeline directly (without API):
 ```bash
 python3 -m app.workers.embedding_worker
 ```
