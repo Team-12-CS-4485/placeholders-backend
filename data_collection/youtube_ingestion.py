@@ -249,8 +249,8 @@ def save_to_dynamodb(dynamodb, table_name, channel_name, videos):
     try:
         for video in unique_videos:
             item = {
-                'PartitionKey': video['videoId'],
-                'SortKey': channel_name,
+                'PartitionKey': channel_name,
+                'SortKey': video['videoId'],
                 'channel': channel_name,
                 'title': video.get('title', ''),
                 'description': video.get('description', ''),
