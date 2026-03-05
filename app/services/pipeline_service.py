@@ -20,7 +20,7 @@ class PipelineService:
         try:
             source_objects = self.storage_service.load_transcripts_from_prefix(
                 prefix=use_prefix,
-                limit=use_limit
+                limit=use_limit,
             )
 
             object_results = []
@@ -36,7 +36,7 @@ class PipelineService:
                     "key": source_key,
                     "status": "success",
                     "error": source.get("error"),
-                    "transcript_results": []
+                    "transcript_results": [],
                 }
 
                 transcripts = source.get("transcripts", [])
@@ -51,8 +51,12 @@ class PipelineService:
                     transcript_key = f"{source_key}::transcript_{idx}"
                     chunks = self.embedding_service.chunk_text(transcript)
                     chunk_map[transcript_key] = chunks
+
                     try:
+                        # Embed locally (nomic) — no API call, no quota
                         vectors = self.embedding_service.embed_chunks(chunks)
+
+                        # Upsert to Qdrant
                         points_indexed = self.vector_service.upsert_transcript_chunks(
                             transcript_key=transcript_key,
                             source_key=source_key,
@@ -60,13 +64,13 @@ class PipelineService:
                             chunks=chunks,
                             vectors=vectors,
                         )
-                        chunk_analyses = self.embedding_service.analyze_chunks(chunks)
-                        final_summary = self.embedding_service.summarize_analyses(chunk_analyses)
+
+                        # Gemini analysis skipped — no quota burned
                         analysis_map[transcript_key] = {
                             "status": "success",
                             "chunk_count": len(chunks),
-                            "chunk_analyses": chunk_analyses,
-                            "final_summary": final_summary,
+                            "chunk_analyses": [],
+                            "final_summary": "",
                             "qdrant_points_indexed": points_indexed,
                             "error": None,
                         }
@@ -74,16 +78,17 @@ class PipelineService:
                             "transcript_key": transcript_key,
                             "transcript_index": idx,
                             "chunk_count": len(chunks),
-                            "final_summary": final_summary,
+                            "final_summary": "",
                             "qdrant_points_indexed": points_indexed,
                             "error": None,
                         })
                         analyzed_transcripts += 1
                         total_points_indexed += points_indexed
                         print(
-                            f"ANALYSIS_SUCCESS key={transcript_key} "
+                            f"UPSERT_SUCCESS key={transcript_key} "
                             f"chunks={len(chunks)} points_indexed={points_indexed}"
                         )
+
                     except Exception as exc:
                         analysis_map[transcript_key] = {
                             "status": "failed",
@@ -103,7 +108,7 @@ class PipelineService:
                             "qdrant_points_indexed": 0,
                         })
                         print(
-                            f"ANALYSIS_FAILURE key={transcript_key} "
+                            f"UPSERT_FAILURE key={transcript_key} "
                             f"chunks={len(chunks)} error={exc}"
                         )
 
@@ -119,26 +124,29 @@ class PipelineService:
                 "qdrant_points_indexed": total_points_indexed,
                 "chunk_map": chunk_map,
                 "analysis_map": analysis_map,
-                "results": object_results
+                "results": object_results,
             }
 
             print(
-                "PIPELINE_CONSOLE_SUMMARY "
+                "PIPELINE_SUMMARY "
                 f"objects={response['objects_processed']} "
                 f"transcripts_found={response['transcripts_found']} "
-                f"transcripts_analyzed={response['transcripts_analyzed']} "
+                f"transcripts_indexed={response['transcripts_analyzed']} "
                 f"qdrant_points_indexed={response['qdrant_points_indexed']}"
             )
 
             if analyzed_transcripts > 0:
                 self.logger.info(
                     "PIPELINE_SUCCESS "
-                    f"objects={response['objects_processed']} transcripts={response['transcripts_analyzed']}"
+                    f"objects={response['objects_processed']} "
+                    f"transcripts={response['transcripts_analyzed']} "
+                    f"points={total_points_indexed}"
                 )
             else:
                 self.logger.error(
                     "PIPELINE_FAILURE "
-                    f"objects={response['objects_processed']} transcripts={response['transcripts_analyzed']}"
+                    f"objects={response['objects_processed']} "
+                    f"transcripts={response['transcripts_analyzed']}"
                 )
             return response
 
@@ -146,10 +154,15 @@ class PipelineService:
             self.logger.error(f"PIPELINE_FAILURE error={exc}")
             raise
 
-    def search_similar_chunks(self, query, limit=5):
+    def search_similar_chunks(self, query: str, limit: int = 5):
         self.logger.info(f"QDRANT_SEARCH_START limit={limit}")
-        query_vector = self.embedding_service.embed_text(query)
-        hits = self.vector_service.search_similar_chunks(query_vector=query_vector, limit=limit)
+
+        query_vector = self.embedding_service.embed_query(query)
+
+        hits = self.vector_service.search_similar_chunks(
+            query_vector=query_vector,
+            limit=limit,
+        )
         self.logger.info(f"QDRANT_SEARCH_SUCCESS hits={len(hits)}")
         return {
             "collection": settings.qdrant_collection,
