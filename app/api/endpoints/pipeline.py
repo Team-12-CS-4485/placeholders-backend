@@ -2,8 +2,8 @@
 pipeline.py - Pipeline API Endpoints
 
 Exposes REST endpoints for the Gemini transcript analysis pipeline:
-- POST /api/pipeline/s3-transcript-analysis : Runs the full pipeline (S3 -> chunk -> embed -> analyze -> Qdrant)
-- POST /api/pipeline/search : Semantic search over indexed transcript chunks via Qdrant
+- POST /api/pipeline/s3-transcript-analysis : Runs the full pipeline (S3 -> semantic chunk -> FAISS embed -> Gemini analyze)
+- POST /api/pipeline/search : Semantic search over indexed transcript chunks via FAISS
 """
 
 from fastapi import APIRouter, HTTPException

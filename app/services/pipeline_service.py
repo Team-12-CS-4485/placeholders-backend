@@ -3,26 +3,27 @@ pipeline_service.py - Core Pipeline Orchestrator
 
 Coordinates the end-to-end transcript analysis workflow:
 1. Loads transcript JSON objects from S3 via StorageService
-2. Chunks transcripts and generates embeddings via EmbeddingService
-3. Upserts embedding vectors into Qdrant via VectorService
-4. Runs Gemini-powered chunk analysis and final summary generation
+2. Splits transcripts into semantic chunks via ChunkingService
+3. Embeds and stores chunks locally via FAISSService
+4. Runs Gemini-powered chunk analysis and final summary generation via EmbeddingService
 5. Returns comprehensive results with chunk maps, analysis maps, and per-object status
 
-Also provides semantic search over indexed chunks using Qdrant + Gemini embeddings.
+Also provides semantic search over indexed chunks using FAISS.
 """
 
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.services.storage_service import StorageService
 from app.services.embedding_service import EmbeddingService
-from app.services.vector_service import VectorService
+from app.services.chunking_service import semantic_chunk
+from app.services.faiss_service import FAISSService
 
 
 class PipelineService:
-    def __init__(self, storage_service=None, embedding_service=None, vector_service=None):
+    def __init__(self, storage_service=None, embedding_service=None, faiss_service=None):
         self.storage_service = storage_service or StorageService()
         self.embedding_service = embedding_service or EmbeddingService()
-        self.vector_service = vector_service or VectorService()
+        self.faiss_service = faiss_service or FAISSService()
         self.logger = get_logger(__name__)
 
     def run_s3_transcript_analysis(self, prefix=None, limit=None):
@@ -39,7 +40,7 @@ class PipelineService:
             object_results = []
             total_transcripts = 0
             analyzed_transcripts = 0
-            total_points_indexed = 0
+            total_chunks_stored = 0
             chunk_map = {}
             analysis_map = {}
 
@@ -62,25 +63,29 @@ class PipelineService:
 
                 for idx, transcript in enumerate(transcripts, start=1):
                     transcript_key = f"{source_key}::transcript_{idx}"
-                    chunks = self.embedding_service.chunk_text(transcript)
+
+                    # Step 1: Semantic chunking
+                    chunks = semantic_chunk(transcript)
                     chunk_map[transcript_key] = chunks
+
                     try:
-                        vectors = self.embedding_service.embed_chunks(chunks)
-                        points_indexed = self.vector_service.upsert_transcript_chunks(
-                            transcript_key=transcript_key,
-                            source_key=source_key,
-                            transcript_index=idx,
-                            chunks=chunks,
-                            vectors=vectors,
-                        )
+                        # Step 2: Gemini analysis first (most valuable output)
                         chunk_analyses = self.embedding_service.analyze_chunks(chunks)
                         final_summary = self.embedding_service.summarize_analyses(chunk_analyses)
+
+                        # Step 3: Embed and store in FAISS (after analysis succeeds)
+                        chunks_stored = self.faiss_service.embed_and_store(
+                            chunks=chunks,
+                            source_key=source_key,
+                            transcript_index=idx,
+                        )
+
                         analysis_map[transcript_key] = {
                             "status": "success",
                             "chunk_count": len(chunks),
                             "chunk_analyses": chunk_analyses,
                             "final_summary": final_summary,
-                            "qdrant_points_indexed": points_indexed,
+                            "chunks_stored": chunks_stored,
                             "error": None,
                         }
                         object_result["transcript_results"].append({
@@ -88,14 +93,14 @@ class PipelineService:
                             "transcript_index": idx,
                             "chunk_count": len(chunks),
                             "final_summary": final_summary,
-                            "qdrant_points_indexed": points_indexed,
+                            "chunks_stored": chunks_stored,
                             "error": None,
                         })
                         analyzed_transcripts += 1
-                        total_points_indexed += points_indexed
-                        print(
+                        total_chunks_stored += chunks_stored
+                        self.logger.info(
                             f"ANALYSIS_SUCCESS key={transcript_key} "
-                            f"chunks={len(chunks)} points_indexed={points_indexed}"
+                            f"chunks={len(chunks)} stored={chunks_stored}"
                         )
                     except Exception as exc:
                         analysis_map[transcript_key] = {
@@ -103,7 +108,7 @@ class PipelineService:
                             "chunk_count": len(chunks),
                             "chunk_analyses": [],
                             "final_summary": "",
-                            "qdrant_points_indexed": 0,
+                            "chunks_stored": 0,
                             "error": str(exc),
                         }
                         object_result["status"] = "partial_failed"
@@ -113,9 +118,9 @@ class PipelineService:
                             "error": str(exc),
                             "chunk_count": len(chunks),
                             "final_summary": "",
-                            "qdrant_points_indexed": 0,
+                            "chunks_stored": 0,
                         })
-                        print(
+                        self.logger.error(
                             f"ANALYSIS_FAILURE key={transcript_key} "
                             f"chunks={len(chunks)} error={exc}"
                         )
@@ -128,31 +133,24 @@ class PipelineService:
                 "objects_processed": len(source_objects),
                 "transcripts_found": total_transcripts,
                 "transcripts_analyzed": analyzed_transcripts,
-                "qdrant_collection": settings.qdrant_collection,
-                "qdrant_points_indexed": total_points_indexed,
+                "total_chunks_stored": total_chunks_stored,
                 "chunk_map": chunk_map,
                 "analysis_map": analysis_map,
                 "results": object_results
             }
 
-            print(
-                "PIPELINE_CONSOLE_SUMMARY "
+            self.logger.info(
+                "PIPELINE_SUMMARY "
                 f"objects={response['objects_processed']} "
                 f"transcripts_found={response['transcripts_found']} "
                 f"transcripts_analyzed={response['transcripts_analyzed']} "
-                f"qdrant_points_indexed={response['qdrant_points_indexed']}"
+                f"chunks_stored={response['total_chunks_stored']}"
             )
 
             if analyzed_transcripts > 0:
-                self.logger.info(
-                    "PIPELINE_SUCCESS "
-                    f"objects={response['objects_processed']} transcripts={response['transcripts_analyzed']}"
-                )
+                self.logger.info("PIPELINE_SUCCESS")
             else:
-                self.logger.error(
-                    "PIPELINE_FAILURE "
-                    f"objects={response['objects_processed']} transcripts={response['transcripts_analyzed']}"
-                )
+                self.logger.error("PIPELINE_FAILURE no transcripts analyzed")
             return response
 
         except Exception as exc:
@@ -160,12 +158,11 @@ class PipelineService:
             raise
 
     def search_similar_chunks(self, query, limit=5):
-        self.logger.info(f"QDRANT_SEARCH_START limit={limit}")
-        query_vector = self.embedding_service.embed_text(query)
-        hits = self.vector_service.search_similar_chunks(query_vector=query_vector, limit=limit)
-        self.logger.info(f"QDRANT_SEARCH_SUCCESS hits={len(hits)}")
+        """Search for similar chunks using FAISS semantic search."""
+        self.logger.info(f"FAISS_SEARCH_START query='{query[:50]}' limit={limit}")
+        hits = self.faiss_service.search_similar_chunks(query_text=query, top_k=limit)
+        self.logger.info(f"FAISS_SEARCH_SUCCESS hits={len(hits)}")
         return {
-            "collection": settings.qdrant_collection,
             "query": query,
             "limit": limit,
             "hits": hits,
