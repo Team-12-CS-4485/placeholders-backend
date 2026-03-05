@@ -1,4 +1,5 @@
 import json
+import re
 import boto3
 from botocore.exceptions import ClientError
 from app.core.config import settings
@@ -29,13 +30,23 @@ class StorageService:
         body = response["Body"].read().decode("utf-8")
         return json.loads(body)
 
+    def _clean_transcript(self, text):
+        cleaned = text.strip()
+        cleaned = re.sub(
+            r"^\s*Kind:\s*captions\s+Language:\s*[a-zA-Z-]+\s*",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        return cleaned.strip()
+
     def extract_transcripts(self, payload):
         transcripts = []
 
         if isinstance(payload, dict):
             direct_value = payload.get("transcript")
             if isinstance(direct_value, str) and direct_value.strip():
-                transcripts.append(direct_value.strip())
+                transcripts.append(self._clean_transcript(direct_value))
 
             videos = payload.get("videos")
             if isinstance(videos, list):
@@ -44,18 +55,20 @@ class StorageService:
                         continue
                     transcript = video.get("transcript")
                     if isinstance(transcript, str) and transcript.strip():
-                        transcripts.append(transcript.strip())
+                        transcripts.append(self._clean_transcript(transcript))
 
         if isinstance(payload, list):
             for item in payload:
                 if isinstance(item, dict):
                     transcript = item.get("transcript")
                     if isinstance(transcript, str) and transcript.strip():
-                        transcripts.append(transcript.strip())
+                        transcripts.append(self._clean_transcript(transcript))
 
         unique_transcripts = []
         seen = set()
         for transcript in transcripts:
+            if not transcript:
+                continue
             if transcript not in seen:
                 seen.add(transcript)
                 unique_transcripts.append(transcript)

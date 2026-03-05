@@ -1,5 +1,10 @@
 from fastapi import APIRouter, HTTPException
-from app.schemas.pipeline import PipelineRunRequest, PipelineRunResponse
+from app.schemas.pipeline import (
+    PipelineRunRequest,
+    PipelineRunResponse,
+    VectorSearchRequest,
+    VectorSearchResponse,
+)
 from app.services.pipeline_service import PipelineService
 
 
@@ -16,3 +21,15 @@ def run_s3_transcript_analysis(request: PipelineRunRequest):
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Pipeline failed: {exc}") from exc
+
+
+@router.post("/search", response_model=VectorSearchResponse)
+def search_similar_chunks(request: VectorSearchRequest):
+    try:
+        service = PipelineService()
+        return service.search_similar_chunks(
+            query=request.query,
+            limit=request.limit or 5,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Search failed: {exc}") from exc
