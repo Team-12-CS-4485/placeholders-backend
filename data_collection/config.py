@@ -44,7 +44,6 @@ NEWS_CHANNELS = {
     "aljazeeraenglish": "UCNye-wNBqNL5ZzHSJj3l8Bg",
 }
 
-
 # Validation
 if not YOUTUBE_API_KEY:
     raise ValueError("YOUTUBE_API_KEY not found in .env file. Please set it up.")
