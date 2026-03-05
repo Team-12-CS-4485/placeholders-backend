@@ -1,3 +1,14 @@
+"""
+embedding_service.py - Gemini AI Service
+
+Handles all Google Gemini API interactions for the pipeline:
+- Text chunking with configurable size (default 6000 chars) and overlap (default 400 chars)
+- Per-chunk transcript analysis using Gemini with extended thinking (configurable level)
+- Final summary generation by combining chunk analyses into a comprehensive report
+- Text embedding generation using Google's text-embedding-004 model
+- Robust response parsing for both content generation and embedding API responses
+"""
+
 from google import genai
 from google.genai import types
 from app.core.config import settings

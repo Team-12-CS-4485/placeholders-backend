@@ -1,3 +1,13 @@
+"""
+vector_service.py - Qdrant Vector Database Service
+
+Manages all Qdrant vector database operations:
+- Auto-creates collections with cosine distance similarity on first upsert
+- Upserts transcript chunk embeddings with metadata (source key, transcript index, chunk text)
+- Uses deterministic UUID5 point IDs based on transcript_key:chunk_index for idempotent upserts
+- Performs similarity search over indexed chunks and returns ranked results with scores
+"""
+
 import uuid
 from qdrant_client import QdrantClient
 from qdrant_client.http import models

@@ -1,3 +1,12 @@
+"""
+pipeline.py - Pydantic Request/Response Schemas
+
+Defines all API request and response models for the pipeline endpoints:
+- PipelineRunRequest/Response : S3 transcript analysis pipeline execution
+- VectorSearchRequest/Response : Semantic search over indexed transcript chunks
+- Supporting models: TranscriptAnalysisResult, ObjectPipelineResult, AnalysisMapEntry, VectorSearchHit
+"""
+
 from typing import Optional
 from pydantic import BaseModel, Field
 

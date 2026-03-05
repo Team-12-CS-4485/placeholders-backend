@@ -1,3 +1,15 @@
+"""
+main.py - FastAPI Application Entry Point
+
+Sets up the Newsify backend API server with:
+- CORS middleware (all origins allowed for development)
+- HTTP request/response logging middleware
+- Pipeline router for transcript analysis and search endpoints
+- Health check endpoint at GET /health
+
+Run with: uvicorn app.main:app --reload
+"""
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.endpoints.pipeline import router as pipeline_router

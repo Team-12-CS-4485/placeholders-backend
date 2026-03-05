@@ -1,3 +1,16 @@
+"""
+pipeline_service.py - Core Pipeline Orchestrator
+
+Coordinates the end-to-end transcript analysis workflow:
+1. Loads transcript JSON objects from S3 via StorageService
+2. Chunks transcripts and generates embeddings via EmbeddingService
+3. Upserts embedding vectors into Qdrant via VectorService
+4. Runs Gemini-powered chunk analysis and final summary generation
+5. Returns comprehensive results with chunk maps, analysis maps, and per-object status
+
+Also provides semantic search over indexed chunks using Qdrant + Gemini embeddings.
+"""
+
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.services.storage_service import StorageService

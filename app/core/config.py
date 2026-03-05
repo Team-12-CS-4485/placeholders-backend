@@ -1,3 +1,13 @@
+"""
+config.py - Centralized Configuration
+
+Loads all application settings from environment variables with sensible defaults.
+Covers S3 storage, Gemini API (model ID, thinking level, embedding model),
+text chunking parameters, Qdrant vector DB connection, and output file paths.
+
+See config/.env.example for the full list of supported environment variables.
+"""
+
 import os
 from dotenv import load_dotenv
 
