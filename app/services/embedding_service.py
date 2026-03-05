@@ -68,6 +68,25 @@ class EmbeddingService:
 
         raise ValueError("No embedding vector returned by model")
 
+    def _extract_all_vectors(self, response, expected_count):
+        """Extract all embedding vectors from a batch embed_content response."""
+        embeddings = getattr(response, "embeddings", None)
+        if not embeddings or len(embeddings) != expected_count:
+            raise ValueError(
+                f"Expected {expected_count} embeddings, got {len(embeddings) if embeddings else 0}"
+            )
+
+        vectors = []
+        for emb in embeddings:
+            values = getattr(emb, "values", None)
+            if values:
+                vectors.append([float(v) for v in values])
+            elif isinstance(emb, dict) and emb.get("values"):
+                vectors.append([float(v) for v in emb["values"]])
+            else:
+                raise ValueError("Embedding entry missing values")
+        return vectors
+
     def analyze_chunks(self, chunks):
         analyses = []
         total = len(chunks)
@@ -131,4 +150,11 @@ class EmbeddingService:
         return self._extract_vector(response)
 
     def embed_chunks(self, chunks):
-        return [self.embed_text(chunk) for chunk in chunks]
+        """Embed all chunks in a single batch API call instead of one-by-one."""
+        if not chunks:
+            return []
+        response = self.client.models.embed_content(
+            model=self.embedding_model_id,
+            contents=chunks,
+        )
+        return self._extract_all_vectors(response, expected_count=len(chunks))
