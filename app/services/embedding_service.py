@@ -97,6 +97,7 @@ class EmbeddingService:
                 )
             ),
         )
+        logger.info("GEMINI_SUMMARIZE complete")
         return self._get_text(response)
 
     def analyze_transcript(self, transcript: str) -> dict:

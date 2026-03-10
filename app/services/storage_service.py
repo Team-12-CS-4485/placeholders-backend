@@ -1,3 +1,14 @@
+"""
+storage_service.py - S3 Storage Service
+
+Handles all AWS S3 interactions for the pipeline:
+- Lists object keys under a given S3 prefix with pagination
+- Fetches and parses JSON objects from S3
+- Extracts and deduplicates transcripts from flexible payload structures
+  (supports both dict and list formats, nested under "videos" key or top-level)
+- Cleans transcript text by stripping VTT caption metadata headers
+"""
+
 import json
 import re
 import boto3

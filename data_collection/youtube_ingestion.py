@@ -1,3 +1,18 @@
+"""
+youtube_ingestion.py - YouTube Data Collection Pipeline
+
+Collects videos from configured news channels via the YouTube Data API v3.
+For each channel, fetches recent uploads and applies multi-stage filtering:
+1. Time window (default 180 days)
+2. Minimum view count (default 5,000)
+3. Maximum duration (default 30 minutes)
+4. Minimum comment count (default 3)
+5. Transcript availability (extracted via yt-dlp)
+
+Passing videos are enriched with transcripts and top comments, then saved to
+both S3 (as JSON for the analysis pipeline) and DynamoDB (for metadata persistence).
+"""
+
 from googleapiclient.discovery import build
 import yt_dlp
 from config import NEWS_CHANNELS, YOUTUBE_API_KEY, MAX_VIDEOS_PER_CHANNEL, MIN_VIEW_COUNT, TIME_WINDOW_DAYS, COMMENTS_PER_VIDEO, MAX_VIDEO_DURATION_MINUTES
