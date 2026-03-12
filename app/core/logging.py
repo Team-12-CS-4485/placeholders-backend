@@ -1,3 +1,11 @@
+"""
+logging.py - Centralized Logging Configuration
+
+Provides a singleton logging setup that initializes once with a stdout stream handler.
+Uses a consistent format: "timestamp | LEVEL | module | message"
+All modules should use get_logger(__name__) to obtain a named logger instance.
+"""
+
 import logging
 import sys
 

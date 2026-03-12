@@ -1,66 +1,65 @@
+from __future__ import annotations
+
+import logging
+from typing import Optional
+
 from google import genai
 from google.genai import types
+
 from app.core.config import settings
+from app.services.chunking_service import SemanticChunker, get_default_chunker
+
+logger = logging.getLogger(__name__)
 
 
 class EmbeddingService:
-    def __init__(self, client=None):
+    
+    def __init__(
+        self,
+        client=None,
+        chunker: Optional[SemanticChunker] = None,
+    ):
         self.model_id = settings.gemini_model_id
-        self.embedding_model_id = settings.embedding_model_id
         self.client = client or genai.Client(api_key=settings.genai_api_key)
 
-    def chunk_text(self, text, chunk_size=None, overlap=None):
-        use_chunk_size = chunk_size if chunk_size is not None else settings.chunk_size_chars
-        use_overlap = overlap if overlap is not None else settings.chunk_overlap_chars
+        # One model for both chunking and embedding — loaded once, shared
+        self._chunker = chunker or get_default_chunker(
+            model_name=settings.embedding_model_id
+        )
 
-        if not text or not text.strip():
-            return []
-        if use_chunk_size <= 0:
-            return [text.strip()]
-        if use_overlap >= use_chunk_size:
-            use_overlap = max(0, use_chunk_size // 10)
+        if self._chunker.available:
+            logger.info(
+                f"EMBEDDING_LOCAL model={settings.embedding_model_id} dims=768 cost=free"
+            )
+        else:
+            logger.warning(
+                "Local embedding model not available — install sentence-transformers. "
+                "Chunking will fall back to character mode and embed_chunks will raise."
+            )
 
-        chunks = []
-        start = 0
-        clean_text = text.strip()
+    # ── Chunking ─────────────────────────────────────────────────────────────
 
-        while start < len(clean_text):
-            end = start + use_chunk_size
-            chunks.append(clean_text[start:end])
-            if end >= len(clean_text):
-                break
-            start = end - use_overlap
+    def chunk_text(
+        self,
+        text: str,
+        chunk_size: Optional[int] = None,
+        overlap: Optional[int] = None,
+    ) -> list[str]:
 
-        return chunks
+        return self._chunker.chunk(text)
 
-    def _get_text(self, response):
+    # ── Gemini analysis ───────────────────────────────────────────────────────
+
+    def _get_text(self, response) -> str:
         text = getattr(response, "text", None)
         if isinstance(text, str) and text.strip():
             return text.strip()
         return str(response)
 
-    def _extract_vector(self, response):
-        embeddings = getattr(response, "embeddings", None)
-        if embeddings and len(embeddings) > 0:
-            first_embedding = embeddings[0]
-            values = getattr(first_embedding, "values", None)
-            if values:
-                return [float(value) for value in values]
-            if isinstance(first_embedding, dict) and first_embedding.get("values"):
-                return [float(value) for value in first_embedding["values"]]
+    def analyze_chunks(self, chunks: list[str]) -> list[str]:
 
-        embedding = getattr(response, "embedding", None)
-        if embedding is not None:
-            values = getattr(embedding, "values", None)
-            if values:
-                return [float(value) for value in values]
-
-        raise ValueError("No embedding vector returned by model")
-
-    def analyze_chunks(self, chunks):
         analyses = []
         total = len(chunks)
-
         for idx, chunk in enumerate(chunks, start=1):
             prompt = (
                 f"Analyze transcript chunk {idx}/{total}. "
@@ -73,19 +72,17 @@ class EmbeddingService:
                     thinking_config=types.ThinkingConfig(
                         thinking_level=settings.gemini_thinking_level
                     )
-                )
+                ),
             )
             analyses.append(self._get_text(response))
-
         return analyses
 
-    def summarize_analyses(self, analyses):
+    def summarize_analyses(self, analyses: list[str]) -> str:
+        """Merge per-chunk analyses into one final transcript report."""
         if not analyses:
             return ""
-
         joined = "\n\n".join(
-            f"Chunk {idx + 1} Analysis:\n{analysis}"
-            for idx, analysis in enumerate(analyses)
+            f"Chunk {idx + 1} Analysis:\n{a}" for idx, a in enumerate(analyses)
         )
         prompt = (
             "Combine the chunk analyses into one final transcript report with: "
@@ -98,26 +95,41 @@ class EmbeddingService:
                 thinking_config=types.ThinkingConfig(
                     thinking_level=settings.gemini_thinking_level
                 )
-            )
+            ),
         )
+        logger.info("GEMINI_SUMMARIZE complete")
         return self._get_text(response)
 
-    def analyze_transcript(self, transcript):
+    def analyze_transcript(self, transcript: str) -> dict:
         chunks = self.chunk_text(transcript)
         analyses = self.analyze_chunks(chunks)
         final_summary = self.summarize_analyses(analyses)
         return {
             "chunk_count": len(chunks),
             "chunk_analyses": analyses,
-            "final_summary": final_summary
+            "final_summary": final_summary,
         }
 
-    def embed_text(self, text):
-        response = self.client.models.embed_content(
-            model=self.embedding_model_id,
-            contents=text,
-        )
-        return self._extract_vector(response)
+    # ── Embedding (local, free) ───────────────────────────────────────────────
 
-    def embed_chunks(self, chunks):
-        return [self.embed_text(chunk) for chunk in chunks]
+    def embed_text(self, text: str, is_query: bool = False) -> list[float]:
+     
+        vectors = self._chunker.embed([text], is_query=is_query)
+        return vectors[0]
+
+    def embed_chunks(self, chunks: list[str]) -> list[list[float]]:
+       
+        if not chunks:
+            return []
+        logger.info(f"EMBED_LOCAL chunks={len(chunks)}")
+        return self._chunker.embed(chunks, is_query=False)
+
+    def embed_query(self, query: str) -> list[float]:
+      
+        return self.embed_text(query, is_query=True)
+
+    # ── Utility ──────────────────────────────────────────────────────────────
+
+    @property
+    def chunker(self) -> SemanticChunker:
+        return self._chunker

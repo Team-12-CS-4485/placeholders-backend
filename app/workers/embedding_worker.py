@@ -1,3 +1,14 @@
+"""
+embedding_worker.py - Batch Transcript Analysis Worker
+
+CLI entrypoint for running the transcript analysis pipeline as a batch job.
+Executes the full pipeline (S3 -> chunk -> embed -> analyze -> Qdrant) and writes
+detailed results to a text output file including per-object status, chunk counts,
+and final summaries.
+
+Usage: python3 -m app.workers.embedding_worker
+"""
+
 from app.core.config import settings
 from app.services.pipeline_service import PipelineService
 
