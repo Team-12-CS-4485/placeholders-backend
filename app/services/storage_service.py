@@ -1,3 +1,4 @@
+import base64
 import json
 import re
 import boto3
@@ -6,9 +7,44 @@ from app.core.config import settings
 
 
 class StorageService:
-    def __init__(self, s3_client=None, bucket=None):
+    def __init__(self, s3_client=None, bucket=None, dynamodb_resource=None):
         self.s3_client = s3_client or boto3.client("s3")
         self.bucket = bucket or settings.s3_bucket
+        self.dynamodb = dynamodb_resource or boto3.resource("dynamodb", region_name=settings.aws_region)
+
+    def list_videos(self, limit: int = 20, cursor: str = None):
+        table = self.dynamodb.Table(settings.dynamodb_table)
+        scan_kwargs = {
+            "Limit": limit,
+            "ProjectionExpression": "SortKey, channel, title, description, publishedAt, viewCount, likeCount, commentCount",
+        }
+        if cursor:
+            scan_kwargs["ExclusiveStartKey"] = json.loads(
+                base64.b64decode(cursor.encode()).decode()
+            )
+
+        response = table.scan(**scan_kwargs)
+
+        items = [
+            {
+                "video_id": item.get("SortKey", ""),
+                "channel": item.get("channel", ""),
+                "title": item.get("title", ""),
+                "description": item.get("description", ""),
+                "published_at": item.get("publishedAt", ""),
+                "view_count": int(item.get("viewCount", 0)),
+                "like_count": int(item.get("likeCount", 0)),
+                "comment_count": int(item.get("commentCount", 0)),
+            }
+            for item in response.get("Items", [])
+        ]
+
+        next_cursor = None
+        last_key = response.get("LastEvaluatedKey")
+        if last_key:
+            next_cursor = base64.b64encode(json.dumps(last_key).encode()).decode()
+
+        return {"items": items, "total_returned": len(items), "next_cursor": next_cursor}
 
     def list_object_keys(self, prefix=None, limit=None):
         use_prefix = prefix if prefix is not None else settings.s3_prefix
