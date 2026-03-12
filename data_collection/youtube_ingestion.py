@@ -211,7 +211,7 @@ def save_to_s3(channel_name, videos):
     """Save channel data to S3"""
     try:
         timestamp = datetime.now().isoformat()
-        s3_key = f"youtube-data/week1/{channel_name.lower()}.json"
+        s3_key = f"youtube-data/week2/{channel_name.lower()}.json"
         
         payload = {
             "channel": channel_name,
@@ -299,6 +299,31 @@ def save_to_dynamodb(dynamodb, table_name, channel_name, videos):
         raise
 
 
+def get_existing_video_ids(dynamodb, table_name, channel_name):
+    """Query DynamoDB for all video IDs already stored for a channel."""
+    table = dynamodb.Table(table_name)
+    existing_ids = set()
+    try:
+        response = table.query(
+            KeyConditionExpression=Key('PartitionKey').eq(channel_name),
+            ProjectionExpression='SortKey'
+        )
+        for item in response.get('Items', []):
+            existing_ids.add(item['SortKey'])
+        # Handle pagination
+        while 'LastEvaluatedKey' in response:
+            response = table.query(
+                KeyConditionExpression=Key('PartitionKey').eq(channel_name),
+                ProjectionExpression='SortKey',
+                ExclusiveStartKey=response['LastEvaluatedKey']
+            )
+            for item in response.get('Items', []):
+                existing_ids.add(item['SortKey'])
+    except ClientError as e:
+        logger.warning(f"Could not query existing videos for {channel_name}: {e}")
+    return existing_ids
+
+
 def main():
     """Process all channels and save to S3 and DynamoDB"""
     logger.info("YouTube Video Ingestion")
@@ -326,6 +351,17 @@ def main():
             if not videos:
                 logger.warning(f"[{channel_name}] No videos found")
                 results.append({"channel": channel_name, "status": "error", "error": "No videos found"})
+                continue
+            
+            # Check DynamoDB for existing video IDs to skip duplicates early
+            existing_ids = get_existing_video_ids(dynamodb, DYNAMODB_TABLE, channel_name)
+            videos = [v for v in videos if v["videoId"] not in existing_ids]
+            if existing_ids:
+                logger.info(f"[{channel_name}] Skipped {len(existing_ids)} already-ingested videos")
+            
+            if not videos:
+                logger.info(f"[{channel_name}] All videos already ingested")
+                results.append({"channel": channel_name, "status": "success", "videoCount": 0})
                 continue
             
             # Get statistics and duration info
@@ -394,20 +430,20 @@ def main():
                 results.append({"channel": channel_name, "status": "error", "error": "No videos met filtering criteria"})
                 continue
             
-            # Save to S3
-            try:
-                save_to_s3(channel_name, filtered_videos)
-            except Exception as e:
-                logger.error(f"[{channel_name}] Failed to save to S3: {e}")
-                results.append({"channel": channel_name, "status": "error", "error": f"S3 save failed: {e}"})
-                continue
-            
-            #Save to DynamoDB (replacing old entries)
+            # Save to DynamoDB first (source of truth for dedup)
             try:
                 save_to_dynamodb(dynamodb, DYNAMODB_TABLE, channel_name, filtered_videos)
             except Exception as e:
                 logger.error(f"[{channel_name}] Failed to save to DynamoDB: {e}")
                 results.append({"channel": channel_name, "status": "error", "error": f"DynamoDB save failed: {e}"})
+                continue
+            
+            # Save to S3 only after DynamoDB succeeds
+            try:
+                save_to_s3(channel_name, filtered_videos)
+            except Exception as e:
+                logger.error(f"[{channel_name}] Failed to save to S3: {e}")
+                results.append({"channel": channel_name, "status": "error", "error": f"S3 save failed: {e}"})
                 continue
             
             logger.info(f"[{channel_name}] Successfully processed {len(filtered_videos)} videos")
