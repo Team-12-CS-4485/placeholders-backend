@@ -13,36 +13,43 @@ class StorageService:
         self.dynamodb = dynamodb_resource or boto3.resource("dynamodb", region_name=settings.aws_region)
 
     def list_videos(self, limit: int = 20, cursor: str = None):
-        table = self.dynamodb.Table(settings.dynamodb_table)
-        scan_kwargs = {
-            "Limit": limit,
-            "ProjectionExpression": "SortKey, channel, title, description, publishedAt, viewCount, likeCount, commentCount",
+        list_kwargs = {
+            "Bucket": self.bucket,
+            "Prefix": settings.s3_prefix,
+            "MaxKeys": limit,
         }
         if cursor:
-            scan_kwargs["ExclusiveStartKey"] = json.loads(
-                base64.b64decode(cursor.encode()).decode()
-            )
+            list_kwargs["ContinuationToken"] = base64.b64decode(cursor.encode()).decode()
 
-        response = table.scan(**scan_kwargs)
+        response = self.s3_client.list_objects_v2(**list_kwargs)
 
-        items = [
-            {
-                "video_id": item.get("SortKey", ""),
-                "channel": item.get("channel", ""),
-                "title": item.get("title", ""),
-                "description": item.get("description", ""),
-                "published_at": item.get("publishedAt", ""),
-                "view_count": int(item.get("viewCount", 0)),
-                "like_count": int(item.get("likeCount", 0)),
-                "comment_count": int(item.get("commentCount", 0)),
-            }
-            for item in response.get("Items", [])
-        ]
+        items = []
+        for obj in response.get("Contents", []):
+            key = obj.get("Key", "")
+            if not key or key.endswith("/"):
+                continue
+            try:
+                payload = self.get_json_object(key)
+            except (ClientError, json.JSONDecodeError, UnicodeDecodeError):
+                continue
+
+            channel = payload.get("channel", "")
+            for video in payload.get("videos", []):
+                items.append({
+                    "video_id": video.get("videoId", ""),
+                    "channel": channel,
+                    "title": video.get("title", ""),
+                    "description": video.get("description", ""),
+                    "published_at": video.get("publishedAt", ""),
+                    "view_count": int(video.get("viewCount", 0)),
+                    "like_count": int(video.get("likeCount", 0)),
+                    "comment_count": int(video.get("commentCount", 0)),
+                })
 
         next_cursor = None
-        last_key = response.get("LastEvaluatedKey")
-        if last_key:
-            next_cursor = base64.b64encode(json.dumps(last_key).encode()).decode()
+        if response.get("IsTruncated"):
+            token = response.get("NextContinuationToken", "")
+            next_cursor = base64.b64encode(token.encode()).decode()
 
         return {"items": items, "total_returned": len(items), "next_cursor": next_cursor}
 
