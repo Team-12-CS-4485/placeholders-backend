@@ -70,9 +70,12 @@ CATEGORY_OPTIONS_STR = ", ".join(CATEGORY_OPTIONS)
 
 class EmbeddingService:
 
-    def __init__(self, client=None, chunker: Optional[SemanticChunker] = None):
+    def __init__(self, client=None, chunker: Optional[SemanticChunker] = None, api_keys=None):
         self.model_id = settings.gemini_model_id
-        self.client = client or genai.Client(api_key=settings.genai_api_key)
+
+        self.api_keys = api_keys or [settings.genai_api_key]
+        self.current_key_index = 0
+        self.client = client or genai.Client(api_key=self.api_keys[0])  
 
         self._chunker = chunker or get_default_chunker(
             model_name=settings.embedding_model_id
@@ -98,6 +101,18 @@ class EmbeddingService:
         if isinstance(text, str) and text.strip():
             return text.strip()
         return str(response)
+
+    def _rotate_key(self) -> bool:
+        """Rotate to the next API key. Returns True if a new key is available."""
+        next_index = self.current_key_index + 1
+        if next_index >= len(self.api_keys):
+            logger.error("API_KEY_EXHAUSTED all keys have hit quota")
+            return False
+        self.current_key_index = next_index
+        new_key = self.api_keys[self.current_key_index]
+        self.client = genai.Client(api_key=new_key)
+        logger.warning(f"API_KEY_ROTATED key_index={self.current_key_index}/{len(self.api_keys)-1}")
+        return True
 
     def _gemini(self, prompt: str, max_retries: int = 6) -> str:
         wait = 15
@@ -127,6 +142,11 @@ class EmbeddingService:
                     or getattr(exc, "code", None) == 429
                 )
                 if is_rate_limit:
+                    # Try rotating to next key first
+                    if self._rotate_key():
+                        logger.warning(f"GEMINI_KEY_ROTATED attempt={attempt+1} retrying immediately")
+                        continue  # retry immediately with new key, no sleep
+                    # No more keys — fall back to waiting
                     if attempt < max_retries - 1:
                         logger.warning(
                             f"GEMINI_RATE_LIMIT attempt={attempt+1}/{max_retries} "
@@ -136,7 +156,7 @@ class EmbeddingService:
                         wait = min(wait * 2, 300)
                     else:
                         raise RuntimeError(
-                            f"Gemini rate limit exceeded after {max_retries} retries"
+                            f"Gemini rate limit exceeded after {max_retries} retries on all keys"
                         ) from exc
                 else:
                     raise
@@ -171,7 +191,8 @@ class EmbeddingService:
             '  "is_breaking": <true|false>\n'
             "}\n\n"
             "Rules:\n"
-            "- topics: 3 to 5 short phrases, specific to this video\n"
+           "- topics: 3 to 5 broad reusable tags like 'Iran Conflict', 'Oil Markets', 'Drone Warfare'. "
+            "NOT headline-specific phrases. Should apply across multiple videos on the same story.\n"
             f"- category: must be exactly one of these options: {CATEGORY_OPTIONS_STR}\n"
             "- sentiment: overall tone of the coverage\n"
             "- key_claims: up to 5 specific factual claims made in the video, one sentence each\n"

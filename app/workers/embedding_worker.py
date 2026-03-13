@@ -54,3 +54,8 @@ def run_transcript_analysis_job(prefix=None, limit=None, output_file=None):
 
 if __name__ == "__main__":
     run_transcript_analysis_job()
+
+    # Auto-sync any missing videos after pipeline completes
+    print("\n=== Running post-pipeline sync ===")
+    from scripts.sync_missing import main as sync_main
+    sync_main()

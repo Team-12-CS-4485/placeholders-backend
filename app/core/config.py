@@ -20,6 +20,11 @@ class Settings:
         self.s3_prefix = os.getenv("S3_PREFIX", "youtube-data/")
         self.s3_object_limit = int(os.getenv("S3_OBJECT_LIMIT", "3"))
         self.genai_api_key = os.getenv("GENAI_API_KEY") or os.getenv("GEMINI_API_KEY", "")
+        self.genai_api_keys = [self.genai_api_key]
+        for i in range(2, 20):
+            key = os.getenv(f"GENAI_API_KEY_{i}") or os.getenv(f"GEMINI_API_KEY_{i}")
+            if key:
+                self.genai_api_keys.append(key)
         self.gemini_model_id = os.getenv("GEMINI_MODEL_ID", "gemini-3-flash-preview")
         self.gemini_thinking_level = os.getenv("GEMINI_THINKING_LEVEL", "medium")
         self.embedding_model_id = os.getenv(

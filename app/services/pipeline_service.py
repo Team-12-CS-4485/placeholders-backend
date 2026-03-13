@@ -41,7 +41,9 @@ from app.services.vector_service import VectorService
 class PipelineService:
     def __init__(self, storage_service=None, embedding_service=None, vector_service=None):
         self.storage_service = storage_service or StorageService()
-        self.embedding_service = embedding_service or EmbeddingService()
+        self.embedding_service = embedding_service or EmbeddingService(
+            api_keys=settings.genai_api_keys
+        )
         self.vector_service = vector_service or VectorService()
         self.logger = get_logger(__name__)
 
@@ -92,6 +94,24 @@ class PipelineService:
 
                     # Unique key per video (not per source file)
                     transcript_key = f"{source_key}::{video_id}"
+                    
+                    # Check if already indexed — skip to save Gemini quota
+                    existing = self.vector_service.client.scroll(
+                        collection_name=self.vector_service.collection_name,
+                        scroll_filter=models.Filter(
+                            must=[models.FieldCondition(
+                                key="transcript_index",
+                                match=models.MatchValue(value=video_id)
+                            )]
+                        ),
+                        limit=1,
+                    )[0]
+                    if existing:
+                        self.logger.info(f"VIDEO_SKIP_ALREADY_INDEXED videoId={video_id} channel={channel}")
+                        analyzed_videos += 1
+                        total_chunks_stored += len(existing)
+                        continue
+                    
 
                     # Step 1: Chunk
                     chunks = self.embedding_service.chunk_text(transcript)
@@ -100,8 +120,8 @@ class PipelineService:
                     try:
                         # Step 2: Gemini intelligence — one call per video
                         self.logger.info(
-                            f"GEMINI_INTELLIGENCE_START videoId={video_id} chunks={len(chunks)}"
-                        )
+                            f"GEMINI_INTELLIGENCE_START videoId={video_id} chunks={len(chunks)} key=#{self.embedding_service.current_key_index + 1}"
+                            )
                         intelligence = self.embedding_service.extract_video_intelligence(
                             chunks=chunks,
                             title=title,
