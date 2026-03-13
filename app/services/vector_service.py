@@ -25,12 +25,12 @@ class VectorService:
     def _get_stored_vector_size(self) -> Optional[int]:
         try:
             info = self.client.get_collection(self.collection_name)
-            return info.config.params.vectors.size  
+            return info.config.params.vectors.size
         except Exception:
             return None
 
     def ensure_collection(self, vector_size: int) -> None:
-    
+
         stored_size = self._get_stored_vector_size()
 
         if stored_size is not None:
@@ -53,20 +53,56 @@ class VectorService:
                 size=vector_size,
                 distance=models.Distance.COSINE,
                 hnsw_config=models.HnswConfigDiff(
-                    m=16,             
+                    m=16,
                     ef_construct=100,
                 ),
             ),
         )
 
-        for field in ("transcript_key", "source_key", "transcript_index"):
+        # Keyword indexes — supports exact match + filtering
+        keyword_fields = (
+            "transcript_key",
+            "source_key",
+            "transcript_index",
+            "channel",
+            "category",
+            "sentiment",
+            "topics",       # array field — Qdrant indexes each element individually
+        )
+        for field in keyword_fields:
             try:
                 self.client.create_payload_index(
                     collection_name=self.collection_name,
                     field_name=field,
                     field_schema=models.PayloadSchemaType.KEYWORD,
                 )
-                logger.info(f"PAYLOAD_INDEX_CREATED field={field}")
+                logger.info(f"PAYLOAD_INDEX_CREATED field={field} type=keyword")
+            except Exception as exc:
+                logger.warning(f"PAYLOAD_INDEX_SKIP field={field} reason={exc}")
+
+        # Bool indexes
+        bool_fields = ("is_breaking",)
+        for field in bool_fields:
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.collection_name,
+                    field_name=field,
+                    field_schema=models.PayloadSchemaType.BOOL,
+                )
+                logger.info(f"PAYLOAD_INDEX_CREATED field={field} type=bool")
+            except Exception as exc:
+                logger.warning(f"PAYLOAD_INDEX_SKIP field={field} reason={exc}")
+
+        # Integer indexes — supports range queries (e.g. view_count > 100000)
+        integer_fields = ("view_count", "like_count", "comment_count")
+        for field in integer_fields:
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.collection_name,
+                    field_name=field,
+                    field_schema=models.PayloadSchemaType.INTEGER,
+                )
+                logger.info(f"PAYLOAD_INDEX_CREATED field={field} type=integer")
             except Exception as exc:
                 logger.warning(f"PAYLOAD_INDEX_SKIP field={field} reason={exc}")
 
@@ -88,11 +124,12 @@ class VectorService:
         self,
         transcript_key: str,
         source_key: str,
-        transcript_index: int,
+        transcript_index,
         chunks: list[str],
         vectors: list[list[float]],
+        extra_metadata: dict = None,
     ) -> int:
-        
+
         if not chunks or not vectors:
             return 0
         if len(chunks) != len(vectors):
@@ -101,20 +138,25 @@ class VectorService:
                 f"for transcript_key={transcript_key}"
             )
 
-        # Infer collection vector size from first embedding
         self.ensure_collection(vector_size=len(vectors[0]))
+
+        base_payload = {
+            "transcript_key":   transcript_key,
+            "source_key":       source_key,
+            "transcript_index": str(transcript_index),
+        }
+        if extra_metadata:
+            base_payload.update(extra_metadata)
 
         points = [
             models.PointStruct(
                 id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{transcript_key}:{chunk_idx}")),
                 vector=vector,
                 payload={
-                    "transcript_key": transcript_key,
-                    "source_key": source_key,
-                    "transcript_index": transcript_index,
+                    **base_payload,
                     "chunk_index": chunk_idx,
-                    "text": chunk_text,
-                    "word_count": len(chunk_text.split()),
+                    "text":        chunk_text,
+                    "word_count":  len(chunk_text.split()),
                 },
             )
             for chunk_idx, (chunk_text, vector) in enumerate(zip(chunks, vectors), start=1)
@@ -139,7 +181,7 @@ class VectorService:
         limit: int = 5,
         source_key_filter: Optional[str] = None,
     ) -> list[dict]:
-       
+
         if not self.collection_exists():
             logger.warning("QDRANT_SEARCH_SKIP — collection does not exist")
             return []
@@ -165,12 +207,21 @@ class VectorService:
 
         return [
             {
-                "id": str(r.id),
-                "score": float(r.score),
-                "transcript_key": r.payload.get("transcript_key", ""),
-                "source_key": r.payload.get("source_key", ""),
-                "chunk_index": r.payload.get("chunk_index", 0),
-                "text": r.payload.get("text", ""),
+                "id":              str(r.id),
+                "score":           float(r.score),
+                "transcript_key":  r.payload.get("transcript_key", ""),
+                "source_key":      r.payload.get("source_key", ""),
+                "channel":         r.payload.get("channel", ""),
+                "title":           r.payload.get("title", ""),
+                "published_at":    r.payload.get("published_at", ""),
+                "view_count":      r.payload.get("view_count", 0),
+                "category":        r.payload.get("category", ""),
+                "sentiment":       r.payload.get("sentiment", ""),
+                "topics":          r.payload.get("topics", []),
+                "key_claims":      r.payload.get("key_claims", []),
+                "is_breaking":     r.payload.get("is_breaking", False),
+                "chunk_index":     r.payload.get("chunk_index", 0),
+                "text":            r.payload.get("text", ""),
             }
             for r in results
         ]

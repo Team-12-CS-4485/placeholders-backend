@@ -20,7 +20,7 @@ class Settings:
         self.s3_prefix = os.getenv("S3_PREFIX", "youtube-data/")
         self.s3_object_limit = int(os.getenv("S3_OBJECT_LIMIT", "3"))
         self.genai_api_key = os.getenv("GENAI_API_KEY") or os.getenv("GEMINI_API_KEY", "")
-        self.gemini_model_id = os.getenv("GEMINI_MODEL_ID", "gemini-2.0-flash")
+        self.gemini_model_id = os.getenv("GEMINI_MODEL_ID", "gemini-3-flash-preview")
         self.gemini_thinking_level = os.getenv("GEMINI_THINKING_LEVEL", "medium")
         self.embedding_model_id = os.getenv(
             "EMBEDDING_MODEL_ID", "nomic-ai/nomic-embed-text-v1.5"
@@ -36,6 +36,8 @@ class Settings:
         self.qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
         self.qdrant_api_key = os.getenv("QDRANT_API_KEY", "")
         self.qdrant_collection = os.getenv("QDRANT_COLLECTION", "transcript_chunks")
+        self.dynamodb_table = os.getenv("DYNAMODB_TABLE", "youtube-videos")
+
 
 
 settings = Settings()

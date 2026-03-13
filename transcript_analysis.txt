@@ -1,0 +1,492 @@
+Prefix: youtube-data/
+Objects Processed: 10
+Videos Found: 50
+Videos Indexed: 22
+Total Chunks Stored: 64
+
+Object: youtube-data/week1/abcnews.json
+Status: success
+  Video ID: DNnoPiSE7-Q
+  Chunks: 1
+  Points Stored: 1
+  Category: Congress & Legislation
+  Sentiment: neutral
+  Topics: Senate war powers resolution, Trump Iran military action, Congressional oversight of war, US-Iran conflict
+  Is Breaking: False
+  Key Claims:
+    - President Trump graded the U.S. military operation against Iran as a 15 on a scale of 10.
+    - Senate Democrats attempted to force a war powers vote to restrict military action without congressional approval.
+    - Republicans blocked the motion to discharge the war powers resolution in the Senate.
+    - Democrats argued that President Trump initiated military action without required constitutional approval from Congress.
+    - Republicans asserted that the president does not need congressional authorization for military operations as long as funding is provided.
+
+  Video ID: gQQFde2YBNk
+  Chunks: 2
+  Points Stored: 2
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: US Army Reservists, Iranian drone strike in Kuwait, 103rd Sustainment Command, Military casualties, Dignified transfer at Dover
+  Is Breaking: True
+  Key Claims:
+    - Four US Army reservists were killed in an Iranian drone strike on a facility in Kuwait.
+    - The soldiers were members of the 103rd Sustainment Command responsible for feeding and supplying troops.
+    - Officials stated the facility where the soldiers were stationed was vulnerable to aerial attacks.
+    - President Trump is scheduled to attend the dignified transfer of the remains at Dover Air Force Base.
+    - The president indicated that these may not be the last American service members killed in the conflict.
+
+  Video ID: UcZ-djROsVA
+  Chunks: 2
+  Points Stored: 2
+  Category: Congress & Legislation
+  Sentiment: neutral
+  Topics: Senate War Powers resolution, Iran military action, Congressional authority to declare war, Rand Paul and John Fetterman votes, Article II executive power
+  Is Breaking: False
+  Key Claims:
+    - The Senate failed to pass a resolution that would curtail the president's war powers in Iran.
+    - Senator Rand Paul was the only Republican to vote in favor of the resolution.
+    - Senator John Fetterman was the only Democrat to vote against the resolution, supporting the administration's approach.
+    - The resolution would have required the president to get congressional approval before taking further military action in Iran.
+    - A non-binding war powers resolution is scheduled for a vote in the House of Representatives the following day.
+
+  Video ID: nhfYyuScrxo
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: NATO missile interception, unexploded missile in Syria, security threat to Turkey, northeastern Syria airport
+  Is Breaking: False
+  Key Claims:
+    - NATO intercepted a missile over Syria that was heading for Turkey.
+    - An unexploded missile was found near an airport in northeastern Syria.
+    - Civilians were seen standing near the unexploded ordnance.
+
+  Video ID: qIiCnx8JTqs
+  Chunks: 2
+  Points Stored: 2
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Mojtaba Khamenei succession, IRGC intelligence and economy, Iran leadership battle, Supreme Leader assets, Israeli threats to Iranian leadership
+  Is Breaking: False
+  Key Claims:
+    - Mojtaba Khamenei is considered a frontrunner to succeed his father as Iran's Supreme Leader.
+    - Mojtaba Khamenei has been a mastermind of the IRGC intelligence apparatus for nearly 35 years.
+    - The IRGC controls approximately 30% of the Iranian economy and operates in mafia-like economic activities.
+    - There is intense competition and fighting within the committees responsible for choosing the next leader.
+    - Iranian state media reportedly prematurely announced Mojtaba as the new leader, possibly to make him a target for Israel.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/aljazeeraenglish.json
+Status: success
+  Video ID: 2GGbkr0kL5k
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: US Senator confrontation, anti-war protest, Israel military support, Marine veteran protester, police removal
+  Is Breaking: False
+  Key Claims:
+    - A US Senator assisted police in removing an anti-war protester from a meeting.
+    - A protester claimed that a sitting US Senator broke his hand during the confrontation.
+    - The protester involved in the incident is identified as a Marine.
+    - The protest was focused on opposition to fighting for Israel.
+    - The protester's hand became stuck in a door during the physical removal.
+
+  Video ID: Db43VAsush8
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran-Israel conflict, US-Iran relations, Iranian military strikes, Sovereignty and defense
+  Is Breaking: False
+  Key Claims:
+    - Fatima Muhajarani stated Iran has delivered devastating blows to the US and Israel.
+    - Iran acknowledges suffering painful losses, including senior military officials and civilians.
+    - The Iranian government claims that the US and Israel miscalculated in their actions.
+    - Iran is prepared to continue its military course to defend its sovereignty.
+    - The spokesperson emphasized that Iran has inflicted serious damage on its enemies.
+
+  Video ID: MrN_XOd8Ltw
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Qatar security situation, US Embassy Doha evacuation, Middle East regional security, Qatar Ministry of Interior statement
+  Is Breaking: True
+  Key Claims:
+    - Qatar's Ministry of Interior is evacuating residents living near the US embassy in Doha as a temporary precautionary measure.
+    - The Qatari government has provided suitable accommodation for the residents being moved from the area.
+    - The US embassy has advised its citizens to leave the region as soon as possible using any available means.
+    - The evacuation occurs in the context of recent security scenarios observed in Dubai and Abu Dhabi.
+    - The Qatari ministry urges the public to follow official channels for reliable information regarding the situation.
+
+  Video ID: K00tWAxFiKk
+  Chunks: 4
+  Points Stored: 4
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Iran-Israel conflict, European Union diplomatic unity, US-Spain trade tensions, Middle East regional stability, Iranian nuclear and ballistic programs
+  Is Breaking: False
+  Key Claims:
+    - The Belgian Foreign Minister stated that military strikes by the US and Israel on Iran did not align with the standards of international law.
+    - The United States has reportedly threatened a trade embargo against Spain due to its differing stance on the conflict.
+    - European countries are struggling to reach a unified response due to concerns over energy security and the legitimacy of military actions.
+    - Belgian Foreign Minister Maxime Pavo claimed that Iran's internal human rights violations and nuclear ambitions necessitated a 'stop' to its current behavior.
+    - The Belgian government expressed solidarity with Spain, arguing that allies should not be threatened for exercising their sovereignty in foreign policy.
+
+  Video ID: cD6NXom_c6E
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iris Dena sinking, US-Iran naval confrontation, Indian Ocean rescue mission, Sri Lanka emergency response
+  Is Breaking: True
+  Key Claims:
+    - An American submarine sank the Iranian naval frigate Iris Dena with a torpedo in the Indian Ocean.
+    - At least 87 people were killed and 32 sailors were rescued by Sri Lankan forces.
+    - The incident occurred approximately 40 kilometers off the coast of Sri Lanka.
+    - The United States claims this is the first sinking of an enemy ship by torpedo since World War II.
+    - The Iranian vessel was returning from the International Fleet Review 2026 in India.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/bbcnews.json
+Status: success
+  Video ID: pGrF6QyeIbo
+  Chunks: 7
+  Points Stored: 7
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: US-Israel war with Iran, Global oil reserve release, Strait of Hormuz shipping attacks, Economic impact of Middle East conflict, US military strikes in Iran
+  Is Breaking: True
+  Key Claims:
+    - The International Energy Agency approved the release of 400 million barrels of oil reserves to curb rising prices.
+    - Approximately 20% of the world's oil passes through the Strait of Hormuz, which is currently largely paralyzed due to attacks.
+    - US Central Command has struck over 5,000 targets in Iran, including infrastructure near the capital, Tehran.
+    - Donald Trump stated that the US has neutralized the Iranian navy and significantly reduced the threat of sea mines.
+    - Rising oil prices have led to increased mortgage rates and the removal of 500 mortgage products from the UK market.
+
+  Video ID: lJeIosDnhQo
+  Chunks: 8
+  Points Stored: 8
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Strait of Hormuz shipping security, Iran's maritime military capabilities, Kharg Island oil infrastructure, Asymmetric naval warfare tactics, US Navy escort operations
+  Is Breaking: False
+  Key Claims:
+    - The Strait of Hormuz carries 20% of the world's daily oil supply and 20% of global liquefied natural gas.
+    - Iran employs asymmetric tactics like fast attack craft, jet skis with RPGs, and naval mines to disrupt maritime traffic.
+    - Kharg Island is Iran's most critical energy infrastructure, handling up to 95% of its crude oil exports.
+    - Circular tidal currents in the region can drift mines back into areas previously cleared by mine-hunting vessels.
+    - The US uses the Phalanx close-in weapon system and literal combat ships to protect convoys from swarming attacks.
+
+  Video ID: gy2cKHPPnZc
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Strait of Hormuz, US-Iran conflict, Iranian mine-laying boats, Global oil and gas supply, Maritime security
+  Is Breaking: False
+  Key Claims:
+    - The United States claims to have destroyed 16 Iranian mine-laying boats in the Strait of Hormuz.
+    - President Trump threatened Iran with quick and violent retaliation if it laid mines in the waterway.
+    - The Strait of Hormuz is a key shipping lane through which more than 20% of the world's oil and gas transits.
+    - Iran has invested in submarines, anti-ship missiles, and fast attack boats to potentially block the strait.
+    - International discussions are underway regarding naval escorts to protect shipping tankers in the region.
+
+  Video ID: 1vDrZdyTDHk
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: UK mortgage rates, Middle East conflict economic impact, Rising interest rates, Cost of living, Lending market uncertainty
+  Is Breaking: False
+  Key Claims:
+    - Mortgage interest rates are rising while the number of available mortgage products is decreasing.
+    - Lenders have withdrawn hundreds of mortgage options due to pricing uncertainty caused by global conflict.
+    - The average interest rate for two-year and five-year fixed mortgage deals has risen above 5%.
+    - Energy bills are expected to increase this summer if there is no speedy resolution to the conflict.
+    - Supermarkets may raise food prices as a result of the ongoing geopolitical turmoil.
+
+  Video ID: nhr3mIMD4uQ
+  Chunks: 7
+  Points Stored: 7
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: US-Israel war with Iran, Global oil reserve release, Israeli strikes on Beirut, Iranian naval and drone operations, Geopolitical impact on Russia and Ukraine
+  Is Breaking: True
+  Key Claims:
+    - The US military reported eliminating 16 Iranian mine-laying ships threatening the Strait of Hormuz.
+    - International Energy Agency members agreed to release 400 million barrels of oil to stabilize rising prices.
+    - Israeli strikes in Lebanon have reportedly resulted in nearly 600 deaths, including hits on residential areas in Beirut.
+    - Three commercial ships were struck by projectiles in the Gulf, with Iran claiming responsibility for one.
+    - Iranian drones were intercepted near Dubai International Airport for the second time in five days, causing four injuries.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/cbsnews.json
+Status: success
+  Video ID: mpJOF-7K8TU
+  Chunks: 2
+  Points Stored: 2
+  Category: Congress & Legislation
+  Sentiment: neutral
+  Topics: Senate war powers resolution, Iran military force, Senator Tim Kaine, Congressional oversight, House resolution vote
+  Is Breaking: False
+  Key Claims:
+    - The Senate failed to advance a war powers resolution aimed at blocking the president from using further military force against Iran.
+    - The resolution was co-sponsored by Democrat Tim Kaine and Republican Rand Paul, but received 53 votes against it.
+    - Speaker Mike Johnson opposed the effort, claiming it would empower enemies and kneecap U.S. forces.
+    - Republican Senators Susan Collins and Lisa Murkowski voted against the resolution despite previously supporting a similar measure for Venezuela.
+    - Moderate Democrats have proposed an alternative bill that allows 30 days for troop withdrawal instead of an immediate withdrawal.
+
+  Video ID: GjWbmrIhMxc
+  Chunks: 6
+  Points Stored: 6
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: US citizens stranded in Qatar, State Department evacuation efforts, Iran-Israel conflict, Economic impact of Middle East war, President Trump's crisis response
+  Is Breaking: True
+  Key Claims:
+    - A Florida man in Qatar reported the US Embassy provided no direct evacuation help, instead advising him to make his own way to Saudi Arabia.
+    - The State Department has reportedly assisted approximately 6,500 Americans in departing the Middle East using overland routes and charter services.
+    - The national average gas price jumped 9 cents in a single day, marking the largest daily increase since March 2022.
+    - President Trump stated that a formal evacuation plan was not in place because the conflict situation developed very quickly.
+    - The State Department launched a new crisis intake form specifically for Americans trying to depart the UAE, Qatar, Israel, and Saudi Arabia.
+
+  Video ID: FA9S6UihqGg
+  Chunks: 3
+  Points Stored: 3
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Strait of Hormuz shipping, Global oil price surge, Iran maritime threats, Energy market disruption, Middle East oil production
+  Is Breaking: True
+  Key Claims:
+    - The Strait of Hormuz is a critical route for 20 million barrels of oil daily and a fifth of global liquefied natural gas flows.
+    - Two of the world's largest shipping companies have suspended travel through the strait due to threats from Iran.
+    - While the US is largely supply-insulated, domestic gas prices are rising because they are tied to global oil price fluctuations.
+    - More than 80% of oil and gas shipments through the strait are destined for Asian nations, including China, India, Japan, and South Korea.
+    - Oil producers like Iraq may have to shut in production because they lack the storage capacity for oil that cannot be shipped out.
+
+  Video ID: cLEa3DIcAzU
+  Chunks: 6
+  Points Stored: 6
+  Category: Congress & Legislation
+  Sentiment: negative
+  Topics: Iran War Powers Resolution, Congressional military oversight, Middle East military escalation, Constitutional war authority
+  Is Breaking: True
+  Key Claims:
+    - Senator Kaine argues that the current military actions against Iran constitute a full-scale war requiring Congressional approval.
+    - The administration allegedly provided no evidence of an imminent threat from Iran during classified briefings to justify military action.
+    - Speakers claim that 25 years of Middle East wars have cost the U.S. over $8 trillion and resulted in nearly 80,000 casualties.
+    - Senator Schumer states that Secretary of Defense Hegseth described the military engagement as 'accelerating' with no clear strategy.
+    - The bipartisan resolution is intended to force a debate and vote before the President can continue military hostilities against Iran.
+
+  Video ID: TL5IYGVOsB8
+  Chunks: 3
+  Points Stored: 3
+  Category: US Elections & Voting
+  Sentiment: negative
+  Topics: DHS presence at polling places, Non-citizen voter fraud allegations, Heritage Foundation voter fraud data, Seizure of voting machines proposal, Election security authority
+  Is Breaking: False
+  Key Claims:
+    - Representative Goldman stated that Heritage Foundation data shows only 10 instances of non-citizen voter fraud out of two billion votes cast since 1992.
+    - Secretary Noem testified that she has no current plans to station immigration agents at polling sites.
+    - Representative Goldman referenced a 17-page proposed executive order that would authorize the seizure of voting machines and the banning of mail-in ballots.
+    - Secretary Noem stated she has not read the proposed executive order nor discussed it with the White House.
+    - The Secretary asserted that her department's role is to identify vulnerabilities in critical infrastructure and make recommendations to states regarding election security.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/cnbc.json
+Status: partial_failed
+  Video ID: 4iRvVxVn34I
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Fertilizer supply chain disruption, Strait of Hormuz blockade, Global food inflation, U.S.-Iran conflict, Spring planting season
+  Is Breaking: True
+  Key Claims:
+    - Approximately one-third of the global fertilizer trade moves through the Strait of Hormuz.
+    - About half of global food production depends on synthetic nitrogen fertilizer produced in the Middle East.
+    - The Strait of Hormuz has been effectively impassable for cargo since February 28th due to security fears.
+    - Experts predict U.S. food inflation will rise by approximately two percentage points as a result of the trade blockage.
+    - Global oil prices reached nearly $120 per barrel before fluctuating based on presidential statements about the war's duration.
+
+  Video ID: qo4ltFA6i28
+  Chunks: 3
+  Points Stored: 3
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran conflict oil shock, global auto supply chain, rising energy and manufacturing costs, aluminum and plastic shortages
+  Is Breaking: False
+  Key Claims:
+    - Threats to tankers in the Strait of Hormuz are effectively cutting off 20% of the world's oil supply.
+    - Rising oil prices impact the cost of petrochemicals used to produce plastics, which make up about 30% of car parts.
+    - The Gulf region produces 9% of global aluminum, and the U.S. relies on that region for 20% of its aluminum imports.
+    - U.S. gas prices have risen significantly in the last two weeks, with only 19 states currently maintaining prices below $3 a gallon.
+    - Some shipping tankers are diverting around Africa to avoid the conflict region, adding weeks to transit times for components.
+
+  Video ID: 1Fl6aQO0ZY0
+  Chunks: 2
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: AnsUSPM6RBI
+  Chunks: 1
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: e5POYwqVpiU
+  Chunks: 3
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/foxnews.json
+Status: partial_failed
+  Video ID: 7RNG7X6zAVY
+  Chunks: 3
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: HhZUqDJ30kI
+  Chunks: 2
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: 6dzggQo5UdA
+  Chunks: 2
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: aJcXpdrKWkE
+  Chunks: 1
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: cL97_X2EKfU
+  Chunks: 5
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/nbcnews.json
+Status: partial_failed
+  Video ID: nD8srQqLupU
+  Chunks: 1
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: 7jPQqJzI4is
+  Chunks: 1
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: xxAsX9vGoDU
+  Chunks: 2
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: fu1dw2R0D6M
+  Chunks: 3
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: 2uuBLtI0Y_k
+  Chunks: 2
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/newyorktimes.json
+Status: partial_failed
+  Video ID: CeJwM8-qld8
+  Chunks: 1
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: lcfVNgdrrd4
+  Chunks: 1
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: KdiHL7cmxGI
+  Chunks: 2
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: ZhxY-WpfloY
+  Chunks: 1
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: 4m85UXYa3Lc
+  Chunks: 2
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/skynews.json
+Status: partial_failed
+  Video ID: RkTxgzfxjU4
+  Chunks: 2
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: CIlZ0ruUa5M
+  Chunks: 2
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: WQVDnmiQ4a8
+  Chunks: 1
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: yboBnjyhXWw
+  Chunks: 1
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: Z_4c97ne8Z0
+  Chunks: 2
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/washingtonpost.json
+Status: partial_failed
+  Video ID: Ysh0LqNLGvs
+  Chunks: 1
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: ACKNDuc2tqA
+  Chunks: 1
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: UoK4LuN0BVI
+  Chunks: 1
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: 7ZGnH6mDsqo
+  Chunks: 1
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+  Video ID: 5hMRW_EoJyY
+  Chunks: 1
+  Points Stored: 0
+  Error: cannot access local variable 'raw' where it is not associated with a value
+
+--------------------------------------------------------------------------------
+
