@@ -18,6 +18,8 @@ class Settings:
     def __init__(self):
         self.s3_bucket = os.getenv("S3_BUCKET", "")
         self.s3_prefix = os.getenv("S3_PREFIX", "youtube-data/")
+        self.aws_region = os.getenv("AWS_REGION", "us-east-2")
+        self.dynamodb_table = os.getenv("DYNAMODB_TABLE", "youtube-videos")
         self.s3_object_limit = int(os.getenv("S3_OBJECT_LIMIT", "3"))
         self.genai_api_key = os.getenv("GENAI_API_KEY") or os.getenv("GEMINI_API_KEY", "")
         self.gemini_model_id = os.getenv("GEMINI_MODEL_ID", "gemini-2.0-flash")

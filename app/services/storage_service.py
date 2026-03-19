@@ -1,3 +1,4 @@
+import base64
 """
 storage_service.py - S3 Storage Service
 
@@ -17,9 +18,51 @@ from app.core.config import settings
 
 
 class StorageService:
-    def __init__(self, s3_client=None, bucket=None):
+    def __init__(self, s3_client=None, bucket=None, dynamodb_resource=None):
         self.s3_client = s3_client or boto3.client("s3")
         self.bucket = bucket or settings.s3_bucket
+        self.dynamodb = dynamodb_resource or boto3.resource("dynamodb", region_name=settings.aws_region)
+
+    def list_videos(self, limit: int = 20, cursor: str = None):
+        list_kwargs = {
+            "Bucket": self.bucket,
+            "Prefix": settings.s3_prefix,
+            "MaxKeys": limit,
+        }
+        if cursor:
+            list_kwargs["ContinuationToken"] = base64.b64decode(cursor.encode()).decode()
+
+        response = self.s3_client.list_objects_v2(**list_kwargs)
+
+        items = []
+        for obj in response.get("Contents", []):
+            key = obj.get("Key", "")
+            if not key or key.endswith("/"):
+                continue
+            try:
+                payload = self.get_json_object(key)
+            except (ClientError, json.JSONDecodeError, UnicodeDecodeError):
+                continue
+
+            channel = payload.get("channel", "")
+            for video in payload.get("videos", []):
+                items.append({
+                    "video_id": video.get("videoId", ""),
+                    "channel": channel,
+                    "title": video.get("title", ""),
+                    "description": video.get("description", ""),
+                    "published_at": video.get("publishedAt", ""),
+                    "view_count": int(video.get("viewCount", 0)),
+                    "like_count": int(video.get("likeCount", 0)),
+                    "comment_count": int(video.get("commentCount", 0)),
+                })
+
+        next_cursor = None
+        if response.get("IsTruncated"):
+            token = response.get("NextContinuationToken", "")
+            next_cursor = base64.b64encode(token.encode()).decode()
+
+        return {"items": items, "total_returned": len(items), "next_cursor": next_cursor}
 
     def list_object_keys(self, prefix=None, limit=None):
         use_prefix = prefix if prefix is not None else settings.s3_prefix
