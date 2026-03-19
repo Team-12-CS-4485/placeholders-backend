@@ -109,6 +109,7 @@ docker compose -f docker-compose.qdrant.yml up -d
 4. Run API server:
 ```bash
 uvicorn app.main:app --reload
+Go to http://localhost:8000/docs
 ```
 
 5. Trigger pipeline via API:
