@@ -15,9 +15,11 @@ both S3 (as JSON for the analysis pipeline) and DynamoDB (for metadata persisten
 
 from googleapiclient.discovery import build
 import yt_dlp
-from config import NEWS_CHANNELS, YOUTUBE_API_KEY, MAX_VIDEOS_PER_CHANNEL, MIN_VIEW_COUNT, TIME_WINDOW_DAYS, COMMENTS_PER_VIDEO, MAX_VIDEO_DURATION_MINUTES
+from config import NEWS_CHANNELS, CHANNEL_BATCHES, YOUTUBE_API_KEY, MAX_VIDEOS_PER_CHANNEL, MIN_VIEW_COUNT, TIME_WINDOW_DAYS, COMMENTS_PER_VIDEO, MAX_VIDEO_DURATION_MINUTES
+from rate_limit import retry_api_call, retry_transcript, QuotaExhaustedError
 import json
 import re
+import time as _time
 from datetime import datetime, time, timedelta, timezone
 import os
 import boto3
@@ -35,6 +37,7 @@ handler.setFormatter(formatter)
 
 if not logger.handlers:
     logger.addHandler(handler)
+logger.propagate = False
 
 # AWS clients
 s3_client = boto3.client('s3')
@@ -49,6 +52,7 @@ def build_client(api_key: str):
     return build("youtube", "v3", developerKey=api_key)
 
 
+@retry_api_call
 def get_uploads_playlist(youtube, channel_id: str):
     
     response = youtube.channels().list(
@@ -63,6 +67,7 @@ def get_uploads_playlist(youtube, channel_id: str):
     return response["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
 
 
+@retry_api_call
 def get_latest_videos(youtube, uploads_playlist_id: str, max_results=MAX_VIDEOS_PER_CHANNEL):
     #Since we have so many filter lets fetch more videos than we need and then filter down to the top 5 that meet all criteria. This way we have a better chance of getting 5 good videos per channel.
     max_results = max_results * 5  # Fetch more to account for filtering
@@ -84,6 +89,7 @@ def get_latest_videos(youtube, uploads_playlist_id: str, max_results=MAX_VIDEOS_
     return videos
 
 
+@retry_api_call
 def get_video_statistics(youtube, video_ids):
     response = youtube.videos().list(
         part="statistics,contentDetails",
@@ -116,6 +122,7 @@ def is_within_duration_limit(duration_str, max_minutes=MAX_VIDEO_DURATION_MINUTE
     return total_minutes <= max_minutes
 
 
+@retry_api_call
 def get_top_comments(youtube, video_id, max_results):
     try:
         response = youtube.commentThreads().list(
@@ -134,20 +141,23 @@ def get_top_comments(youtube, video_id, max_results):
                 "text": comment["textDisplay"],
                 "likes": comment["likeCount"]
             })
-        
+
         return comments
+    except QuotaExhaustedError:
+        raise
     except Exception as e:
         logger.warning(f"Could not fetch comments for video {video_id}: {e}")
         return []
 
 
 
+@retry_transcript
 def get_video_transcript(video_id):
     """Fetch transcript using yt-dlp Python API without writing to disk."""
     import urllib.request
     url = f"https://www.youtube.com/watch?v={video_id}"
     from time import sleep
-    sleep(1)  # Sleep to avoid hitting rate limits on yt-dlp or YouTube when processing multiple videos in a loop
+    sleep(3)  # Sleep to avoid hitting rate limits on yt-dlp or YouTube when processing multiple videos in a loop
     ydl_opts = {
         'skip_download': True,
         'quiet': True,
@@ -186,6 +196,8 @@ def get_video_transcript(video_id):
         with urllib.request.urlopen(vtt_url) as response:
             vtt_content = response.read().decode("utf-8")
     except Exception as e:
+        if "429" in str(e) or "Too Many Requests" in str(e):
+            raise  # let @retry_transcript catch and retry
         logger.warning(f"[{video_id}] Error downloading VTT: {e}")
         return None
 
@@ -207,11 +219,37 @@ def get_video_transcript(video_id):
     return transcript if transcript else None
 
 
-def save_to_s3(channel_name, videos):
+_S3_CONFIG_KEY = "youtube-data/run_config.json"
+
+
+def get_current_week(s3_client, bucket: str) -> int:
+    """Read current week number from S3 config. Returns 1 if not yet set."""
+    try:
+        obj = s3_client.get_object(Bucket=bucket, Key=_S3_CONFIG_KEY)
+        config = json.loads(obj["Body"].read().decode("utf-8"))
+        return int(config.get("current_week", 1))
+    except ClientError as e:
+        if e.response["Error"]["Code"] in ("NoSuchKey", "NoSuchBucket"):
+            return 1
+        raise
+
+
+def save_current_week(s3_client, bucket: str, week: int):
+    """Write the next week number back to S3 config."""
+    s3_client.put_object(
+        Bucket=bucket,
+        Key=_S3_CONFIG_KEY,
+        Body=json.dumps({"current_week": week}),
+        ContentType="application/json",
+    )
+    logger.info(f"Week counter updated to {week} in S3 config")
+
+
+def save_to_s3(channel_name, videos, week_num: int):
     """Save channel data to S3"""
     try:
         timestamp = datetime.now().isoformat()
-        s3_key = f"youtube-data/week3/{channel_name.lower()}.json"
+        s3_key = f"youtube-data/week{week_num}/{channel_name.lower()}.json"
         
         payload = {
             "channel": channel_name,
@@ -324,20 +362,41 @@ def get_existing_video_ids(dynamodb, table_name, channel_name):
     return existing_ids
 
 
-def main():
-    """Process all channels and save to S3 and DynamoDB"""
+def main(partial: bool = False, batch: int = 0):
+    """
+    Process channels and save to S3 and DynamoDB.
+
+    batch=0  → all channels (default / manual --run-now)
+    batch=1/2/3 → only that batch group (scheduled cron runs)
+    partial=True → skip advancing the week counter after the run
+    """
     logger.info("YouTube Video Ingestion")
+
+    # Select channel subset based on batch
+    if batch and 1 <= batch <= len(CHANNEL_BATCHES):
+        batch_names = set(CHANNEL_BATCHES[batch - 1])
+        channels = {k: v for k, v in NEWS_CHANNELS.items() if k in batch_names}
+        logger.info(f"BATCH {batch} — {list(channels)}")
+    else:
+        channels = NEWS_CHANNELS
+
+    if partial:
+        logger.info("PARTIAL RUN — week counter will NOT advance after this run")
     logger.info(f"Time Window: Last {TIME_WINDOW_DAYS} days")
     logger.info(f"S3 Bucket: {S3_BUCKET}")
     logger.info(f"DynamoDB Table: {DYNAMODB_TABLE}")
-    logger.info(f"Processing {len(NEWS_CHANNELS)} channels")
-    
+    logger.info(f"Processing {len(channels)} channels")
+
+    week_num = get_current_week(s3_client, S3_BUCKET)
+    logger.info(f"S3 week label: week{week_num}")
+
     youtube = build_client(YOUTUBE_API_KEY)
     results = []
-    
-    for idx, (channel_name, channel_id) in enumerate(NEWS_CHANNELS.items(), 1):
+    quota_exhausted = False
+
+    for idx, (channel_name, channel_id) in enumerate(channels.items(), 1):
         try:
-            logger.info(f"[{idx}/{len(NEWS_CHANNELS)}] Processing {channel_name}...")
+            logger.info(f"[{idx}/{len(channels)}] Processing {channel_name}...")
             
             uploads_playlist = get_uploads_playlist(youtube, channel_id)
             if not uploads_playlist:
@@ -440,7 +499,7 @@ def main():
             
             # Save to S3 only after DynamoDB succeeds
             try:
-                save_to_s3(channel_name, filtered_videos)
+                save_to_s3(channel_name, filtered_videos, week_num)
             except Exception as e:
                 logger.error(f"[{channel_name}] Failed to save to S3: {e}")
                 results.append({"channel": channel_name, "status": "error", "error": f"S3 save failed: {e}"})
@@ -448,7 +507,17 @@ def main():
             
             logger.info(f"[{channel_name}] Successfully processed {len(filtered_videos)} videos")
             results.append({"channel": channel_name, "videoCount": len(filtered_videos), "status": "success"})
-            
+
+            # Sleep between channels to reduce IP-level rate limiting
+            if idx < len(channels):
+                logger.info("[rate-limit] Sleeping 60s before next channel...")
+                _time.sleep(60)
+
+        except QuotaExhaustedError:
+            logger.error(f"[{channel_name}] YouTube API quota exhausted — stopping run, will resume next cycle")
+            results.append({"channel": channel_name, "status": "error", "error": "quota exhausted"})
+            quota_exhausted = True
+            break
         except Exception as e:
             logger.error(f"[{channel_name}] Error: {e}")
             results.append({"channel": channel_name, "status": "error", "error": str(e)})
@@ -457,15 +526,29 @@ def main():
     logger.info("Ingestion Summary:")
     successful = sum(1 for r in results if r.get("status") == "success")
     failed = sum(1 for r in results if r.get("status") == "error")
-    logger.info(f"Successful: {successful}/{len(NEWS_CHANNELS)}")
-    logger.info(f"Failed: {failed}/{len(NEWS_CHANNELS)}")
+    logger.info(f"Successful: {successful}/{len(channels)}")
+    logger.info(f"Failed: {failed}/{len(channels)}")
     
     for result in results:
         if result.get("status") == "success":
-            logger.info(f" {result['channel']}: {result.get('videoCount', 0)} videos")
+            logger.info(f"  {result['channel']}: {result.get('videoCount', 0)} videos")
         else:
-            logger.error(f"{result['channel']}: {result.get('error', 'Unknown error')}")
-    
+            logger.error(f"  {result['channel']}: {result.get('error', 'Unknown error')}")
+
+    if quota_exhausted:
+        processed_channels = {r["channel"] for r in results}
+        skipped_channels = [ch for ch in channels if ch not in processed_channels]
+        logger.warning("INCOMPLETE BATCH RUN — quota was exhausted before all channels were processed")
+        logger.warning(f"  Channels processed : {[r['channel'] for r in results]}")
+        logger.warning(f"  Channels not reached: {skipped_channels}")
+        logger.warning(f"  week{week_num} in S3 is partial — rerun will write to week{week_num + 1}")
+
+    # Advance week counter only on a full (non-partial) run
+    if partial:
+        logger.info(f"PARTIAL RUN — week counter stays at {week_num}, next run will still write to week{week_num}")
+    else:
+        save_current_week(s3_client, S3_BUCKET, week_num + 1)
+
     logger.info("YouTube ingestion completed")
 
 if __name__ == "__main__":
