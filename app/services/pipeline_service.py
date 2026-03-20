@@ -17,6 +17,7 @@ from app.services.storage_service import StorageService
 from app.services.embedding_service import EmbeddingService
 from app.services.chunking_service import semantic_chunk
 from app.services.faiss_service import FAISSService
+from app.services.vector_service import VectorService
 
 
 class PipelineService:
@@ -24,6 +25,7 @@ class PipelineService:
         self.storage_service = storage_service or StorageService()
         self.embedding_service = embedding_service or EmbeddingService()
         self.faiss_service = faiss_service or FAISSService()
+        self.vector_service = VectorService()
         self.logger = get_logger(__name__)
 
     def run_s3_transcript_analysis(self, prefix=None, limit=None):
@@ -41,6 +43,7 @@ class PipelineService:
             total_transcripts = 0
             analyzed_transcripts = 0
             total_chunks_stored = 0
+            total_points_indexed = 0
             chunk_map = {}
             analysis_map = {}
 
@@ -77,6 +80,8 @@ class PipelineService:
                             transcript_key=transcript_key,
                             source_key=source_key,
                             transcript_index=idx,
+                            chunks=chunks,
+                            vectors=vectors,
                         )
 
                         # Gemini analysis skipped — no quota burned
@@ -85,7 +90,7 @@ class PipelineService:
                             "chunk_count": len(chunks),
                             "chunk_analyses": [],
                             "final_summary": "",
-                            "qdrant_points_indexed": points_indexed,
+                            "chunks_stored": points_indexed,
                             "error": None,
                         }
                         object_result["transcript_results"].append({
@@ -93,7 +98,7 @@ class PipelineService:
                             "transcript_index": idx,
                             "chunk_count": len(chunks),
                             "final_summary": "",
-                            "qdrant_points_indexed": points_indexed,
+                            "chunks_stored": points_indexed,
                             "error": None,
                         })
                         analyzed_transcripts += 1
@@ -145,7 +150,7 @@ class PipelineService:
                 f"objects={response['objects_processed']} "
                 f"transcripts_found={response['transcripts_found']} "
                 f"transcripts_indexed={response['transcripts_analyzed']} "
-                f"qdrant_points_indexed={response['qdrant_points_indexed']}"
+                f"qdrant_points_indexed={total_points_indexed}"
             )
 
             if analyzed_transcripts > 0:
