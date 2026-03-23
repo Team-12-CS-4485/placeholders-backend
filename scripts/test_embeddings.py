@@ -3,9 +3,12 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from data_collection.embeddings import embed_and_store, query_similar_chunks
+from data_collection.embeddings import embed_and_store, query_similar_chunks  # noqa: E402
 
-TRANSCRIPT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data/transcript.txt"))
+TRANSCRIPT_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "../data/transcript.txt")
+)
+
 
 def main():
     with open(TRANSCRIPT_PATH, "r", encoding="utf-8") as f:
@@ -14,8 +17,7 @@ def main():
     # Store the transcript
     print("Embedding and storing transcript...\n")
     num_chunks = embed_and_store(
-        transcript,
-        metadata={"channel": "CNN", "date": "2025-02-26"}
+        transcript, metadata={"channel": "CNN", "date": "2025-02-26"}
     )
     print(f"\nStored {num_chunks} chunks\n")
 
@@ -36,6 +38,7 @@ def main():
             print(f"\n  Result {i} | Score: {r['score']:.3f}")
             print(f"  {r['text'][:300].strip()}")
         print()
+
 
 if __name__ == "__main__":
     main()

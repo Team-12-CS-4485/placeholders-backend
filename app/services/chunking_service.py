@@ -13,6 +13,7 @@ DEFAULT_MODEL = "nomic-ai/nomic-embed-text-v1.5"
 
 # ── Sentence splitter ────────────────────────────────────────────────────────
 
+
 def _split_sentences(text: str) -> list[str]:
 
     raw = re.split(r"(?<=[.!?])\s+", text.strip())
@@ -27,8 +28,9 @@ def _split_sentences(text: str) -> list[str]:
 
 # ── SemanticChunker ──────────────────────────────────────────────────────────
 
+
 class SemanticChunker:
-  
+
     _model = None
     _model_name_loaded: Optional[str] = None
 
@@ -47,7 +49,6 @@ class SemanticChunker:
         self.use_nomic_prefix = use_nomic_prefix
         self._available = self._try_load_model()
 
-
     def _try_load_model(self) -> bool:
         if (
             SemanticChunker._model is not None
@@ -56,6 +57,7 @@ class SemanticChunker:
             return True
         try:
             from sentence_transformers import SentenceTransformer
+
             logger.info(f"CHUNKER_LOAD model={self.model_name}")
             SemanticChunker._model = SentenceTransformer(
                 self.model_name,
@@ -71,7 +73,9 @@ class SemanticChunker:
             )
             return False
         except Exception as exc:
-            logger.warning(f"CHUNKER_LOAD_FAILED error={exc} — using character chunking fallback")
+            logger.warning(
+                f"CHUNKER_LOAD_FAILED error={exc} — using character chunking fallback"
+            )
             return False
 
     @property
@@ -82,7 +86,6 @@ class SemanticChunker:
     def available(self) -> bool:
         return self._available
 
-
     def chunk(self, text: str) -> list[str]:
 
         if not text or not text.strip():
@@ -91,11 +94,13 @@ class SemanticChunker:
             try:
                 return self._semantic_chunk(text)
             except Exception as exc:
-                logger.warning(f"SEMANTIC_CHUNK_ERROR error={exc} — falling back to char chunking")
+                logger.warning(
+                    f"SEMANTIC_CHUNK_ERROR error={exc} — falling back to char chunking"
+                )
         return self._character_chunk(text)
 
     def embed(self, texts: list[str], is_query: bool = False) -> list[list[float]]:
-      
+
         if not self._available:
             raise RuntimeError(
                 "Local model not loaded. "
@@ -113,11 +118,10 @@ class SemanticChunker:
         vectors = self.model.encode(
             prefixed,
             show_progress_bar=False,
-            normalize_embeddings=True, 
+            normalize_embeddings=True,
             batch_size=32,
         )
         return [v.tolist() for v in vectors]
-
 
     def _semantic_chunk(self, text: str) -> list[str]:
         import numpy as np  # type: ignore
@@ -156,7 +160,10 @@ class SemanticChunker:
             centroid_norm = centroid / (np.linalg.norm(centroid) + 1e-10)
             similarity = float(np.dot(centroid_norm, embeddings[i]))
 
-            if similarity < self.similarity_threshold and current_words >= self.min_words_per_chunk:
+            if (
+                similarity < self.similarity_threshold
+                and current_words >= self.min_words_per_chunk
+            ):
                 chunks.append(" ".join(current))
                 current = [sentences[i]]
             else:
@@ -165,10 +172,14 @@ class SemanticChunker:
         if current:
             chunks.append(" ".join(current))
 
-        logger.info(f"SEMANTIC_CHUNK_DONE sentences={len(sentences)} chunks={len(chunks)}")
+        logger.info(
+            f"SEMANTIC_CHUNK_DONE sentences={len(sentences)} chunks={len(chunks)}"
+        )
         return chunks
 
-    def _character_chunk(self, text: str, chunk_size: int = 1500, overlap: int = 150) -> list[str]:
+    def _character_chunk(
+        self, text: str, chunk_size: int = 1500, overlap: int = 150
+    ) -> list[str]:
 
         clean = text.strip()
         chunks, start = [], 0

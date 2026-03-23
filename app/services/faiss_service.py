@@ -16,13 +16,14 @@ Index files:
 """
 
 import math
+import os
+import pickle
 import re
 from collections import Counter
-from sentence_transformers import SentenceTransformer
+
 import faiss
-import numpy as np
-import pickle
-import os
+from sentence_transformers import SentenceTransformer
+
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -88,7 +89,9 @@ class FAISSService:
             pickle.dump(metadata, f)
         logger.info(f"FAISS_SAVE vectors={index.ntotal}")
 
-    def embed_and_store(self, chunks, source_key="", transcript_index=0, extra_metadata=None):
+    def embed_and_store(
+        self, chunks, source_key="", transcript_index=0, extra_metadata=None
+    ):
         """
         Embeds chunks and stores them in the local FAISS index.
 
@@ -208,7 +211,9 @@ class FAISSService:
             semantic_map[idx] = max(0.0, float(score))  # cosine similarity 0-1
 
         # --- Keyword search via BM25 ---
-        kw_indices, kw_scores = self._keyword_search(query_text, all_metadata, top_k=fetch_k)
+        kw_indices, kw_scores = self._keyword_search(
+            query_text, all_metadata, top_k=fetch_k
+        )
 
         # Normalize BM25 scores to 0-1 range
         keyword_map = {}
@@ -233,12 +238,14 @@ class FAISSService:
         results = []
         for idx, final_score, sem_score, kw_score in combined:
             meta = all_metadata[idx]
-            results.append({
-                "score": round(final_score, 4),
-                "semantic_score": round(sem_score, 4),
-                "keyword_score": round(kw_score, 4),
-                **meta,
-            })
+            results.append(
+                {
+                    "score": round(final_score, 4),
+                    "semantic_score": round(sem_score, 4),
+                    "keyword_score": round(kw_score, 4),
+                    **meta,
+                }
+            )
 
         logger.info(
             f"HYBRID_SEARCH query='{query_text[:50]}' "

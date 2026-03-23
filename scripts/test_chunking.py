@@ -1,13 +1,17 @@
 import os
 import sys
-import tiktoken
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from data_collection.chunking import semantic_chunk
+import tiktoken  # noqa: E402
+from data_collection.chunking import semantic_chunk  # noqa: E402
 
-TRANSCRIPT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data/transcript.txt"))
-OUTPUT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data/chunks_output.txt"))
+TRANSCRIPT_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "../data/transcript.txt")
+)
+OUTPUT_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "../data/chunks_output.txt")
+)
 
 
 def main():

@@ -30,7 +30,9 @@ def run_transcript_analysis_job(prefix=None, limit=None, output_file=None):
             if obj.get("error"):
                 file.write(f"Error: {obj['error']}\n")
             for transcript_result in obj["transcript_results"]:
-                file.write(f"Transcript Index: {transcript_result['transcript_index']}\n")
+                file.write(
+                    f"Transcript Index: {transcript_result['transcript_index']}\n"
+                )
                 file.write(f"Chunk Count: {transcript_result['chunk_count']}\n")
                 if transcript_result.get("error"):
                     file.write(f"Analysis Error: {transcript_result['error']}\n\n")

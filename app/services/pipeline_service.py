@@ -13,15 +13,17 @@ Also provides semantic search over indexed chunks using FAISS.
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.services.storage_service import StorageService
-from app.services.embedding_service import EmbeddingService
 from app.services.chunking_service import semantic_chunk
+from app.services.embedding_service import EmbeddingService
 from app.services.faiss_service import FAISSService
+from app.services.storage_service import StorageService
 from app.services.vector_service import VectorService
 
 
 class PipelineService:
-    def __init__(self, storage_service=None, embedding_service=None, faiss_service=None):
+    def __init__(
+        self, storage_service=None, embedding_service=None, faiss_service=None
+    ):
         self.storage_service = storage_service or StorageService()
         self.embedding_service = embedding_service or EmbeddingService()
         self.faiss_service = faiss_service or FAISSService()
@@ -93,14 +95,16 @@ class PipelineService:
                             "chunks_stored": points_indexed,
                             "error": None,
                         }
-                        object_result["transcript_results"].append({
-                            "transcript_key": transcript_key,
-                            "transcript_index": idx,
-                            "chunk_count": len(chunks),
-                            "final_summary": "",
-                            "chunks_stored": points_indexed,
-                            "error": None,
-                        })
+                        object_result["transcript_results"].append(
+                            {
+                                "transcript_key": transcript_key,
+                                "transcript_index": idx,
+                                "chunk_count": len(chunks),
+                                "final_summary": "",
+                                "chunks_stored": points_indexed,
+                                "error": None,
+                            }
+                        )
                         analyzed_transcripts += 1
                         total_points_indexed += points_indexed
                         print(
@@ -118,14 +122,16 @@ class PipelineService:
                             "error": str(exc),
                         }
                         object_result["status"] = "partial_failed"
-                        object_result["transcript_results"].append({
-                            "transcript_key": transcript_key,
-                            "transcript_index": idx,
-                            "error": str(exc),
-                            "chunk_count": len(chunks),
-                            "final_summary": "",
-                            "chunks_stored": 0,
-                        })
+                        object_result["transcript_results"].append(
+                            {
+                                "transcript_key": transcript_key,
+                                "transcript_index": idx,
+                                "error": str(exc),
+                                "chunk_count": len(chunks),
+                                "final_summary": "",
+                                "chunks_stored": 0,
+                            }
+                        )
                         print(
                             f"UPSERT_FAILURE key={transcript_key} "
                             f"chunks={len(chunks)} error={exc}"

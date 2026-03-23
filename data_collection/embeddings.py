@@ -1,16 +1,17 @@
-from sentence_transformers import SentenceTransformer
-import faiss
-import numpy as np
-import pickle
 import os
+import pickle
+
+import faiss
+from sentence_transformers import SentenceTransformer
+
 from data_collection.chunking import semantic_chunk
 
 # Must use same model as chunking.py
-model = SentenceTransformer('all-mpnet-base-v2')
+model = SentenceTransformer("all-mpnet-base-v2")
 
 EMBEDDING_DIMENSION = 768  # all-mpnet-base-v2 outputs 768 dims
-INDEX_PATH = "data/faiss_index.bin"       # where the FAISS index is saved
-METADATA_PATH = "data/chunk_metadata.pkl" # where chunk text + metadata is saved
+INDEX_PATH = "data/faiss_index.bin"  # where the FAISS index is saved
+METADATA_PATH = "data/chunk_metadata.pkl"  # where chunk text + metadata is saved
 
 
 def load_or_create_index():
@@ -78,12 +79,14 @@ def embed_and_store(transcript, metadata={}):
 
     # Step 5: Store metadata alongside — FAISS only stores vectors, not text
     for i, chunk in enumerate(chunks):
-        all_metadata.append({
-            **metadata,
-            "chunk_index": i,
-            "text": chunk,
-            "word_count": len(chunk.split())
-        })
+        all_metadata.append(
+            {
+                **metadata,
+                "chunk_index": i,
+                "text": chunk,
+                "word_count": len(chunk.split()),
+            }
+        )
 
     # Step 6: Save everything to disk
     save(index, all_metadata)
@@ -120,10 +123,9 @@ def query_similar_chunks(query_text, top_k=5):
     for score, idx in zip(scores[0], indices[0]):
         if idx == -1:  # FAISS returns -1 if not enough results
             continue
-        results.append({
-            "score": float(score),  # cosine similarity 0-1
-            **all_metadata[idx]
-        })
+        results.append(
+            {"score": float(score), **all_metadata[idx]}  # cosine similarity 0-1
+        )
 
     return results
 
@@ -131,21 +133,17 @@ def query_similar_chunks(query_text, top_k=5):
 # Example usage
 if __name__ == "__main__":
     sample_transcript = """
-    There is new bipartisan frustration in Congress after the Justice Department 
-    sent a list of politically exposed persons in the millions of files related 
-    to its probes of Jeffrey Epstein. Several lawmakers argue the Justice Department 
-    is intentionally muddying the waters on who was a predator versus someone 
+    There is new bipartisan frustration in Congress after the Justice Department
+    sent a list of politically exposed persons in the millions of files related
+    to its probes of Jeffrey Epstein. Several lawmakers argue the Justice Department
+    is intentionally muddying the waters on who was a predator versus someone
     simply mentioned in an email or perhaps an article.
     """
 
     # Store transcript chunks
     embed_and_store(
         transcript=sample_transcript,
-        metadata={
-            "video_id": "yt_abc123",
-            "channel": "CNN",
-            "date": "2025-02-26"
-        }
+        metadata={"video_id": "yt_abc123", "channel": "CNN", "date": "2025-02-26"},
     )
 
     # Query

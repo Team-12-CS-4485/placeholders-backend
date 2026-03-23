@@ -25,12 +25,12 @@ class VectorService:
     def _get_stored_vector_size(self) -> Optional[int]:
         try:
             info = self.client.get_collection(self.collection_name)
-            return info.config.params.vectors.size  
+            return info.config.params.vectors.size
         except Exception:
             return None
 
     def ensure_collection(self, vector_size: int) -> None:
-    
+
         stored_size = self._get_stored_vector_size()
 
         if stored_size is not None:
@@ -53,7 +53,7 @@ class VectorService:
                 size=vector_size,
                 distance=models.Distance.COSINE,
                 hnsw_config=models.HnswConfigDiff(
-                    m=16,             
+                    m=16,
                     ef_construct=100,
                 ),
             ),
@@ -92,7 +92,7 @@ class VectorService:
         chunks: list[str],
         vectors: list[list[float]],
     ) -> int:
-        
+
         if not chunks or not vectors:
             return 0
         if len(chunks) != len(vectors):
@@ -117,7 +117,9 @@ class VectorService:
                     "word_count": len(chunk_text.split()),
                 },
             )
-            for chunk_idx, (chunk_text, vector) in enumerate(zip(chunks, vectors), start=1)
+            for chunk_idx, (chunk_text, vector) in enumerate(
+                zip(chunks, vectors), start=1
+            )
         ]
 
         self.client.upsert(
@@ -139,7 +141,7 @@ class VectorService:
         limit: int = 5,
         source_key_filter: Optional[str] = None,
     ) -> list[dict]:
-       
+
         if not self.collection_exists():
             logger.warning("QDRANT_SEARCH_SKIP — collection does not exist")
             return []

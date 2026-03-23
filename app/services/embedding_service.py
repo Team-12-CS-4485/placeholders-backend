@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class EmbeddingService:
-    
+
     def __init__(
         self,
         client=None,
@@ -113,19 +113,19 @@ class EmbeddingService:
     # ── Embedding (local, free) ───────────────────────────────────────────────
 
     def embed_text(self, text: str, is_query: bool = False) -> list[float]:
-     
+
         vectors = self._chunker.embed([text], is_query=is_query)
         return vectors[0]
 
     def embed_chunks(self, chunks: list[str]) -> list[list[float]]:
-       
+
         if not chunks:
             return []
         logger.info(f"EMBED_LOCAL chunks={len(chunks)}")
         return self._chunker.embed(chunks, is_query=False)
 
     def embed_query(self, query: str) -> list[float]:
-      
+
         return self.embed_text(query, is_query=True)
 
     # ── Utility ──────────────────────────────────────────────────────────────
