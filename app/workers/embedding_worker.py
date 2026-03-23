@@ -2,9 +2,8 @@
 embedding_worker.py - Batch Transcript Analysis Worker
 
 CLI entrypoint for running the transcript analysis pipeline as a batch job.
-Executes the full pipeline (S3 -> chunk -> embed -> analyze -> Qdrant) and writes
-detailed results to a text output file including per-object status, chunk counts,
-and final summaries.
+Executes the full pipeline (S3 -> chunk -> Gemini intelligence -> embed -> Qdrant)
+and writes per-video results to a text output file.
 
 Usage: python3 -m app.workers.embedding_worker
 """
@@ -21,21 +20,33 @@ def run_transcript_analysis_job(prefix=None, limit=None, output_file=None):
     with open(target_file, "w", encoding="utf-8") as file:
         file.write(f"Prefix: {result['prefix']}\n")
         file.write(f"Objects Processed: {result['objects_processed']}\n")
-        file.write(f"Transcripts Found: {result['transcripts_found']}\n")
-        file.write(f"Transcripts Analyzed: {result['transcripts_analyzed']}\n\n")
+        file.write(f"Videos Found: {result['videos_found']}\n")
+        file.write(f"Videos Indexed: {result['videos_indexed']}\n")
+        file.write(f"Total Chunks Stored: {result['total_chunks_stored']}\n\n")
 
         for obj in result["results"]:
             file.write(f"Object: {obj['key']}\n")
             file.write(f"Status: {obj['status']}\n")
             if obj.get("error"):
                 file.write(f"Error: {obj['error']}\n")
-            for transcript_result in obj["transcript_results"]:
-                file.write(f"Transcript Index: {transcript_result['transcript_index']}\n")
-                file.write(f"Chunk Count: {transcript_result['chunk_count']}\n")
-                if transcript_result.get("error"):
-                    file.write(f"Analysis Error: {transcript_result['error']}\n\n")
-                else:
-                    file.write(f"Summary:\n{transcript_result['final_summary']}\n\n")
+
+            for video_result in obj["transcript_results"]:
+                file.write(f"  Video ID: {video_result['video_id']}\n")
+                file.write(f"  Chunks: {video_result['chunk_count']}\n")
+                file.write(f"  Points Stored: {video_result['chunks_stored']}\n")
+                if video_result.get("error"):
+                    file.write(f"  Error: {video_result['error']}\n")
+                elif video_result.get("intelligence"):
+                    intel = video_result["intelligence"]
+                    file.write(f"  Category: {intel.get('category')}\n")
+                    file.write(f"  Sentiment: {intel.get('sentiment')}\n")
+                    file.write(f"  Topics: {', '.join(intel.get('topics', []))}\n")
+                    file.write(f"  Is Breaking: {intel.get('is_breaking')}\n")
+                    file.write(f"  Key Claims:\n")
+                    for claim in intel.get("key_claims", []):
+                        file.write(f"    - {claim}\n")
+                file.write("\n")
+
             file.write("-" * 80 + "\n\n")
 
     return result
@@ -43,3 +54,8 @@ def run_transcript_analysis_job(prefix=None, limit=None, output_file=None):
 
 if __name__ == "__main__":
     run_transcript_analysis_job()
+
+    # Auto-sync any missing videos after pipeline completes
+    print("\n=== Running post-pipeline sync ===")
+    from scripts.sync_missing import main as sync_main
+    sync_main()

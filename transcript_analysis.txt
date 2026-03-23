@@ -1,0 +1,1426 @@
+Prefix: youtube-data/
+Objects Processed: 20
+Videos Found: 97
+Videos Indexed: 97
+Total Chunks Stored: 218
+
+Object: youtube-data/week1/abcnews.json
+Status: success
+  Video ID: DNnoPiSE7-Q
+  Chunks: 1
+  Points Stored: 1
+  Category: Congress & Legislation
+  Sentiment: neutral
+  Topics: Iran-US Relations, War Powers Resolution, Executive Power, Middle East Conflict, Congressional Oversight
+  Is Breaking: False
+  Key Claims:
+    - President Trump rated the US military operation against Iran as a 15 on a scale of 1 to 10.
+    - Senate Democrats attempted to force a war powers vote to restrict military action without congressional approval.
+    - Senate Republicans blocked the motion to discharge the war powers resolution.
+    - Democrats argue that the Constitution requires congressional approval for the president to declare war.
+    - Republicans maintain that the president does not need congressional authorization for these military operations.
+
+  Video ID: gQQFde2YBNk
+  Chunks: 2
+  Points Stored: 2
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Conflict, Military Casualties, Drone Warfare, US Foreign Policy
+  Is Breaking: True
+  Key Claims:
+    - Four US Army Reservists were killed in an Iranian drone strike on a facility in Kuwait.
+    - The identified victims include Sergeant Declan Cody, Sergeant First Class Nola Moore, Sergeant First Class Noah Teachens, and Captain Cody Cork.
+    - The soldiers were members of the 103rd Sustainment Command responsible for logistics and troop supplies.
+    - Military officials stated the facility where the strike occurred was vulnerable to aerial attacks.
+    - President Trump is attending the dignified transfer of the soldiers' remains at Dover Air Force Base.
+
+  Video ID: UcZ-djROsVA
+  Chunks: 2
+  Points Stored: 2
+  Category: Congress & Legislation
+  Sentiment: neutral
+  Topics: Iran Conflict, War Powers, Congressional Oversight, Presidential Authority, US Foreign Policy
+  Is Breaking: True
+  Key Claims:
+    - The Senate resolution to curtail the president's war powers in Iran failed to advance.
+    - Senator Rand Paul was the only Republican to vote in favor of the resolution.
+    - A Democrat, identified in the transcript as John Federman, voted against the resolution.
+    - The resolution would have required the president to obtain a formal declaration of war from Congress before further military action in Iran.
+    - Republicans argue the president has broad authority under Article Two of the Constitution as commander-in-chief.
+
+  Video ID: nhfYyuScrxo
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Middle East Conflict, NATO Operations, Missile Defense, Syria Conflict
+  Is Breaking: False
+  Key Claims:
+    - NATO intercepted a missile over Syria that was heading for Turkey.
+    - An unexploded missile is located near an airport in northeastern Syria.
+    - Individuals are standing near the site of the unexploded missile.
+
+  Video ID: qIiCnx8JTqs
+  Chunks: 2
+  Points Stored: 2
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Iranian Leadership, Middle East Politics, IRGC, International Security
+  Is Breaking: False
+  Key Claims:
+    - Mojtaba Khamenei is considered the frontrunner to succeed his father as the Supreme Leader of Iran.
+    - Mojtaba Khamenei has been a mastermind of the IRGC's intelligence operations and economic activities for decades.
+    - The IRGC controls approximately 30% of Iran's economy, while the Supreme Leader's office manages an estimated $100 billion in assets.
+    - There is significant internal resistance to Mojtaba's succession from Iranian clergy who view him as inexperienced.
+    - Israel has reportedly stated it will target whoever is named as the next leader of Iran.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/aljazeeraenglish.json
+Status: success
+  Video ID: 2GGbkr0kL5k
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Conflict, Protests & Activism, US Congress, US Foreign Policy
+  Is Breaking: False
+  Key Claims:
+    - A US Senator physically assisted police in removing an anti-war protester from a meeting.
+    - A protester, identified as a Marine, accused the Senator of breaking his hand.
+    - The protester's hand became stuck in a door during the altercation.
+    - The protest was centered on opposition to fighting for Israel.
+
+  Video ID: Db43VAsush8
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran Conflict, Middle East Geopolitics, Military Operations, Israel-Iran Relations
+  Is Breaking: False
+  Key Claims:
+    - Iranian spokesperson Fatima Muhajarani claims the country has delivered devastating blows to the United States and Israel.
+    - Iran acknowledges suffering significant losses, including the deaths of senior military officials and civilians.
+    - The Iranian government asserts that the U.S. and Israel miscalculated their strategic actions.
+    - Iran claims to have inflicted serious damage on its enemies in retaliation for strikes received.
+    - Iran vows to continue its current military and defensive course as long as state leadership deems it necessary.
+
+  Video ID: MrN_XOd8Ltw
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Middle East Security, Qatar, US Diplomacy, Regional Tensions
+  Is Breaking: True
+  Key Claims:
+    - Qatar's Ministry of Interior is evacuating residents living near the US embassy in Doha as a precautionary measure.
+    - The ministry provided suitable alternative accommodation for the displaced residents.
+    - The US embassy has advised its citizens to leave the region as soon as possible by any means.
+    - Citizens were encouraged to consider crossing land borders into Oman or Saudi Arabia if flights are unavailable.
+    - The evacuation announcement follows recent security incidents in Dubai and Abu Dhabi.
+
+  Video ID: K00tWAxFiKk
+  Chunks: 4
+  Points Stored: 4
+  Category: Global Diplomacy
+  Sentiment: neutral
+  Topics: Iran Conflict, Middle East Tensions, European Diplomacy, International Law, Energy Security
+  Is Breaking: True
+  Key Claims:
+    - Belgian Foreign Minister Maxime Pavo stated that the military attacks launched by the US and Israel are not aligned with international law standards.
+    - The Belgian Foreign Minister expressed solidarity with Spain regarding a potential trade embargo hinted at by the US president.
+    - EU foreign ministers are scheduled to meet with the Gulf Cooperation Council and Jordan to discuss regional stability and a ceasefire.
+    - Maxime Pavo claimed that Iran has continued to develop its ballistic and nuclear weapons programs despite long-standing diplomatic efforts.
+    - The Foreign Minister emphasized that while diplomacy has limits, the territorial integrity of neighboring countries like Lebanon must be respected.
+
+  Video ID: cD6NXom_c6E
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran-US Relations, Naval Warfare, Middle East Conflict, International Security
+  Is Breaking: True
+  Key Claims:
+    - An American submarine sank the Iranian naval frigate Iris Dena using a torpedo in the Indian Ocean.
+    - At least 87 people were killed and 32 survivors were rescued by the Sri Lanka Navy and Air Force.
+    - The incident occurred approximately 40 kilometers off the coast of Sri Lanka as the vessel returned from a naval gathering in India.
+    - The United States claims this is the first sinking of an enemy ship by a torpedo since World War II.
+    - Survivors and the deceased were transported to medical facilities in Gaul, Sri Lanka, for treatment and repatriation.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/bbcnews.json
+Status: success
+  Video ID: pGrF6QyeIbo
+  Chunks: 7
+  Points Stored: 7
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Conflict, Oil Markets, Global Economy, Energy Security, Naval Warfare
+  Is Breaking: True
+  Key Claims:
+    - The International Energy Agency approved the release of 400 million barrels of oil reserves, the largest in history, to curb rising prices.
+    - Shipping in the Strait of Hormuz is paralyzed, affecting approximately 20% of the world's oil supply.
+    - US forces claim to have destroyed 31 Iranian mine-laying vessels to reduce the threat to international shipping lanes.
+    - Israel has launched wide-scale strikes against infrastructure in Tehran and Hezbollah targets in Beirut, causing hundreds of casualties.
+    - The conflict is driving up global fuel prices and impacting the UK mortgage market by making interest rate cuts less likely.
+
+  Video ID: lJeIosDnhQo
+  Chunks: 8
+  Points Stored: 8
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Strait of Hormuz, Iran Conflict, Oil Markets, Naval Warfare, US Military Strategy
+  Is Breaking: True
+  Key Claims:
+    - Approximately 20% of the world's daily oil supply and 20% of global liquefied natural gas pass through the Strait of Hormuz.
+    - Iran's Kharg Island handles between 85% and 95% of the country's total crude oil exports.
+    - Iran utilizes asymmetric warfare tactics, including swarms of go-fast boats, jet skis with RPGs, and naval mines to disrupt shipping.
+    - The US Navy employs Phalanx close-in weapon systems and Littoral Combat Ships to defend against fast-attack craft.
+    - Military analysts are discussing potential concepts for US Special Operations forces to seize and hold Kharg Island to control Iran's economic lifeline.
+
+  Video ID: gy2cKHPPnZc
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran Conflict, Global Energy Security, Maritime Warfare, Middle East Geopolitics
+  Is Breaking: False
+  Key Claims:
+    - The US claims to have destroyed 16 Iranian mine-laying boats in the Strait of Hormuz.
+    - President Trump warned Iran that laying mines in the waterway would be met with a quick and violent response.
+    - More than 20% of the world's oil and gas transits through the Strait of Hormuz.
+    - Iran has invested in submarines, anti-ship missiles, and fast attack boats to potentially close the choke point.
+    - The US and France have suggested using naval warships to escort tankers through the strait to protect international shipping.
+
+  Video ID: 1vDrZdyTDHk
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Conflict, UK Mortgages, Interest Rates, Global Economy, Cost of Living
+  Is Breaking: False
+  Key Claims:
+    - Lenders have withdrawn hundreds of mortgage options due to economic uncertainty caused by the conflict.
+    - The average interest rate for 2-year and 5-year fixed mortgage deals has risen above 5%.
+    - The cost of borrowing is expected to remain high over the next several months.
+    - Gas and electricity bills are expected to increase this summer if the conflict is not resolved quickly.
+    - Supermarkets may raise food prices as a result of the ongoing geopolitical turmoil.
+
+  Video ID: nhr3mIMD4uQ
+  Chunks: 7
+  Points Stored: 7
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran Conflict, Oil Markets, Middle East Security, Drone Warfare, Global Diplomacy
+  Is Breaking: True
+  Key Claims:
+    - 32 countries agreed to release 400 million barrels of oil reserves to stabilize markets.
+    - The US military claims to have eliminated 16 Iranian mine-laying ships in the Strait of Hormuz.
+    - Israeli strikes on Lebanon have reportedly killed nearly 600 people, including targets in central Beirut.
+    - Iranian drones were intercepted near Dubai International Airport for the second time in five days.
+    - The Strait of Hormuz is currently closed, significantly impacting global oil transport and the economy.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/cbsnews.json
+Status: success
+  Video ID: mpJOF-7K8TU
+  Chunks: 2
+  Points Stored: 2
+  Category: Congress & Legislation
+  Sentiment: neutral
+  Topics: War Powers, Iran Conflict, US Foreign Policy, Congressional Legislation, Executive Power
+  Is Breaking: True
+  Key Claims:
+    - The Senate failed to advance a war powers resolution aimed at blocking President Trump from using further military force against Iran.
+    - The resolution was co-sponsored by Democrat Tim Kaine and Republican Rand Paul, but received 53 votes against it.
+    - Speaker Mike Johnson condemned the resolution, stating it would empower enemies and kneecap U.S. forces.
+    - Senator Susan Collins voted against the measure, arguing it would send the wrong message to Iran and U.S. troops.
+    - The House of Representatives is expected to vote on a similar measure later in the week, though it is not expected to pass.
+
+  Video ID: GjWbmrIhMxc
+  Chunks: 6
+  Points Stored: 6
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Conflict, US Foreign Policy, Aviation & Travel, Iran-Israel Tensions, Oil Markets
+  Is Breaking: True
+  Key Claims:
+    - Hundreds of thousands of passengers are stranded in the Middle East after airlines canceled the majority of regional flights.
+    - A U.S. citizen in Qatar reported that the American embassy was closed and officials provided no direct evacuation assistance.
+    - The State Department has assisted approximately 6,500 Americans via overland routes and charter buses to areas with open airspace.
+    - U.S. gas prices experienced a 9-cent daily jump, the largest since the start of the war in Ukraine in March 2022.
+    - China and Russia remain members of the Shanghai Cooperation Organization with Iran but have not overtly come to its aid during the conflict.
+
+  Video ID: FA9S6UihqGg
+  Chunks: 3
+  Points Stored: 3
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Strait of Hormuz, Oil Markets, Middle East Conflict, Energy Security, Global Economy
+  Is Breaking: True
+  Key Claims:
+    - The Strait of Hormuz is a critical route for 20 million barrels of oil daily and one-fifth of global liquefied natural gas flows.
+    - Two of the world's largest shipping companies have suspended travel through the strait due to Iranian threats.
+    - Global oil price spikes are causing immediate increases in US gasoline prices despite the US being largely insulated from physical supply disruptions.
+    - Asian nations like China, India, Japan, and South Korea receive over 80% of the oil and gas shipments passing through the strait.
+    - Oil producers like Iraq may have to shut down production because they lack storage and tankers cannot move the accumulated crude.
+
+  Video ID: cLEa3DIcAzU
+  Chunks: 6
+  Points Stored: 6
+  Category: Congress & Legislation
+  Sentiment: negative
+  Topics: Middle East Conflict, War Powers Resolution, US-Iran Relations, Congressional Oversight, Military Intervention
+  Is Breaking: True
+  Key Claims:
+    - Senator Kaine argues that the U.S. is currently engaged in an unauthorized war with Iran according to statements from administration officials.
+    - The proposed bipartisan War Powers Resolution is led by Senators Kaine, Paul, Schiff, and Schumer to assert constitutional authority over military action.
+    - Senator Kaine states that 25 years of war in the Middle East has cost the U.S. over $8 trillion and resulted in 14,000 American troop and contractor deaths.
+    - Senator Schumer claims the administration is accelerating military actions in the Middle East without a clear plan or strategy.
+    - Senator Schumer reports that six Americans in uniform recently died in the escalating conflict.
+
+  Video ID: TL5IYGVOsB8
+  Chunks: 3
+  Points Stored: 3
+  Category: US Elections & Voting
+  Sentiment: negative
+  Topics: US Elections, Voter Fraud, Project 2025, Election Security, Heritage Foundation
+  Is Breaking: False
+  Key Claims:
+    - Rep. Goldman cites Heritage Foundation data showing only 10 cases of undocumented immigrant voter fraud out of 2 billion votes cast over 32 years.
+    - The witness states that the Department of Homeland Security's role is to identify vulnerabilities in election infrastructure and assist states.
+    - Rep. Goldman alleges the existence of a 17-page draft executive order that would allow the seizure of voting machines and the banning of mail-in ballots.
+    - The witness denies having any plans or conversations with the White House regarding the seizure of voting machines or banning mail-in ballots.
+    - Rep. Goldman accuses the witness of seeking an excuse to station immigration agents at polling places to intimidate voters.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/cnbc.json
+Status: success
+  Video ID: 4iRvVxVn34I
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Conflict, Global Food Security, Supply Chain Disruptions, Agricultural Commodities, International Trade
+  Is Breaking: True
+  Key Claims:
+    - The Strait of Hormuz has been effectively impassable since February 28th due to shipping crews' fear of being attacked.
+    - Roughly one-third of the global fertilizer trade moves through the Strait of Hormuz.
+    - About half of global food production depends on synthetic nitrogen fertilizer mainly produced in the Middle East.
+    - Experts estimate that the disruption could cause food inflation in the U.S. to rise by approximately two percentage points.
+    - Global oil prices reached nearly $120 per barrel during the week before declining following comments from the President.
+
+  Video ID: qo4ltFA6i28
+  Chunks: 3
+  Points Stored: 3
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran Conflict, Oil Markets, Automotive Industry, Supply Chain, Global Economy
+  Is Breaking: True
+  Key Claims:
+    - Threats to tankers in the Strait of Hormuz are effectively cutting off 20% of the world's oil supply.
+    - Rising energy prices are significantly increasing manufacturing costs for essential materials like steel, aluminum, glass, and plastics.
+    - The Gulf region accounts for approximately 9% of the world's aluminum smelting capacity and 20% of US aluminum imports.
+    - US gasoline prices have risen sharply in the last two weeks, with the number of states having prices below $3 per gallon dropping from a majority to 19.
+    - Automakers are currently ranked as the most at-risk industry according to the Alixpartners Disruption Index.
+
+  Video ID: 1Fl6aQO0ZY0
+  Chunks: 2
+  Points Stored: 2
+  Category: Corporate News
+  Sentiment: positive
+  Topics: Toy Industry, Manufacturing & Supply Chain, Corporate Strategy, Consumer Trends, Intellectual Property
+  Is Breaking: False
+  Key Claims:
+    - Lego has outperformed the toy industry since the pandemic by gaining market share and retail space.
+    - Licensed products, starting with Star Wars in 1999, helped save the company during a restructuring in the early 2000s.
+    - Adult consumers, often called 'kidults,' account for 25% to 30% of global toy sales.
+    - Lego strategically places factories in regions like Mexico, Hungary, and Vietnam to minimize shipping distances and costs.
+    - The company plans to open a new manufacturing facility in Virginia in 2027 to support demand in the Americas.
+
+  Video ID: AnsUSPM6RBI
+  Chunks: 1
+  Points Stored: 1
+  Category: Corporate News
+  Sentiment: negative
+  Topics: Beauty Industry, Stock Market Performance, Corporate Turnarounds, Retail & Consumer Goods
+  Is Breaking: False
+  Key Claims:
+    - Olaplex has lost approximately 95% of its market value since its IPO in 2021.
+    - The company experienced a 50% drop in US net sales and a 75% plunge in net income during the 2023 fiscal year.
+    - Regulatory issues in the European Union and a dismissed hair loss lawsuit contributed to the company's decline.
+    - Amanda Baldwin, the former CEO of Supergoop, was recruited to lead a turnaround strategy.
+    - Increased competition from brands like K18 and Redken has significantly eroded Olaplex's market share.
+
+  Video ID: e5POYwqVpiU
+  Chunks: 3
+  Points Stored: 3
+  Category: Corporate News
+  Sentiment: neutral
+  Topics: Artificial Intelligence, Corporate Debt, Cloud Computing, Stock Market, Big Tech
+  Is Breaking: False
+  Key Claims:
+    - Oracle secured a $300 billion cloud computing contract with OpenAI to support the Stargate data center project.
+    - Investors expressed concerns that Oracle's massive debt load for AI expansion could threaten its investment-grade credit rating.
+    - Oracle announced a $50 billion capital raise using both debt and equity to fund its AI infrastructure goals.
+    - November 2025 was reportedly the worst month for Oracle's stock performance since 2001 due to financing and competition worries.
+    - The company plans to build a new data center utilizing 50,000 chips from AMD as part of its AI deal-making spree.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/foxnews.json
+Status: success
+  Video ID: 7RNG7X6zAVY
+  Chunks: 3
+  Points Stored: 3
+  Category: Middle East Conflict
+  Sentiment: positive
+  Topics: Iran Conflict, Middle East Conflict, Military Operations, US-Israel Relations, Geopolitics
+  Is Breaking: True
+  Key Claims:
+    - The US and Israel have launched a joint, comprehensive air campaign aimed at setting the conditions for the collapse of the Iranian regime.
+    - The military operation is designed to last for weeks rather than days, focusing on leadership, air defenses, and IRGC infrastructure.
+    - Tactical surprise was utilized to target Iranian civilian and military leaders using standoff weapon systems.
+    - Iranian ballistic missiles and drone sites are primary targets, with expectations of retaliation against U.S. bases in the region.
+    - The campaign includes targeting Iranian naval infrastructure to prevent interference with Gulf oil operations and maritime security.
+
+  Video ID: HhZUqDJ30kI
+  Chunks: 2
+  Points Stored: 2
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Conflict, Iran-Israel Relations, US Foreign Policy, Global Diplomacy
+  Is Breaking: True
+  Key Claims:
+    - Secretary of State Marco Rubio is monitoring the situation from Mar-a-Lago and has briefed seven of the eight 'Gang of Eight' congressional leaders.
+    - The State Department is launching a task force to assist thousands of Americans in the region, with potential evacuation flights being considered.
+    - Iran's Foreign Minister stated that the current conflict is an 'imposed war' and called on allies to counter the United States and Israel.
+    - Major regional powers including Saudi Arabia, UAE, and Jordan have joined European allies in denouncing Iran's retaliatory strikes.
+    - The United Nations Security Council is holding a special session to address the escalating situation in the region.
+
+  Video ID: 6dzggQo5UdA
+  Chunks: 2
+  Points Stored: 2
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran-Israel Conflict, Middle East Security, Missile Defense, US-Israel Relations
+  Is Breaking: True
+  Key Claims:
+    - Iran launched a missile barrage targeting the city of Tel Aviv.
+    - Israeli air defense systems, including Arrow and Patriot, intercepted incoming missiles over population centers.
+    - No fatalities were reported inside Israel, though some light injuries and property damage occurred.
+    - The United States has provided defensive systems such as THAAD and Patriot to support Israeli defense.
+    - Intelligence officials estimate Iran possesses 2,000 to 3,000 medium-range missiles capable of hitting Israel.
+
+  Video ID: aJcXpdrKWkE
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran-US Relations, Middle East Conflict, Global Security, Military Strategy
+  Is Breaking: False
+  Key Claims:
+    - Donald Trump ordered the Islamic Revolutionary Guard and Iranian police to lay down their arms.
+    - Trump promised full immunity to Iranian military personnel who surrender their weapons.
+    - Trump warned that Iranian forces who do not surrender will face certain death.
+
+  Video ID: cL97_X2EKfU
+  Chunks: 5
+  Points Stored: 5
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Conflict, Iran-Israel Relations, Missile Defense, US Foreign Policy, International Security
+  Is Breaking: True
+  Key Claims:
+    - Iran launched a large-scale ballistic missile attack targeting Israeli cities like Tel Aviv and Haifa, as well as locations in Gulf countries.
+    - The United States and Israel conducted joint strikes against Iranian military targets, including nuclear facilities and missile launchers.
+    - Israel's multi-layered air defense systems, supported by U.S. assets like THAAD and the USS Gerald R. Ford, intercepted numerous incoming missiles.
+    - Approximately 10 million Israelis were forced into bomb shelters during the attacks, though no fatalities were immediately reported.
+    - The Iranian regime's proxy forces, such as Hezbollah and Hamas, were reportedly degraded or stayed out of the immediate exchange.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/nbcnews.json
+Status: success
+  Video ID: nD8srQqLupU
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Iran Conflict, Middle East Geopolitics, U.S. Foreign Policy, Human Rights
+  Is Breaking: False
+  Key Claims:
+    - The interviewee was a leader of the 1999 Iranian student uprising and holds a death sentence from the Islamic Republic.
+    - The interviewee expressed a mixed reaction to the strikes due to being both an anti-war activist and a regime opponent.
+    - The interviewee celebrated the death of the Iranian leader by opening champagne after the news was confirmed by President Trump.
+    - The interviewee claims the Iranian regime killed 40,000 people in 48 hours following the start of protests.
+    - The interviewee expressed concern about the U.S. being trapped into a conflict similar to the wars in Iraq, Afghanistan, or Libya.
+
+  Video ID: 7jPQqJzI4is
+  Chunks: 1
+  Points Stored: 1
+  Category: White House & Executive
+  Sentiment: negative
+  Topics: US Department of Homeland Security, Government Ethics, Federal Budget, Congressional Oversight, Political Scandals
+  Is Breaking: True
+  Key Claims:
+    - Kristi Noem was questioned about allegations of a sexual relationship with Corey Lewandowski during a committee hearing.
+    - The Department of Homeland Security budgeted $220 million for media contracts featuring Noem.
+    - Noem faced scrutiny for seeking to use $70 million in taxpayer funds to purchase a luxury jet.
+    - Allegations were made that $140 million in marketing contracts were steered toward a company connected to Noem's political apparatus.
+    - The House Oversight Committee subpoenaed Attorney General Pam Bondi regarding the release of the Epstein files.
+
+  Video ID: xxAsX9vGoDU
+  Chunks: 2
+  Points Stored: 2
+  Category: Congress & Legislation
+  Sentiment: neutral
+  Topics: Middle East Conflict, War Powers, Executive Power, US Congress, US-Iran Relations
+  Is Breaking: True
+  Key Claims:
+    - The US Senate failed to pass a resolution requiring congressional authorization for further military action against Iran.
+    - Senator John Fetterman was the only Democrat to vote against the measure, while Senator Rand Paul was the only Republican to vote in favor.
+    - House Speaker Johnson anticipates that the House will defeat a similar version of the resolution in an upcoming vote.
+    - The White House is expected to request additional funding from Congress to support ongoing operations in Iran.
+    - Lawmakers expressed concern that Congress is ceding its war-making powers to the executive branch.
+
+  Video ID: fu1dw2R0D6M
+  Chunks: 3
+  Points Stored: 3
+  Category: Congress & Legislation
+  Sentiment: neutral
+  Topics: Jeffrey Epstein Investigation, Department of Justice, Congressional Oversight, Public Transparency, Political Accountability
+  Is Breaking: True
+  Key Claims:
+    - The House Oversight Committee voted to subpoena Attorney General Pam Bondi regarding the handling of Jeffrey Epstein investigation files.
+    - Lawmakers allege the Department of Justice is failing to comply with the Epstein Transparency Act by using inconsistent redactions.
+    - The Department of Justice confirmed that roughly 50,000 files were taken offline for further review to address errors and victim concerns.
+    - Documents taken offline by the DOJ reportedly include specific allegations against Donald Trump.
+    - The committee is seeking voluntary testimony from high-profile figures including Bill Gates and Howard Lutnick.
+
+  Video ID: 2uuBLtI0Y_k
+  Chunks: 2
+  Points Stored: 2
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran Conflict, Energy Prices, Oil Markets, Global Logistics, Prediction Markets
+  Is Breaking: True
+  Key Claims:
+    - Average gas prices in the United States rose by 9 cents overnight to approximately $3.20 per gallon.
+    - Shipping traffic through the Strait of Hormuz has dropped by about 90% compared to the previous week.
+    - The 7% jump in gas prices over the past two days represents the largest such increase in 21 years.
+    - The prediction market Poly Market saw over $500 million in trades regarding a potential U.S. strike on Iran.
+    - Large bets predicting a strike were placed just hours before the attack occurred, leading to concerns about insider trading.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/newyorktimes.json
+Status: success
+  Video ID: CeJwM8-qld8
+  Chunks: 1
+  Points Stored: 1
+  Category: US Elections & Voting
+  Sentiment: positive
+  Topics: Texas Elections, Voter Turnout, Campaign Finance, Democratic Party, Republican Party
+  Is Breaking: True
+  Key Claims:
+    - An unprecedented number of independents and Republicans voted in the Democratic primary.
+    - The Supreme Court ordered polls to close after a request to keep them open until 9 PM.
+    - Ken Paxton is characterized as a political liability for the Republican ticket.
+    - John Cornyn spent approximately $100 million on his campaign for the Senate seat.
+    - The speaker asserts that Texas is not for sale despite significant campaign spending.
+
+  Video ID: lcfVNgdrrd4
+  Chunks: 1
+  Points Stored: 1
+  Category: Crime & Law Enforcement
+  Sentiment: negative
+  Topics: Law Enforcement Accountability, Police Shootings, South Dakota Politics, Public Safety
+  Is Breaking: False
+  Key Claims:
+    - Innocent American citizens were reportedly detained during operations under Governor Noem's leadership.
+    - Alex Prey's parents alleged that Governor Noem called their son a domestic terrorist the day after he was killed.
+    - CBP and ICE officials testified that they did not inform the Governor that Alex Prey was a domestic terrorist.
+    - Governor Noem claimed her initial statements were based on reports from agents at a chaotic scene.
+    - Renee Good and Alex Prey were killed during an incident involving law enforcement.
+
+  Video ID: KdiHL7cmxGI
+  Chunks: 2
+  Points Stored: 2
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Iran-US Relations, Middle East Conflict, US Foreign Policy, Israel-US Relations, Military Intervention
+  Is Breaking: False
+  Key Claims:
+    - Prime Minister Netanyahu influenced President Trump's decision to pursue a military partnership against Iran.
+    - The successful capture of Nicholas Maduro in Venezuela gave Trump confidence to pursue similar military action in Iran.
+    - The Pentagon conducted the largest military buildup in the Middle East in two decades leading up to the conflict.
+    - Diplomatic talks in Oman between Jared Kushner and Iranian officials failed after American negotiators walked away.
+    - President Trump officially ordered the strike on Iran while traveling on board Air Force One.
+
+  Video ID: ZhxY-WpfloY
+  Chunks: 1
+  Points Stored: 1
+  Category: Crime & Law Enforcement
+  Sentiment: negative
+  Topics: Jeffrey Epstein Investigation, US Political Figures, Bill Clinton, Crime and Law Enforcement
+  Is Breaking: False
+  Key Claims:
+    - Bill Clinton denies ever being on Jeffrey Epstein's island.
+    - Clinton used Epstein's airplanes to travel for his international AIDS programs.
+    - Clinton agreed to discuss economics and politics with Epstein for one hour during long flight legs in exchange for plane usage.
+    - Clinton claims Donald Trump and Epstein had a falling out over a property deal.
+    - Clinton states that Donald Trump never suggested he was involved in improper behavior with Epstein.
+
+  Video ID: 4m85UXYa3Lc
+  Chunks: 2
+  Points Stored: 2
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Iran Conflict, US Foreign Policy, Regime Change, Middle East Security
+  Is Breaking: True
+  Key Claims:
+    - Donald Trump campaigned on a promise of 'no new wars' and criticized regime change as an absolute failure.
+    - In 2011, Trump accused Barack Obama of wanting to start a war with Iran to compensate for poor negotiation skills.
+    - The 2020 strike on General Qasem Soleimani convinced Trump that military force could be used without triggering a major regional war.
+    - Trump's second-term advisors are described as 'true believers' who encourage ambitious military actions to remap the world.
+    - The transcript reports that a military operation has taken out Iran's Supreme Leader, Ayatollah Ali Khamenei.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/skynews.json
+Status: success
+  Video ID: RkTxgzfxjU4
+  Chunks: 2
+  Points Stored: 2
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Hezbollah-Israel Conflict, Iran-Israel Tensions, Middle East Geopolitics, Border Security, Rocket Attacks
+  Is Breaking: True
+  Key Claims:
+    - Hezbollah launched six rockets at Israel, triggering a significant military response from the IDF.
+    - The IDF claims that Iran and Hezbollah are currently coordinating their strikes against Israel.
+    - Israel has instructed Lebanese civilians to withdraw north of the Litani River, covering approximately 10% of Lebanon.
+    - Sirens in the region distinguish between incoming Iranian missiles and sudden short-range Hezbollah strikes.
+    - Israeli civilians and soldiers are increasingly using shelters as fighting intensifies along the northern border.
+
+  Video ID: CIlZ0ruUa5M
+  Chunks: 2
+  Points Stored: 2
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran Conflict, Middle East Geopolitics, US Military Operations, Naval Warfare, Israel-Iran Relations
+  Is Breaking: True
+  Key Claims:
+    - The US sank an Iranian ship with a torpedo, the first such sinking of an enemy vessel since World War II.
+    - The US military is using long-range precision strike missiles in combat for the first time.
+    - Israel has conducted bombardment of Iranian command centers in Tehran and Hezbollah sites in Beirut.
+    - Members of Congress are seeking clarity from the Trump administration regarding the justification and objectives of the mission.
+    - The Pentagon has stated it is abandoning normal rules of engagement to maintain an asymmetric advantage.
+
+  Video ID: WQVDnmiQ4a8
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Israel-Hezbollah Conflict, Middle East Conflict, Iran-Israel Tensions, Border Security
+  Is Breaking: True
+  Key Claims:
+    - Hezbollah launched six rockets starting Sunday, leading to a significant Israeli military response.
+    - The IDF claims that Iran and Hezbollah are currently coordinating their strikes against Israel.
+    - Israel has instructed people in southern Lebanon to move north of the Litani River, an area representing about 10% of Lebanon.
+    - Siren protocols differentiate between Iranian attacks, which provide more warning time, and Hezbollah strikes, which require immediate cover.
+    - Villages in southern Lebanon have sustained significant destruction due to the ongoing conflict.
+
+  Video ID: yboBnjyhXWw
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Cyprus, Middle East Conflict, UK Foreign Policy, Regional Security, Military Bases
+  Is Breaking: True
+  Key Claims:
+    - British military bases in Cyprus have been hit directly for the first time.
+    - The HMS Dragon is expected to arrive in Cyprus in more than a week.
+    - Thousands of Cypriots live permanently within the British military base areas.
+    - Cyprus is seeking close coordination with the UK to avoid being dragged into the regional conflict.
+    - Approximately 5% of the population of Cyprus consists of British expatriates.
+
+  Video ID: Z_4c97ne8Z0
+  Chunks: 2
+  Points Stored: 2
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Strait of Hormuz, Iran Conflict, Global Oil Markets, Maritime Security, Drone Warfare
+  Is Breaking: True
+  Key Claims:
+    - An explosion and fire occurred near the exit point of the Strait of Hormuz following a strike.
+    - A Maltese-flagged container ship was hit by a suspected drone two miles off the coast while transiting the strait.
+    - Iran's Revolutionary Guards have threatened to attack and set fire to any ship attempting to cross the waterway.
+    - Approximately 200 international tankers are currently stranded in the Gulf due to the security risks.
+    - Oil and gas prices are surging as the shipping route has effectively been shut down by the conflict.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week1/washingtonpost.json
+Status: success
+  Video ID: Ysh0LqNLGvs
+  Chunks: 1
+  Points Stored: 1
+  Category: Other
+  Sentiment: neutral
+  Topics: 
+  Is Breaking: False
+  Key Claims:
+
+  Video ID: ACKNDuc2tqA
+  Chunks: 1
+  Points Stored: 1
+  Category: US Elections & Voting
+  Sentiment: negative
+  Topics: Texas Elections, Voter Rights, Court Rulings, Voting Access
+  Is Breaking: True
+  Key Claims:
+    - Voters in Texas were reportedly disenfranchised due to confusion and polling issues.
+    - A court order initially extended polling hours until 9 p.m. before being countered.
+    - The Supreme Court ordered polls to be shut down and required votes cast after 7 p.m. to be separated.
+    - Allegations of voter suppression were reported in specific Texas counties.
+    - An underdog political campaign was launched in Round Rock, Texas, six months prior to the events.
+
+  Video ID: UoK4LuN0BVI
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Iran Conflict, Middle East Geopolitics, US Foreign Policy, Regime Change
+  Is Breaking: True
+  Key Claims:
+    - The US President suggested that the Iranian people should take over their own government.
+    - Secretary of Defense Pete Hegseth stated that the current military operations are not a war for regime change.
+    - Iran has lost its supreme leader and many of its top military generals.
+    - Iran has established a temporary council to lead state affairs and regroup politically.
+    - Iran is continuing to retaliate against military strikes from the United States and Israel.
+
+  Video ID: 7ZGnH6mDsqo
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Middle East Conflict, US Foreign Policy, National Security, Military Strategy
+  Is Breaking: False
+  Key Claims:
+    - Six Americans have reportedly died in recent hostilities.
+    - One senator claims the administration has not justified why these strikes are in the country's best interest.
+    - The Iranian regime has been attacking U.S. personnel since November 1979.
+    - One senator argues that the threat from Iran would continue to grow if not addressed.
+    - There are concerns regarding the strategic purpose of the strikes and the potential deployment of ground troops.
+
+  Video ID: 5hMRW_EoJyY
+  Chunks: 1
+  Points Stored: 1
+  Category: Crime & Law Enforcement
+  Sentiment: negative
+  Topics: Jeffrey Epstein Investigation, Hillary Clinton, Bill Clinton, Political Scandals, Legal Proceedings
+  Is Breaking: False
+  Key Claims:
+    - An individual threatened to be held in contempt during a hearing regarding the leak of photos.
+    - A witness testified that their limited acquaintance with Jeffrey Epstein ended before his crimes were known.
+    - A witness claimed they never saw any indication of Jeffrey Epstein's criminal activities during their interactions.
+    - Bill Clinton stated that Hillary Clinton had no involvement with Jeffrey Epstein.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week2/abcnews.json
+Status: success
+  Video ID: qVWARGf3UNg
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran Conflict, Drone Warfare, National Security, Cybersecurity
+  Is Breaking: True
+  Key Claims:
+    - The FBI alerted California authorities that Iran intends to launch attack drones from a vessel off the U.S. coast.
+    - President Trump stated he is not concerned about a potential domestic terror attack backed by Iran.
+    - Iran has utilized Shahed 136 drones to strike targets in Saudi Arabia, Bahrain, Kuwait, and the UAE.
+    - Medical equipment company Striker was recently hit by a cyber attack potentially linked to pro-Iran hackers.
+    - The FBI's cautionary alert provided no specific information regarding the timing or exact targets of the potential strike.
+
+  Video ID: uLcAWtOFs2Q
+  Chunks: 3
+  Points Stored: 3
+  Category: Crime & Law Enforcement
+  Sentiment: negative
+  Topics: National Security, Counterterrorism, Drone Warfare, Iran-US Relations, Border Security
+  Is Breaking: False
+  Key Claims:
+    - Iran may seek to target major U.S. population centers to pressure the United States and Israel to stop attacks.
+    - Mexican cartels have been extensively utilizing drones for both drug smuggling and as weaponized suicide drones.
+    - Hezbollah has spent decades developing clandestine networks and potential sleeper cells within foreign countries.
+    - The radicalization of youth and hate groups is increasing through the evolution of internet platforms and social media.
+    - Identifying and neutralizing suicide drones is a significant challenge requiring specialized equipment and personnel training.
+
+  Video ID: chJLhrCa200
+  Chunks: 1
+  Points Stored: 1
+  Category: Natural Disasters
+  Sentiment: neutral
+  Topics: Tornadoes, Severe Weather, Natural Disasters, Oklahoma Weather
+  Is Breaking: False
+  Key Claims:
+    - A baby is experiencing their first tornado watch.
+    - The events are taking place in Oklahoma.
+    - An individual in the video expresses nervousness regarding the weather.
+
+  Video ID: xNkzj9soVO0
+  Chunks: 2
+  Points Stored: 2
+  Category: Middle East Conflict
+  Sentiment: positive
+  Topics: Iran Conflict, Military Operations, Oil Markets, White House Policy, National Security
+  Is Breaking: True
+  Key Claims:
+    - President Trump stated that the U.S. military has successfully knocked out Iran's navy and leadership twice.
+    - The ongoing military operations are described as being way ahead of schedule and easier than initially anticipated.
+    - U.S. forces have hit 28 Iranian mine ships and are actively destroying drone production plants.
+    - Trump claimed that a significant portion of Iran's 7,000 to 8,000 missiles were intercepted or destroyed before launch.
+    - The administration expects oil prices to decrease substantially and the stock market to remain on track despite the conflict.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week2/aljazeeraenglish.json
+Status: success
+  Video ID: waOfQ2BcF8c
+  Chunks: 6
+  Points Stored: 6
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran Conflict, Oil Markets, Middle East Conflict, Global Energy Security, Maritime Security
+  Is Breaking: True
+  Key Claims:
+    - Brent crude oil prices rose above $100 a barrel following Iranian attacks on fuel storage facilities in Bahrain, Iraq, and Oman.
+    - Approximately 1,000 vessels, including 200 crude oil tankers, are stalled in the Strait of Hormuz because the Iranian military is targeting any attempting to cross.
+    - The volume of oil passing through the Strait of Hormuz has drastically dropped from 20 million barrels a day to approximately 2 million barrels.
+    - Iran has expanded its retaliation to include economic targets, leading international banks like Citibank, HSBC, and Standard Chartered to close branches in the region.
+    - Multiple GCC countries, including the UAE, Kuwait, and Qatar, have reported drone and missile attacks targeting both energy infrastructure and civilian sites.
+
+  Video ID: uzUuRkWziuc
+  Chunks: 2
+  Points Stored: 2
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Conflict, Iran-Israel Relations, Hezbollah, West Bank Violence, Missile Defense
+  Is Breaking: True
+  Key Claims:
+    - The IRGC confirmed its first joint attack with Hezbollah against Israel since the start of the current war.
+    - Hezbollah launched an initial salvo of 100 missiles into northern and central Israel.
+    - Simultaneous missile strikes from Iran and Lebanon triggered air raid sirens in Jerusalem and Tel Aviv.
+    - Israeli settlers allegedly set fire to a mosque in the West Bank village of Duma in retaliation for an outpost demolition.
+    - Hezbollah claims the attack demonstrates that its military capabilities remain intact despite Israeli claims the group has been weakened.
+
+  Video ID: 0uuBlaS7gfc
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Middle East Conflict, US Military Operations, UK Foreign Policy, Military Technology
+  Is Breaking: False
+  Key Claims:
+    - Bunker-busting JDAM bombs are being loaded onto B1 Lancer bombers at RAF Fairford.
+    - B1 bombers returned to the base after what is believed to be the first US mission to Iran from a British base during this conflict.
+    - US Air Force cargo planes are delivering supplies to the base to support strategic bombing operations.
+    - The House of Commons Defense Select Committee has been briefed on the use of British bases for these military operations.
+    - British opinion polls show a large and growing majority of the public is against the war.
+
+  Video ID: 0EX97c4nrEg
+  Chunks: 4
+  Points Stored: 4
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Conflict, Military Operations, Public Health, International Relations
+  Is Breaking: True
+  Key Claims:
+    - Iran reports that at least 1,348 people have been killed and 17,000 injured within the first 12 days of the conflict.
+    - Thirty-one major hospitals have been damaged, leaving 12 inactive and forcing the evacuation of six medical centers.
+    - The Iranian Deputy Health Minister characterized the strikes on civilian neighborhoods and banks as 'carpet bombing.'
+    - A maritime blockade and the closure of regional humanitarian hubs have reportedly frozen $18 million in medical supplies intended for Iran.
+    - Iran's health system claims to have strategic medical supplies sufficient for six months of full-scale military conflict.
+
+  Video ID: WVjIt9S1nUI
+  Chunks: 3
+  Points Stored: 3
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Conflict, Oil Markets, US Foreign Policy, Global Energy Crisis, US Presidential Elections
+  Is Breaking: True
+  Key Claims:
+    - President Trump claimed that the US military has destroyed nearly all of Iran's navy ships.
+    - Iran has stated it is prepared for a long war of attrition intended to destroy the world economy.
+    - The US Navy has currently ruled out providing military escorts for commercial vessels transiting the Strait of Hormuz.
+    - Crude oil prices have risen to approximately $100 per barrel, significantly higher than previous months.
+    - Commercial shipping companies are struggling to obtain liability insurance for vessels traveling through the Strait of Hormuz.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week2/bbcnews.json
+Status: success
+  Video ID: 4En8G-3c7Sw
+  Chunks: 6
+  Points Stored: 6
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Iran Conflict, Middle East Conflict, Cybersecurity, Artificial Intelligence, Military Technology
+  Is Breaking: False
+  Key Claims:
+    - Israeli intelligence reportedly hacked Iranian CCTV and traffic cameras to track the movements and patterns of regime leaders.
+    - A popular Iranian prayer timing app with 5 million downloads was allegedly hacked to send surrender instructions during military strikes.
+    - The US military uses cyber operations as 'first movers' to disrupt and blind Iranian communications and response capabilities.
+    - Iran is known for 'wiper' attacks, such as the 2012 attack on Saudi Aramco that destroyed 30,000 computers.
+    - There is a conflict between the Pentagon and the AI company Anthropic regarding the military's use of AI for autonomous weapons and surveillance.
+
+  Video ID: t5pBVKctQmw
+  Chunks: 1
+  Points Stored: 1
+  Category: Europe & NATO
+  Sentiment: neutral
+  Topics: Currency, Bank of England, UK News, Wildlife Conservation
+  Is Breaking: False
+  Key Claims:
+    - The Bank of England is considering replacing historical figures with wildlife on banknotes in England and Wales.
+    - Wildlife images are reportedly more difficult to counterfeit than portraits of historical figures.
+    - A panel of experts will create a shortlist of animals for public consultation before a final decision by the bank's governor.
+    - The new animal designs will be featured on the opposite side of the banknote from the monarch.
+    - Household pets will be excluded from the selection process for the new currency designs.
+
+  Video ID: yxNQPLPfuec
+  Chunks: 2
+  Points Stored: 2
+  Category: Europe & NATO
+  Sentiment: negative
+  Topics: Russian Intelligence Operations, Sabotage and Arson, European Security, Russia-Ukraine War
+  Is Breaking: False
+  Key Claims:
+    - Alexander Shiranovas is accused of working for Russian intelligence to send incendiary parcels to the UK and Poland.
+    - The plot involved hiding high explosives inside everyday items like face creams and electronic devices to be sent via cargo planes.
+    - Russian intelligence recruits operatives remotely through Telegram to carry out shadow war activities across Europe.
+    - One of the incendiary devices ignited just before being loaded onto a cargo flight destined for London.
+    - Officials have linked multiple acts of arson and sabotage in Poland and other allied nations to Russian state aggression.
+
+  Video ID: RpPINBfFdGA
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Security, Drone Warfare, Aviation Safety, Iran Conflict
+  Is Breaking: True
+  Key Claims:
+    - Two Iranian drones were intercepted at Dubai International Airport.
+    - Four people sustained minor and moderate injuries during the incident.
+    - Airport operations were temporarily halted before quickly reopening.
+    - This is the second time in five days that Iranian drones have reached the airport.
+    - Passengers inside the terminal were instructed to stay away from glass windows for safety.
+
+  Video ID: JU3gSBg5LfI
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Iran Conflict, Satellite Imagery, Media Transparency, Middle East Security
+  Is Breaking: True
+  Key Claims:
+    - Satellite provider Planet has extended image access delays to two weeks for Iran and nearby allied bases.
+    - Planet cited concerns that its data could be used by adversarial actors to target allied personnel and civilians.
+    - Journalists use satellite imagery to independently verify damage to military sites and civilian infrastructure like schools.
+    - Planet stated that the temporary hold on imagery is not the result of a government requirement.
+    - While restrictions have existed in places like Israel and Gaza, current delays are unprecedented in their extent.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week2/cbsnews.json
+Status: success
+  Video ID: GrhS7h5U3QQ
+  Chunks: 1
+  Points Stored: 1
+  Category: US Elections & Voting
+  Sentiment: positive
+  Topics: US Elections, Celebrity Politics, Political Endorsements, Donald Trump
+  Is Breaking: False
+  Key Claims:
+    - Jake Paul credited Donald Trump with teaching him courage and the importance of never backing down from a fight.
+    - Donald Trump predicted that Jake Paul will run for political office in the not-too-distant future.
+    - Donald Trump offered his complete and total endorsement to Jake Paul for any future political run.
+    - Jake Paul stated that Donald Trump is the person to bring thriving factories back to the country.
+    - Jake Paul expressed his belief that God is supporting their cause and movement.
+
+  Video ID: O5VYAYaKu_Q
+  Chunks: 1
+  Points Stored: 1
+  Category: Crime & Law Enforcement
+  Sentiment: neutral
+  Topics: Juvenile Justice, Prank Safety, Accidental Death, Education, Criminal Charges
+  Is Breaking: False
+  Key Claims:
+    - High school teacher Jason Hughes died after being struck by a pickup truck during a student prank at his home.
+    - Investigators report that Hughes slipped on wet pavement and fell into the roadway as students were attempting to drive away.
+    - Student Jaden Ryan Wallace was charged with first-degree vehicular homicide and reckless driving.
+    - The family of Jason Hughes is requesting that prosecutors drop the charges against the involved teenagers.
+    - The family claims Hughes was aware of the impending prank and was excited about the school tradition.
+
+  Video ID: JB5M6f1xyo8
+  Chunks: 3
+  Points Stored: 3
+  Category: Middle East Conflict
+  Sentiment: neutral
+  Topics: Iran Conflict, National Security, Drone Warfare, Homeland Security, Counter-Terrorism
+  Is Breaking: True
+  Key Claims:
+    - The FBI warned law enforcement of a potential Iranian surprise attack using drones launched from a vessel off the U.S. coast.
+    - Intelligence and law enforcement officials stated there is currently no known, specific, or credible threat underpinning the alert.
+    - The information regarding the potential attack was acquired in early February 2026, prior to the start of the war with Iran.
+    - California Governor Gavin Newsom confirmed the state is unaware of imminent threats but remains prepared for emergencies.
+    - The warning was released during a Department of Homeland Security government shutdown that has lasted 26 days.
+
+  Video ID: jl06sA3C71o
+  Chunks: 3
+  Points Stored: 3
+  Category: Natural Disasters
+  Sentiment: negative
+  Topics: Tornadoes, Natural Disasters, Severe Weather, Midwest Storms
+  Is Breaking: True
+  Key Claims:
+    - Officials confirmed at least two deaths in Indiana following a string of tornadoes in the Midwest.
+    - A tornado in Kankakee, Illinois, leveled multiple buildings and left thousands of people without power.
+    - The Kankakee County Sheriff reported that the most severe damage occurred in Aroma Park.
+    - Emergency responders are currently conducting wellness checks to ensure all residents are accounted for.
+    - Temperatures in the affected area dropped approximately 30 degrees within 48 hours of the storm hitting.
+
+  Video ID: RoBNIsA7pIU
+  Chunks: 3
+  Points Stored: 3
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Strait of Hormuz, Iran Conflict, Global Oil Markets, US Foreign Policy, Naval Warfare
+  Is Breaking: True
+  Key Claims:
+    - Iran claimed responsibility for an attack on a Thailand-flagged cargo ship in the Strait of Hormuz.
+    - President Trump stated that the U.S. Navy destroyed nearly all of Iran's mine-laying vessels.
+    - The Strait of Hormuz is effectively closed to commercial shipping due to safety concerns and Iranian harassment.
+    - Analyst Aaron McClean predicts the U.S. will likely implement a naval escort program similar to operations in the 1980s.
+    - Approximately 20% of the world's oil supply passes through the Strait of Hormuz, making its closure a significant threat to the global economy.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week2/cnbc.json
+Status: success
+  Video ID: isILxlOh6do
+  Chunks: 3
+  Points Stored: 3
+  Category: AI & Machine Learning
+  Sentiment: negative
+  Topics: Anthropic, National Security, AI Regulation, US Military, Supply Chain Risk
+  Is Breaking: True
+  Key Claims:
+    - The Department of Defense designated Anthropic as a supply chain risk, the first time an American company has received this label.
+    - The designation bans U.S. military use of Anthropic's models and requires defense contractors to certify they do not use the technology for government work.
+    - Anthropic intends to sue the government, arguing the move is not legally sound and should only apply to specific government contracts.
+    - The U.S. military reportedly continues to use Anthropic's AI tools for operations in Iran and Venezuela despite the official ban.
+    - The conflict allegedly began when the Pentagon sought to change contract provisions regarding guardrails for AI integrated into classified networks.
+
+  Video ID: usWOS8GNCEU
+  Chunks: 2
+  Points Stored: 2
+  Category: Corporate News
+  Sentiment: positive
+  Topics: Wellness Industry, Consumer Trends, Mental Health, Luxury Goods, Business Growth
+  Is Breaking: False
+  Key Claims:
+    - The wellness industry is projected to reach a $10 trillion valuation over the next few years.
+    - Equinox has a waiting list of more than 1,000 people for its $40,000-a-year ultra-premium membership.
+    - Bathhouse expects to reach approximately $120 million in revenue by the end of 2026.
+    - Lifetime Fitness's stock price has more than doubled since October 2023 after doubling down on premium wellness.
+    - Wellness clubs are increasingly serving as 'third places' to provide community and alcohol-free socialization to combat loneliness.
+
+  Video ID: g7tHHsax1FA
+  Chunks: 5
+  Points Stored: 5
+  Category: Space & Science
+  Sentiment: neutral
+  Topics: Space Race, US-China Relations, Aerospace Industry, National Security, Satellite Technology
+  Is Breaking: False
+  Key Claims:
+    - China's investment in its commercial space sector increased from $340 million in 2015 to approximately $3.81 billion in 2025.
+    - China has successfully constructed its own low Earth orbit space station, Tiangong, and aims to land astronauts on the moon by 2030.
+    - Estimates suggest the U.S. has spent over five times more on space efforts than China over the last decade, though China's spending is steadily increasing.
+    - The U.S. risks a gap in human orbital presence if the International Space Station retires in 2030 before commercial replacements are operational.
+    - China's Beidou satellite navigation system and planned internet satellite constellations are designed to directly compete with U.S. systems like GPS and Starlink.
+
+  Video ID: GMZu42mhl78
+  Chunks: 2
+  Points Stored: 2
+  Category: Wall Street & Markets
+  Sentiment: neutral
+  Topics: Real Estate Market, Mortgage Rates, Housing Inventory, Economic Uncertainty, Inflation
+  Is Breaking: False
+  Key Claims:
+    - Nearly 45,000 homes that were delisted last year were relisted for sale in January.
+    - January relistings represented a record 3.6% of homes on the market according to Redfin.
+    - The national supply of homes for sale is nearly 8% higher than it was one year ago.
+    - Total housing inventory remains 17% lower than pre-pandemic levels from 2019.
+    - Mortgage rates are rising again due to renewed fears over inflation and market volatility.
+
+  Video ID: MFDQcViUWbE
+  Chunks: 3
+  Points Stored: 3
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Conflict, Aviation Industry, Global Economy, International Relations, Tourism Industry
+  Is Breaking: True
+  Key Claims:
+    - More than a million passengers have been affected by flight cancellations following strikes involving the US, Israel, and Iran.
+    - Virtually all flights in and out of Dubai International Airport, the world's busiest international hub, were canceled following the start of the conflict.
+    - The UAE is being targeted by Iran to create political pressure and disrupt its role as a key economic partner of the United States.
+    - Trade between the United Arab Emirates and the US reached $39 billion in 2025, with trillions more in pledged investments.
+    - Airlines are being forced to take longer routes to avoid conflict zones, which is expected to increase fuel costs and ticket prices.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week2/foxnews.json
+Status: success
+  Video ID: YTKVmANvLBQ
+  Chunks: 4
+  Points Stored: 4
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iranian Regime, Human Rights, Women's Rights, Middle East Politics, Global Activism
+  Is Breaking: False
+  Key Claims:
+    - Shiva Amini was banned from the Iranian professional soccer league for playing without a hijab during a private trip to Switzerland.
+    - The Iranian regime threatened Amini with torture and labeled her a criminal for her social media posts and athletic activities.
+    - Amini was unable to attend her father's funeral or see him before his death because returning to Iran would have led to her arrest or execution.
+    - Activist Masih Alinejad claims she has survived three assassination attempts by the IRGC and their operatives on United States soil.
+    - The Iranian regime has executed athletes such as wrestling champion Navid Afkari and currently holds numerous other athletes in prison.
+
+  Video ID: AWFxAs2wBrM
+  Chunks: 5
+  Points Stored: 5
+  Category: Healthcare Policy
+  Sentiment: negative
+  Topics: Healthcare Fraud, State Governance, Political Accountability, Public Spending
+  Is Breaking: False
+  Key Claims:
+    - Minnesota Governor Tim Walz is accused of overseeing a major Medicaid fraud scandal while claiming credit for recent prosecutions.
+    - A CBS report indicates that over 700 hospices in Los Angeles County show multiple red flags for potential fraud.
+    - An Indiana doctor allegedly billed Medicaid $29 million for the treatment of only 84 children with autism.
+    - Panelists claim the Minnesota administration silenced whistleblowers who attempted to report fraud involving funds being sent abroad.
+    - The transcript alleges that some fraudulent funds from Minnesota were diverted to support overseas terrorist cells.
+
+  Video ID: T5-wN1IrT48
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Conflict, Oil Markets, Inflation, Natural Disasters, Crime
+  Is Breaking: True
+  Key Claims:
+    - The International Energy Agency has agreed to release a record 400 million barrels of oil from emergency reserves.
+    - Iran's military reportedly attacked a Thai naval ship in the Strait of Hormuz, necessitating a crew rescue.
+    - President Trump is considering deploying the US Navy to escort ships safely through the Strait of Hormuz.
+    - Severe storms and tornadoes across five states have caused at least two deaths and left over 50,000 people without power.
+    - The FBI has added Chungduklu to its top 10 most wanted list for the 2014 kidnapping and murder of two brothers.
+
+  Video ID: qNX5vRUSkgY
+  Chunks: 4
+  Points Stored: 4
+  Category: US Elections & Voting
+  Sentiment: negative
+  Topics: US Elections, Inflation, Oil Prices, Iran Conflict, Economic Policy
+  Is Breaking: False
+  Key Claims:
+    - Donald Trump visited Ohio and Kentucky to discuss the economy and campaign for the midterm elections.
+    - The average price of gasoline in the United States reached $3.54 per gallon, a 17% increase since the start of the war.
+    - Brent crude oil prices recently exceeded $100 per barrel.
+    - Republicans previously proposed refilling the Strategic Petroleum Reserve when oil was priced at $25 per barrel.
+    - The discussion highlighted a political divide over whether high gas prices are a result of energy policy or international conflict.
+
+  Video ID: su754khBEIQ
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran Conflict, Middle East Security, US Foreign Policy, Military Strategy
+  Is Breaking: False
+  Key Claims:
+    - The adversary has lost its navy and air force capabilities.
+    - The adversary lacks functioning anti-aircraft apparatus and radar.
+    - The leadership of the adversary has been removed.
+    - The United States has the capability to destroy remaining targets within one hour.
+    - Targeting specific remaining infrastructure would prevent the country from being rebuilt.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week2/nbcnews.json
+Status: success
+  Video ID: gfoN9LAm8_g
+  Chunks: 4
+  Points Stored: 4
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran Conflict, Oil Markets, Middle East Crisis, Energy Policy, US Military Operations
+  Is Breaking: True
+  Key Claims:
+    - President Trump is tapping the Strategic Petroleum Reserve to counter a surge in gas prices caused by the conflict with Iran.
+    - The International Energy Agency and its members are releasing a record 400 million barrels of oil into the market.
+    - The Pentagon claims to have struck over 5,500 targets in Iran, effectively decimating its navy and air force.
+    - A preliminary investigation suggests a US strike on an Iranian school that killed 170 people resulted from outdated intelligence.
+    - Iran has targeted oil infrastructure and tankers in the Strait of Hormuz, including a Thai cargo vessel and an oil depot in Oman.
+
+  Video ID: m_6ITWXGxMQ
+  Chunks: 3
+  Points Stored: 3
+  Category: Europe & NATO
+  Sentiment: negative
+  Topics: UK Politics, Jeffrey Epstein Scandal, Diplomatic Appointments, Political Scandals
+  Is Breaking: True
+  Key Claims:
+    - The British government released 147 pages of documents revealing PM Keir Starmer was warned about the reputational risk of appointing Peter Mandelson.
+    - Documents show Peter Mandelson stayed at Jeffrey Epstein's home in 2009 while Epstein was in jail.
+    - PM Starmer was provided with a checklist detailing Mandelson's personal and professional relationship with Epstein prior to the appointment.
+    - Peter Mandelson was recently arrested on suspicion of misconduct in public office and is currently under police investigation.
+    - Mandelson reportedly agreed to be a founding citizen of an NGO funded by Ghislaine Maxwell in 2014.
+
+  Video ID: ynFK2icY1q8
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran-US Relations, Military Intelligence, Middle East Conflict, US Foreign Policy
+  Is Breaking: True
+  Key Claims:
+    - A preliminary investigation suggests the U.S. was likely responsible for a strike on an Iranian school.
+    - Visual evidence from the scene indicates that a Tomahawk missile was used in the attack.
+    - The U.S. may have been using outdated intelligence that identified the site as a military base rather than a school.
+    - The targeted school was located on the grounds of a former Iranian military installation.
+    - The ongoing investigation is focused on why the targeting process failed to validate the current status of the site before the strike.
+
+  Video ID: O5klkgs5_WA
+  Chunks: 1
+  Points Stored: 1
+  Category: US Elections & Voting
+  Sentiment: negative
+  Topics: Donald Trump, Republican Party, Kentucky Politics, US Congress, Political Campaigns
+  Is Breaking: False
+  Key Claims:
+    - Donald Trump claims he won the state of Kentucky by a landslide.
+    - Donald Trump asserts he received the highest vote count in the history of Kentucky.
+    - Donald Trump called Representative Thomas Massie a complete and total disaster as a congressman and a human being.
+    - Trump acknowledged Massie attended a good college but suggested he is not intelligent.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week2/newyorktimes.json
+Status: success
+  Video ID: zfpyGEroXwg
+  Chunks: 2
+  Points Stored: 2
+  Category: White House & Executive
+  Sentiment: neutral
+  Topics: War Powers, Iran Conflict, US Constitution, Presidential Authority, Military Intervention
+  Is Breaking: False
+  Key Claims:
+    - The US Constitution assigns the power to declare war to Congress, but presidents have increasingly initiated hostilities without its approval.
+    - Executive branch lawyers often justify military actions by arguing they fall short of the constitutional definition of war based on factors like risk and duration.
+    - Congress as an institution has largely acquiesced to the expansion of presidential war-making powers over several decades.
+    - The conflict with Iran lacks several traditional justifications used by previous administrations, such as host country consent or United Nations authorization.
+    - A significant gap has developed between the original intent of the Founding Fathers regarding war powers and modern executive practice.
+
+  Video ID: JXj6GVixtpQ
+  Chunks: 2
+  Points Stored: 2
+  Category: Entertainment & Celebrity
+  Sentiment: neutral
+  Topics: Oscars, Film Industry, Voting Systems, Academy Awards, Entertainment Industry
+  Is Breaking: False
+  Key Claims:
+    - The Best Picture Oscar is the only category determined by a preferential ballot system.
+    - A movie must receive more than 50% of the votes to be declared the winner of Best Picture.
+    - The voting process involves eliminating the movie with the fewest first-place votes and redistributing those ballots to the second-choice selections.
+    - The preferential ballot system is generally considered to favor 'crowd-pleaser' movies that have broad appeal among voters.
+    - The Academy of Motion Picture Arts and Sciences does not release the specific vote breakdowns for any year.
+
+  Video ID: zaWAOem-eUg
+  Chunks: 2
+  Points Stored: 2
+  Category: Other
+  Sentiment: positive
+  Topics: Aviation Industry, Travel & Tourism, Japanese Culture, Logistics & Infrastructure
+  Is Breaking: False
+  Key Claims:
+    - Kansai International Airport has not lost a single piece of baggage in over 30 years.
+    - The airport handles approximately 30 million passengers annually and is consistently ranked best in the world for luggage handling.
+    - Staff practice 'Omotenashi' by cleaning bags and turning handles outward for easier passenger retrieval.
+    - Operational efficiency is maintained through a 'Kaizen' manual that is continuously updated based on staff feedback.
+    - The airport uses a double-check system where handlers physically touch each suitcase to verify baggage counts.
+
+  Video ID: fIPcnRE5Gek
+  Chunks: 2
+  Points Stored: 2
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Conflict, Lebanon Crisis, Israel-Hezbollah Conflict, Civilian Casualties, Sectarian Tensions
+  Is Breaking: False
+  Key Claims:
+    - Israel bombed the Comfort Hotel in Beirut on March 4th while it was sheltering displaced families.
+    - A 34-year-old hotel receptionist named Fatima Zaha died from injuries sustained during the strike.
+    - The hotel's owner claims that no militants were staying at the property and that all guests were identified civilians.
+    - The transcript states that Hezbollah intensified attacks following the death of Iran's Supreme Leader during a war with the US and Israel.
+    - The decision to shelter displaced Shia Muslims has sparked sectarian backlash against the hotel's Christian owner.
+
+  Video ID: npENDREemNM
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Strait of Hormuz, Iran-US Conflict, Oil Markets, Maritime Security, Global Economy
+  Is Breaking: False
+  Key Claims:
+    - The Strait of Hormuz is a vital waterway where over 80% of the oil passing through is destined for Asian markets.
+    - Daily tanker traffic through the Strait of Hormuz dropped from approximately 80 ships to only two during a period of heightened tension.
+    - Iran's geographic position on the edge of the Strait of Hormuz provides it with a significant strategic advantage over the passage.
+    - President Trump proposed a naval escort program to provide protection for tankers navigating the Strait.
+    - Ongoing instability in the region has caused global oil prices to rise and threatens significant damage to the global economy.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week2/skynews.json
+Status: success
+  Video ID: ryvY7yXDaTE
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Conflict, Intelligence Failure, Oil Markets, US Foreign Policy, Military Intervention
+  Is Breaking: True
+  Key Claims:
+    - A preliminary military investigation found the United States likely fired a missile that struck a school in Iran.
+    - The strike was the result of the school being mistaken for a military target due to old intelligence.
+    - Israel was reportedly involved in the process of selecting targets for the military operations.
+    - The strike resulted in the deaths of 165 people, the majority of whom were school children.
+    - The U.S. has been targeting Iranian mine-laying vessels in the Strait of Hormuz to secure oil routes and lower prices.
+
+  Video ID: 3Ru4kQTMSXI
+  Chunks: 2
+  Points Stored: 2
+  Category: Sports
+  Sentiment: negative
+  Topics: Iran Conflict, World Cup 2026, FIFA, Middle East Geopolitics, International Relations
+  Is Breaking: True
+  Key Claims:
+    - Iran is threatening to boycott the 2026 World Cup because the United States and Israel are bombing the country.
+    - Donald Trump assured FIFA that the Iranian team is welcome to compete despite his previous indifferent comments.
+    - Iran has linked its participation to the status of women's team members who sought asylum in Australia.
+    - Iranian players and fans may face significant entry hurdles due to long-standing travel bans and visa requirements.
+    - Iraq and the United Arab Emirates are considered the likely replacements if Iran withdraws from the tournament.
+
+  Video ID: Oixq20eBbF8
+  Chunks: 3
+  Points Stored: 3
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran Conflict, Middle East Geopolitics, Maritime Security, Military Strategy, Drone Warfare
+  Is Breaking: True
+  Key Claims:
+    - Israel is conducting targeted strikes in southern Beirut against residential buildings believed to house Hezbollah leadership.
+    - The Strait of Hormuz is a critical choke point where tankers are forced to navigate narrow lanes close to the Iranian shore.
+    - Iran is using drones to attack and damage commercial shipping, such as a Thai vessel, to disrupt maritime activity.
+    - Iran utilizes small motorboats to deploy floating mines as a simple and effective way to make the Gulf dangerous for shipping.
+    - The speaker asserts that the United States lacks a coherent political strategy despite having a specific military strategy.
+
+  Video ID: LiofMx0rS6M
+  Chunks: 2
+  Points Stored: 2
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Iran Conflict, Global Energy Markets, Maritime Security, Middle East Tensions, Drone Warfare
+  Is Breaking: True
+  Key Claims:
+    - The International Energy Agency is releasing a record volume of emergency oil reserves to stabilize global prices.
+    - Iran's Revolutionary Guard claimed responsibility for attacking a Thai-flagged vessel in the Strait of Hormuz.
+    - The U.S. military has targeted and destroyed a significant portion of the Iranian navy to secure shipping lanes.
+    - Heavy bombing in Tehran has led to unconfirmed reports that Iran's new supreme leader may have been wounded.
+    - Commercial shipping in the Strait of Hormuz has reached a standstill as Iran threatens to target hostile vessels.
+
+  Video ID: 5FG2AgCQ_Vw
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Conflict, Israeli-Lebanese Conflict, Urban Warfare, Civilian Casualties
+  Is Breaking: True
+  Key Claims:
+    - An Israeli strike targeted an apartment building in the Aishawa Becker district of central Beirut.
+    - Four people were killed in the attack which occurred without an evacuation warning.
+    - The Lebanese army recovered a missile from the site that failed to detonate.
+    - The strike hit a densely populated, middle-income neighborhood with a religiously mixed population.
+    - The attack left significant damage to residential infrastructure, including blown-out floors and exposed reinforcements.
+
+--------------------------------------------------------------------------------
+
+Object: youtube-data/week2/washingtonpost.json
+Status: success
+  Video ID: UlGopxV389M
+  Chunks: 1
+  Points Stored: 1
+  Category: Middle East Conflict
+  Sentiment: negative
+  Topics: Middle East Conflict, Iran Conflict, Public Health, Environmental Hazards
+  Is Breaking: True
+  Key Claims:
+    - Oil-laden black rain and acidic rain pose a significant respiratory health risk to the population in Iran.
+    - Iranian authorities have issued an alert advising citizens to stay indoors.
+    - The environmental hazard is a result of attacks on oil warehouses.
+    - The World Health Organization (WHO) identifies the rain as a danger to the public.
+
+  Video ID: b3aC1atw5ac
+  Chunks: 1
+  Points Stored: 1
+  Category: Sports
+  Sentiment: positive
+  Topics: Wife Carrying, Extreme Sports, British Traditions, International Competitions
+  Is Breaking: False
+  Key Claims:
+    - The event is the 18th annual UK wife-carrying race.
+    - Thirty-five couples participated in the competition.
+    - The race involves carrying a partner up and down a hill while overcoming obstacles like hay bales and water.
+    - The world championship for wife-carrying originated in Finland in the 1990s.
+    - Finnish competitors participated in and won the UK event.
+
+  Video ID: K8NdszUxszE
+  Chunks: 1
+  Points Stored: 1
+  Category: Other
+  Sentiment: positive
+  Topics: National Parks, Natural Phenomena, Botany, California Tourism
+  Is Breaking: False
+  Key Claims:
+    - Death Valley is currently experiencing a rare natural event known as a super bloom.
+    - The super bloom transforms the desert landscape into a colorful environment with a wide palette of flowers.
+    - Seeds of certain desert plant species can remain dormant in the ground for ten years or more before blooming.
+    - Park officials expect the floral display to attract more visitors to Death Valley National Park.
+
+  Video ID: KMyOvDuS-mw
+  Chunks: 1
+  Points Stored: 1
+  Category: Entertainment & Celebrity
+  Sentiment: positive
+  Topics: Salsa Music, Music Tributes, Latin American Culture, Obituaries
+  Is Breaking: False
+  Key Claims:
+    - Trombonists performed a musical serenade to honor the late salsa legend Willie Colón.
+    - The event served as a final farewell and tribute to Colón's musical legacy.
+    - Willie Colón is recognized as an iconic and influential figure in the history of salsa music.
+
+--------------------------------------------------------------------------------
+
