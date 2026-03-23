@@ -192,3 +192,7 @@ def get_default_chunker(model_name: str = DEFAULT_MODEL) -> SemanticChunker:
     if _default_chunker is None:
         _default_chunker = SemanticChunker(model_name=model_name)
     return _default_chunker
+
+
+def semantic_chunk(text: str) -> list[str]:
+    return get_default_chunker().chunk(text)

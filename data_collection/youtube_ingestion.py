@@ -211,7 +211,7 @@ def save_to_s3(channel_name, videos):
     """Save channel data to S3"""
     try:
         timestamp = datetime.now().isoformat()
-        s3_key = f"youtube-data/week2/{channel_name.lower()}.json"
+        s3_key = f"youtube-data/week3/{channel_name.lower()}.json"
         
         payload = {
             "channel": channel_name,

@@ -62,6 +62,7 @@ class PipelineService:
             total_videos = 0
             analyzed_videos = 0
             total_chunks_stored = 0
+            total_points_indexed = 0
             chunk_map = {}
             analysis_map = {}
 
