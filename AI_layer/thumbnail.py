@@ -337,7 +337,7 @@ def analyze_channel(channel: str, videos: list, out_dir: Path, batch_size: int):
     report_path = out_dir / f"{safe_name}_analysis.txt"
 
     total = len(videos)
-    batches = [videos[i: i + batch_size] for i in range(0, total, batch_size)]
+    batches = [videos[i : i + batch_size] for i in range(0, total, batch_size)]
     n_batch = len(batches)
 
     print(f"\n{'='*60}")

@@ -8,8 +8,12 @@ Exposes REST endpoints for the Gemini transcript analysis pipeline:
 
 from fastapi import APIRouter, HTTPException
 
-from app.schemas.pipeline import (PipelineRunRequest, PipelineRunResponse,
-                                  VectorSearchRequest, VectorSearchResponse)
+from app.schemas.pipeline import (
+    PipelineRunRequest,
+    PipelineRunResponse,
+    VectorSearchRequest,
+    VectorSearchResponse,
+)
 from app.services.pipeline_service import PipelineService
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])

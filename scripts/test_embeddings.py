@@ -3,7 +3,10 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from data_collection.embeddings import embed_and_store, query_similar_chunks  # noqa: E402
+from data_collection.embeddings import (
+    embed_and_store,
+    query_similar_chunks,
+)  # noqa: E402
 
 TRANSCRIPT_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "../data/transcript.txt")

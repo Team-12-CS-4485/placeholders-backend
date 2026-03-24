@@ -26,9 +26,15 @@ from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from googleapiclient.discovery import build
 
-from config import (COMMENTS_PER_VIDEO, MAX_VIDEO_DURATION_MINUTES,
-                    MAX_VIDEOS_PER_CHANNEL, MIN_VIEW_COUNT, NEWS_CHANNELS,
-                    TIME_WINDOW_DAYS, YOUTUBE_API_KEY)
+from config import (
+    COMMENTS_PER_VIDEO,
+    MAX_VIDEO_DURATION_MINUTES,
+    MAX_VIDEOS_PER_CHANNEL,
+    MIN_VIEW_COUNT,
+    NEWS_CHANNELS,
+    TIME_WINDOW_DAYS,
+    YOUTUBE_API_KEY,
+)
 
 # Setup loggingmax
 logger = logging.getLogger(__name__)
