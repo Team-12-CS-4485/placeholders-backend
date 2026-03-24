@@ -31,6 +31,7 @@ Final Qdrant payload per chunk:
 
 import time
 
+from qdrant_client import models
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.services.storage_service import StorageService
