@@ -9,6 +9,9 @@ from dotenv import load_dotenv
 # Load .env from the parent directory (same as config.py does)
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
+# Allow imports from data_collection/
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 import boto3
 from botocore.exceptions import ClientError
 from datetime import datetime, timezone
@@ -63,7 +66,7 @@ def test_insert():
     # Step 3: Read back the item
     print("\nReading item back from DynamoDB...")
     try:
-        response = table.get_item(Key={'PartitionKey': SAMPLE_VIDEO['videoId'], 'SortKey': 'TestChannel'})
+        response = table.get_item(Key={'PartitionKey': 'TestChannel', 'SortKey': SAMPLE_VIDEO['videoId']})
         item = response.get('Item')
         if item:
             print(f"[OK] Item found:")
@@ -92,7 +95,7 @@ def test_insert():
     # Step 5: Cleanup
     print(f"\nCleaning up test item (id={SAMPLE_VIDEO['videoId']})...")
     try:
-        table.delete_item(Key={'PartitionKey': SAMPLE_VIDEO['videoId'], 'SortKey': 'TestChannel'})
+        table.delete_item(Key={'PartitionKey': 'TestChannel', 'SortKey': SAMPLE_VIDEO['videoId']})
         print("[OK] Test item deleted")
     except ClientError as e:
         print(f"[WARN] Cleanup failed: {e.response['Error']['Message']}")

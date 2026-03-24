@@ -1,16 +1,14 @@
 """
 scheduler.py - YouTube Ingestion Scheduler
 
-Runs the YouTube ingestion pipeline in three nightly batches (4 channels each):
-  Batch 1 — Sunday    03:00 UTC  (partial — week counter unchanged)
-  Batch 2 — Monday    03:00 UTC  (partial — week counter unchanged)
-  Batch 3 — Tuesday   03:00 UTC  (full   — advances the week counter)
+Runs the consolidated YouTube ingestion pipeline once a week:
+  Weekly — Sunday 03:00 UTC (full run across all channels)
 
 Usage:
     python scheduler.py                        # start recurring schedule
-    python scheduler.py --run-now              # fire all channels immediately (full run)
-    python scheduler.py --run-now --partial    # fire without advancing week counter
-    python scheduler.py --run-now --batch=1   # fire only batch 1 immediately
+    python scheduler.py --run-now              # fire all channels immediately
+    python scheduler.py --run-now --partial    # fire without advancing behaviour
+    python scheduler.py --run-now --dry-run    # full run, no writes (testing)
 """
 
 import logging
@@ -22,7 +20,7 @@ from apscheduler.triggers.cron import CronTrigger
 # Ensure data_collection imports resolve
 sys.path.insert(0, os.path.dirname(__file__))
 
-from youtube_ingestion import main as run_ingestion
+import pipeline
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,68 +30,36 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def ingestion_job(batch: int = 0, partial: bool = False):
-    label = f"batch {batch}" if batch else "all channels"
-    logger.info(f"Scheduler: starting ingestion run ({label})")
+def ingestion_job(partial: bool = False, dry_run: bool = False):
+    logger.info("Scheduler: starting ingestion run")
     try:
-        run_ingestion(partial=partial, batch=batch)
-        logger.info(f"Scheduler: ingestion run completed ({label})")
+        pipeline.run_pipeline(partial=partial, dry_run=dry_run)
+        logger.info("Scheduler: ingestion run completed")
     except Exception as e:
-        logger.error(f"Scheduler: ingestion run failed ({label}): {e}", exc_info=True)
-
-
-def _parse_batch_arg() -> int:
-    """Return the value of --batch=N from sys.argv, or 0 if not present."""
-    for arg in sys.argv:
-        if arg.startswith("--batch="):
-            try:
-                return int(arg.split("=", 1)[1])
-            except ValueError:
-                pass
-    return 0
+        logger.error(f"Scheduler: ingestion run failed: {e}", exc_info=True)
 
 
 def main():
     if "--run-now" in sys.argv:
         partial = "--partial" in sys.argv
-        batch = _parse_batch_arg()
+        dry_run = "--dry-run" in sys.argv
         logger.info("--run-now flag detected: firing ingestion job immediately")
-        ingestion_job(batch=batch, partial=partial)
+        ingestion_job(partial=partial, dry_run=dry_run)
         return
 
     scheduler = BlockingScheduler(timezone="UTC")
 
-    # Batch 1 — Sunday 03:00 UTC — partial (does not advance week counter)
+    # Single weekly trigger — Sunday 03:00 UTC
     scheduler.add_job(
         ingestion_job,
         CronTrigger(day_of_week="sun", hour=3, minute=0, timezone="UTC"),
-        kwargs={"batch": 1, "partial": True},
-        id="youtube_batch_1",
-        replace_existing=True,
-    )
-
-    # Batch 2 — Monday 03:00 UTC — partial
-    scheduler.add_job(
-        ingestion_job,
-        CronTrigger(day_of_week="mon", hour=3, minute=0, timezone="UTC"),
-        kwargs={"batch": 2, "partial": True},
-        id="youtube_batch_2",
-        replace_existing=True,
-    )
-
-    # Batch 3 — Tuesday 03:00 UTC — full run (advances week counter)
-    scheduler.add_job(
-        ingestion_job,
-        CronTrigger(day_of_week="tue", hour=3, minute=0, timezone="UTC"),
-        kwargs={"batch": 3, "partial": False},
-        id="youtube_batch_3",
+        kwargs={"partial": False},
+        id="youtube_weekly",
         replace_existing=True,
     )
 
     logger.info("Scheduler started:")
-    logger.info("  Batch 1 — Sunday    03:00 UTC (partial)")
-    logger.info("  Batch 2 — Monday    03:00 UTC (partial)")
-    logger.info("  Batch 3 — Tuesday   03:00 UTC (full — advances week counter)")
+    logger.info("  Weekly run — Sunday 03:00 UTC")
     logger.info("Press Ctrl+C to stop")
 
     try:

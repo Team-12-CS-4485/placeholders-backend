@@ -15,7 +15,7 @@ both S3 (as JSON for the analysis pipeline) and DynamoDB (for metadata persisten
 
 from googleapiclient.discovery import build
 import yt_dlp
-from config import NEWS_CHANNELS, CHANNEL_BATCHES, YOUTUBE_API_KEY, MAX_VIDEOS_PER_CHANNEL, MIN_VIEW_COUNT, TIME_WINDOW_DAYS, COMMENTS_PER_VIDEO, MAX_VIDEO_DURATION_MINUTES
+from config import NEWS_CHANNELS, YOUTUBE_API_KEY, MAX_VIDEOS_PER_CHANNEL, MIN_VIEW_COUNT, TIME_WINDOW_DAYS, COMMENTS_PER_VIDEO, MAX_VIDEO_DURATION_MINUTES
 from rate_limit import retry_api_call, retry_transcript, QuotaExhaustedError
 import json
 import re
@@ -362,7 +362,7 @@ def get_existing_video_ids(dynamodb, table_name, channel_name):
     return existing_ids
 
 
-def main(partial: bool = False, batch: int = 0):
+def main(partial: bool = False):
     """
     Process channels and save to S3 and DynamoDB.
 
@@ -372,13 +372,7 @@ def main(partial: bool = False, batch: int = 0):
     """
     logger.info("YouTube Video Ingestion")
 
-    # Select channel subset based on batch
-    if batch and 1 <= batch <= len(CHANNEL_BATCHES):
-        batch_names = set(CHANNEL_BATCHES[batch - 1])
-        channels = {k: v for k, v in NEWS_CHANNELS.items() if k in batch_names}
-        logger.info(f"BATCH {batch} — {list(channels)}")
-    else:
-        channels = NEWS_CHANNELS
+    channels = NEWS_CHANNELS
 
     if partial:
         logger.info("PARTIAL RUN — week counter will NOT advance after this run")
