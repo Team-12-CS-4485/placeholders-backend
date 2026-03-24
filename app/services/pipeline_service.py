@@ -104,22 +104,25 @@ class PipelineService:
                     # Unique key per video
                     transcript_key = f"{source_key}::{video_id}"
 
-                    # Skip if already indexed — avoids re-running Gemini for known videos
-                    existing = self.vector_service.client.scroll(
-                        collection_name=self.vector_service.collection_name,
-                        scroll_filter=models.Filter(
-                            must=[models.FieldCondition(
-                                key="transcript_index",
-                                match=models.MatchValue(value=video_id)
-                            )]
-                        ),
-                        limit=1,
-                    )[0]
-                    if existing:
-                        self.logger.info(f"VIDEO_SKIP_ALREADY_INDEXED videoId={video_id} channel={channel}")
-                        analyzed_videos += 1
-                        total_chunks_stored += len(existing)
-                        continue
+                    # Skip if already indexed — avoids re-running Gemini for known videos.
+                    # Guard with collection_exists() so a freshly deleted collection
+                    # doesn't raise a 404 before the first upsert creates it.
+                    if self.vector_service.collection_exists():
+                        existing = self.vector_service.client.scroll(
+                            collection_name=self.vector_service.collection_name,
+                            scroll_filter=models.Filter(
+                                must=[models.FieldCondition(
+                                    key="transcript_index",
+                                    match=models.MatchValue(value=video_id)
+                                )]
+                            ),
+                            limit=1,
+                        )[0]
+                        if existing:
+                            self.logger.info(f"VIDEO_SKIP_ALREADY_INDEXED videoId={video_id} channel={channel}")
+                            analyzed_videos += 1
+                            total_chunks_stored += len(existing)
+                            continue
 
                     # Step 1: Chunk
                     chunks = self.embedding_service.chunk_text(transcript)

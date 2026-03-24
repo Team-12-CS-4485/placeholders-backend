@@ -122,18 +122,9 @@ class EmbeddingService:
         return True
 
     def _gemini(self, prompt: Union[str, list], max_retries: int = 6) -> str:
-        """
-        Call Gemini with automatic key rotation and exponential backoff.
-
-        prompt can be:
-          - str  → plain text call (existing behaviour, unchanged)
-          - list → multimodal call; each item should be a types.Part
-                   (e.g. [Part.from_bytes(...), Part.from_text(...)])
-        """
         contents = prompt if isinstance(prompt, list) else [prompt]
-        wait = 15
         last_exc = None
-        for attempt in range(max_retries):
+        for attempt in range(max_retries * len(self.api_keys)):
             try:
                 response = self.client.models.generate_content(
                     model=self.model_id,
@@ -161,30 +152,20 @@ class EmbeddingService:
                     if self._rotate_key():
                         logger.warning(f"GEMINI_KEY_ROTATED attempt={attempt+1} retrying immediately")
                         continue
-                    if attempt < max_retries - 1:
-                        logger.warning(
-                            f"GEMINI_RATE_LIMIT attempt={attempt+1}/{max_retries} "
-                            f"waiting={wait}s error={exc_str[:100]}"
-                        )
-                        time.sleep(wait)
-                        wait = min(wait * 2, 300)
-                    else:
-                        raise RuntimeError(
-                            f"Gemini rate limit exceeded after {max_retries} retries on all keys"
-                        ) from exc
+                    # all keys exhausted — reset and wait
+                    logger.warning("ALL_KEYS_EXHAUSTED resetting to key 0 and waiting 60s")
+                    self.current_key_index = 0
+                    self.client = genai.Client(api_key=self.api_keys[0])
+                    time.sleep(60)
+                    continue
                 else:
                     raise
         raise last_exc
 
     def _gemini_vision(self, prompt: Union[str, list], max_retries: int = 6) -> str:
-        """
-        Like _gemini but forces thinking_level=low — vision / description tasks
-        don't benefit from extended reasoning and this saves significant quota.
-        """
         contents = prompt if isinstance(prompt, list) else [prompt]
-        wait = 15
         last_exc = None
-        for attempt in range(max_retries):
+        for attempt in range(max_retries * len(self.api_keys)):
             try:
                 response = self.client.models.generate_content(
                     model=self.model_id,
@@ -212,17 +193,11 @@ class EmbeddingService:
                     if self._rotate_key():
                         logger.warning(f"GEMINI_KEY_ROTATED (vision) attempt={attempt+1} retrying immediately")
                         continue
-                    if attempt < max_retries - 1:
-                        logger.warning(
-                            f"GEMINI_RATE_LIMIT (vision) attempt={attempt+1}/{max_retries} "
-                            f"waiting={wait}s error={exc_str[:100]}"
-                        )
-                        time.sleep(wait)
-                        wait = min(wait * 2, 300)
-                    else:
-                        raise RuntimeError(
-                            f"Gemini vision rate limit exceeded after {max_retries} retries on all keys"
-                        ) from exc
+                    logger.warning("ALL_KEYS_EXHAUSTED (vision) resetting to key 0 and waiting 60s")
+                    self.current_key_index = 0
+                    self.client = genai.Client(api_key=self.api_keys[0])
+                    time.sleep(60)
+                    continue
                 else:
                     raise
         raise last_exc
