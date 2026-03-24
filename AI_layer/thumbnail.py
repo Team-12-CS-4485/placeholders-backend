@@ -51,7 +51,6 @@ import datetime
 import hashlib
 from pathlib import Path
 
-
 # ── Configs ───────────────────────────────────────────────────────────────────
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
@@ -72,6 +71,7 @@ DEFAULT_BATCH = 10  # thumbnails per Gemini API call
 
 
 # ── Processed-ID file helpers ─────────────────────────────────────────────────
+
 
 def processed_ids_path(out_dir: Path) -> Path:
     """Single flat file shared across all channels: reports/processed_ids.txt"""
@@ -105,21 +105,22 @@ def mark_ids_processed(out_dir: Path, video_ids: list) -> None:
 
 # ── AWS SigV4 — lightweight DynamoDB client ───────────────────────────────────
 
+
 def _sign(key: bytes, msg: str) -> bytes:
     return hmac.HMAC(key, msg.encode("utf-8"), hashlib.sha256).digest()
 
 
 def _get_signature_key(key, date_stamp, region, service):
-    k_date    = _sign(("AWS4" + key).encode("utf-8"), date_stamp)
-    k_region  = _sign(k_date, region)
+    k_date = _sign(("AWS4" + key).encode("utf-8"), date_stamp)
+    k_region = _sign(k_date, region)
     k_service = _sign(k_region, service)
     return _sign(k_service, "aws4_request")
 
 
 def dynamo_request(action: str, payload: dict) -> dict:
     """Sign and send a DynamoDB API request using AWS SigV4."""
-    service  = "dynamodb"
-    host     = f"dynamodb.{AWS_REGION}.amazonaws.com"
+    service = "dynamodb"
+    host = f"dynamodb.{AWS_REGION}.amazonaws.com"
     endpoint = f"https://{host}/"
 
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -247,6 +248,7 @@ def dynamo_list_channels() -> list:
 
 # ── Gemini helpers ────────────────────────────────────────────────────────────
 
+
 def gemini_request(contents: list, system_instruction: str = None) -> str:
     """Send a request to Gemini with exponential backoff for 429 rate-limit errors."""
     payload = {"contents": contents}
@@ -364,19 +366,22 @@ def analyze_thumbnail_batch(videos: list, batch_num: int, total_batches: int) ->
 
 # ── Report writer ─────────────────────────────────────────────────────────────
 
-def analyze_channel(channel: str, videos: list, out_dir: Path, batch_size: int, processed_ids: set):
+
+def analyze_channel(
+    channel: str, videos: list, out_dir: Path, batch_size: int, processed_ids: set
+):
     """
     Fetch thumbnails and run Gemini analysis for one channel, appending to the report file.
     Any video whose ID is already in processed_ids is skipped entirely.
     After each successful batch, the batch's IDs are appended to processed_ids.txt.
     """
-    safe_name   = channel.replace("/", "_").replace(" ", "_")
+    safe_name = channel.replace("/", "_").replace(" ", "_")
     report_path = out_dir / f"{safe_name}_analysis.txt"
 
     # ── Partition into already-done vs new ───────────────────────────────────
     new_videos = [v for v in videos if v["videoId"] not in processed_ids]
     skip_count = len(videos) - len(new_videos)
-    n_new      = len(new_videos)
+    n_new = len(new_videos)
 
     print(f"\n{'='*60}")
     print(f"  Channel : {channel}  ({len(videos)} videos total)")
@@ -395,14 +400,16 @@ def analyze_channel(channel: str, videos: list, out_dir: Path, batch_size: int, 
             sep = "=" * 70
             txt.write(sep + "\n")
             txt.write("  NEWS ANALYSIS REPORT\n")
-            txt.write(f"  Generated : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            txt.write(
+                f"  Generated : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            )
             txt.write(f"  Channel   : {channel}\n")
             txt.write(sep + "\n\n")
             txt.write("Thumbnail Image Analysis\n")
             txt.write("-" * 40 + "\n\n")
 
         # ── Analyze in batches ────────────────────────────────────────────────
-        batches = [new_videos[i:i+batch_size] for i in range(0, n_new, batch_size)]
+        batches = [new_videos[i : i + batch_size] for i in range(0, n_new, batch_size)]
         n_batch = len(batches)
 
         for idx, batch in enumerate(batches, 1):
@@ -410,8 +417,10 @@ def analyze_channel(channel: str, videos: list, out_dir: Path, batch_size: int, 
             analysis = analyze_thumbnail_batch(batch, idx, n_batch)
 
             # Write analysis to report
-            txt.write(f"--- Batch {idx}/{n_batch} "
-                      f"({datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---\n")
+            txt.write(
+                f"--- Batch {idx}/{n_batch} "
+                f"({datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---\n"
+            )
             txt.write(analysis + "\n\n")
             txt.flush()
 
@@ -420,13 +429,16 @@ def analyze_channel(channel: str, videos: list, out_dir: Path, batch_size: int, 
             mark_ids_processed(out_dir, batch_ids)
             processed_ids.update(batch_ids)  # keep in-memory set current
 
-            print(f"  Batch {idx} written & {len(batch_ids)} ID(s) recorded in processed_ids.txt")
+            print(
+                f"  Batch {idx} written & {len(batch_ids)} ID(s) recorded in processed_ids.txt"
+            )
 
     print(f"  Report → {report_path}")
     return report_path
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+
 
 def main():
     missing = []
@@ -440,11 +452,11 @@ def main():
         print("ERROR: Missing environment variable(s):", ", ".join(missing))
         sys.exit(1)
 
-    args           = sys.argv[1:]
+    args = sys.argv[1:]
     channel_filter = None
-    batch_size     = DEFAULT_BATCH
-    use_cache      = True
-    out_dir        = Path(os.path.dirname(os.path.abspath(__file__))) / "reports"
+    batch_size = DEFAULT_BATCH
+    use_cache = True
+    out_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "reports"
 
     i = 0
     while i < len(args):
@@ -455,9 +467,11 @@ def main():
             batch_size = int(args[i + 1])
             i += 2
         elif args[i] == "--out-dir" and i + 1 < len(args):
-            out_dir = Path(args[i + 1]); i += 2
+            out_dir = Path(args[i + 1])
+            i += 2
         elif args[i] == "--no-cache":
-            use_cache = False; i += 1
+            use_cache = False
+            i += 1
         else:
             i += 1
 

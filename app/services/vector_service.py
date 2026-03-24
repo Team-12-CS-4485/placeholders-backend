@@ -67,7 +67,7 @@ class VectorService:
             "channel",
             "category",
             "sentiment",
-            "topics",       # array field — Qdrant indexes each element individually
+            "topics",  # array field — Qdrant indexes each element individually
         )
         for field in keyword_fields:
             try:
@@ -141,8 +141,8 @@ class VectorService:
         self.ensure_collection(vector_size=len(vectors[0]))
 
         base_payload = {
-            "transcript_key":   transcript_key,
-            "source_key":       source_key,
+            "transcript_key": transcript_key,
+            "source_key": source_key,
             "transcript_index": str(transcript_index),
         }
         if extra_metadata:
@@ -155,8 +155,8 @@ class VectorService:
                 payload={
                     **base_payload,
                     "chunk_index": chunk_idx,
-                    "text":        chunk_text,
-                    "word_count":  len(chunk_text.split()),
+                    "text": chunk_text,
+                    "word_count": len(chunk_text.split()),
                 },
             )
             for chunk_idx, (chunk_text, vector) in enumerate(
@@ -209,21 +209,21 @@ class VectorService:
 
         return [
             {
-                "id":              str(r.id),
-                "score":           float(r.score),
-                "transcript_key":  r.payload.get("transcript_key", ""),
-                "source_key":      r.payload.get("source_key", ""),
-                "channel":         r.payload.get("channel", ""),
-                "title":           r.payload.get("title", ""),
-                "published_at":    r.payload.get("published_at", ""),
-                "view_count":      r.payload.get("view_count", 0),
-                "category":        r.payload.get("category", ""),
-                "sentiment":       r.payload.get("sentiment", ""),
-                "topics":          r.payload.get("topics", []),
-                "key_claims":      r.payload.get("key_claims", []),
-                "is_breaking":     r.payload.get("is_breaking", False),
-                "chunk_index":     r.payload.get("chunk_index", 0),
-                "text":            r.payload.get("text", ""),
+                "id": str(r.id),
+                "score": float(r.score),
+                "transcript_key": r.payload.get("transcript_key", ""),
+                "source_key": r.payload.get("source_key", ""),
+                "channel": r.payload.get("channel", ""),
+                "title": r.payload.get("title", ""),
+                "published_at": r.payload.get("published_at", ""),
+                "view_count": r.payload.get("view_count", 0),
+                "category": r.payload.get("category", ""),
+                "sentiment": r.payload.get("sentiment", ""),
+                "topics": r.payload.get("topics", []),
+                "key_claims": r.payload.get("key_claims", []),
+                "is_breaking": r.payload.get("is_breaking", False),
+                "chunk_index": r.payload.get("chunk_index", 0),
+                "text": r.payload.get("text", ""),
             }
             for r in results
         ]

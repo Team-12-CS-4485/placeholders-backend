@@ -58,4 +58,5 @@ if __name__ == "__main__":
     # Auto-sync any missing videos after pipeline completes
     print("\n=== Running post-pipeline sync ===")
     from scripts.sync_missing import main as sync_main
+
     sync_main()

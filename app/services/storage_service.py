@@ -169,16 +169,24 @@ class StorageService:
             if channel and video_id:
                 fresh_stats = self.get_video_metadata(channel, video_id)
 
-            videos.append({
-                "videoId":      video_id,
-                "title":        video.get("title", ""),
-                "channel":      channel,
-                "published_at": video.get("publishedAt", ""),
-                "view_count":   fresh_stats.get("view_count", int(video.get("viewCount", 0))),
-                "like_count":   fresh_stats.get("like_count", int(video.get("likeCount", 0))),
-                "comment_count":fresh_stats.get("comment_count", int(video.get("commentCount", 0))),
-                "transcript":   transcript,
-            })
+            videos.append(
+                {
+                    "videoId": video_id,
+                    "title": video.get("title", ""),
+                    "channel": channel,
+                    "published_at": video.get("publishedAt", ""),
+                    "view_count": fresh_stats.get(
+                        "view_count", int(video.get("viewCount", 0))
+                    ),
+                    "like_count": fresh_stats.get(
+                        "like_count", int(video.get("likeCount", 0))
+                    ),
+                    "comment_count": fresh_stats.get(
+                        "comment_count", int(video.get("commentCount", 0))
+                    ),
+                    "transcript": transcript,
+                }
+            )
 
         return videos
 
@@ -194,19 +202,23 @@ class StorageService:
             try:
                 payload = self.get_json_object(key)
                 videos = self.extract_videos(payload, source_key=key)
-                results.append({
-                    "key": key,
-                    "videos": videos,
-                    "video_count": len(videos),
-                })
+                results.append(
+                    {
+                        "key": key,
+                        "videos": videos,
+                        "video_count": len(videos),
+                    }
+                )
                 logger.info(f"S3_LOAD key={key} videos={len(videos)}")
             except (ClientError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-                results.append({
-                    "key": key,
-                    "error": str(exc),
-                    "videos": [],
-                    "video_count": 0,
-                })
+                results.append(
+                    {
+                        "key": key,
+                        "error": str(exc),
+                        "videos": [],
+                        "video_count": 0,
+                    }
+                )
                 logger.error(f"S3_LOAD_ERROR key={key} error={exc}")
 
         return results
@@ -246,16 +258,20 @@ class StorageService:
             try:
                 payload = self.get_json_object(key)
                 transcripts = self.extract_transcripts(payload)
-                results.append({
-                    "key": key,
-                    "transcripts": transcripts,
-                    "transcript_count": len(transcripts),
-                })
+                results.append(
+                    {
+                        "key": key,
+                        "transcripts": transcripts,
+                        "transcript_count": len(transcripts),
+                    }
+                )
             except (ClientError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-                results.append({
-                    "key": key,
-                    "error": str(exc),
-                    "transcripts": [],
-                    "transcript_count": 0,
-                })
+                results.append(
+                    {
+                        "key": key,
+                        "error": str(exc),
+                        "transcripts": [],
+                        "transcript_count": 0,
+                    }
+                )
         return results
