@@ -47,7 +47,9 @@ from app.services.vector_service import VectorService
 
 
 class PipelineService:
-    def __init__(self, storage_service=None, embedding_service=None, vector_service=None):
+    def __init__(
+        self, storage_service=None, embedding_service=None, vector_service=None
+    ):
         self.storage_service = storage_service or StorageService()
         self.embedding_service = embedding_service or EmbeddingService(
             api_keys=settings.genai_api_keys
@@ -92,14 +94,14 @@ class PipelineService:
                 total_videos += len(videos)
 
                 for video in videos:
-                    video_id      = video.get("videoId", "")
-                    title         = video.get("title", "")
-                    channel       = video.get("channel", "")
-                    published_at  = video.get("published_at", "")
-                    view_count    = video.get("view_count", 0)
-                    like_count    = video.get("like_count", 0)
+                    video_id = video.get("videoId", "")
+                    title = video.get("title", "")
+                    channel = video.get("channel", "")
+                    published_at = video.get("published_at", "")
+                    view_count = video.get("view_count", 0)
+                    like_count = video.get("like_count", 0)
                     comment_count = video.get("comment_count", 0)
-                    transcript    = video.get("transcript", "")
+                    transcript = video.get("transcript", "")
 
                     # Unique key per video
                     transcript_key = f"{source_key}::{video_id}"
@@ -168,11 +170,11 @@ class PipelineService:
                         # Every chunk for this video gets the same metadata as payload so any
                         # chunk hit returns the full picture (transcript + thumbnail).
                         video_metadata = {
-                            "channel":       channel,
-                            "title":         title,
-                            "published_at":  published_at,
-                            "view_count":    view_count,
-                            "like_count":    like_count,
+                            "channel": channel,
+                            "title": title,
+                            "published_at": published_at,
+                            "view_count": view_count,
+                            "like_count": like_count,
                             "comment_count": comment_count,
                             **intelligence,      # topics, category, sentiment, key_claims, is_breaking
                             **thumbnail_intel,   # thumbnail_visual, thumbnail_tone,

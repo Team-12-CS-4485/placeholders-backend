@@ -193,8 +193,8 @@ class VectorService:
         self.ensure_collection(vector_size=len(vectors[0]))
 
         base_payload = {
-            "transcript_key":   transcript_key,
-            "source_key":       source_key,
+            "transcript_key": transcript_key,
+            "source_key": source_key,
             "transcript_index": str(transcript_index),
         }
         if extra_metadata:
@@ -207,11 +207,13 @@ class VectorService:
                 payload={
                     **base_payload,
                     "chunk_index": chunk_idx,
-                    "text":        chunk_text,
-                    "word_count":  len(chunk_text.split()),
+                    "text": chunk_text,
+                    "word_count": len(chunk_text.split()),
                 },
             )
-            for chunk_idx, (chunk_text, vector) in enumerate(zip(chunks, vectors), start=1)
+            for chunk_idx, (chunk_text, vector) in enumerate(
+                zip(chunks, vectors), start=1
+            )
         ]
 
         self.client.upsert(

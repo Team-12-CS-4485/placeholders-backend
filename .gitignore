@@ -7,4 +7,7 @@ venv/
 .venv/
 .DS_Store
 transcript_analysis*
+GEMINI.md
+GEMINI.md
+.claude/
 

@@ -1,14 +1,15 @@
-import yt_dlp
 import re
+
+import yt_dlp
 
 video_id = "C7cbJgrr-es"
 url = f"https://www.youtube.com/watch?v={video_id}"
 
 ydl_opts = {
-    'skip_download': True,
-    'quiet': True,
-    'writesubtitles': True,
-    'writeautomaticsub': True,
+    "skip_download": True,
+    "quiet": True,
+    "writesubtitles": True,
+    "writeautomaticsub": True,
 }
 
 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -35,6 +36,7 @@ else:
     else:
         # Download subtitle content directly
         import urllib.request
+
         with urllib.request.urlopen(vtt_url) as response:
             vtt_content = response.read().decode("utf-8")
 
@@ -43,7 +45,12 @@ else:
 
         for line in vtt_content.splitlines():
             line = line.strip()
-            if not line or line.startswith("WEBVTT") or "-->" in line or re.match(r"^\d+$", line):
+            if (
+                not line
+                or line.startswith("WEBVTT")
+                or "-->" in line
+                or re.match(r"^\d+$", line)
+            ):
                 continue
 
             line = re.sub(r"<[^>]+>", "", line)

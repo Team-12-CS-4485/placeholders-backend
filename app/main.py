@@ -12,10 +12,10 @@ Run with: uvicorn app.main:app --reload
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from app.api.endpoints.pipeline import router as pipeline_router
 from app.api.endpoints.videos import router as videos_router
 from app.core.logging import get_logger
-
 
 app = FastAPI(title="Placeholders Backend API")
 logger = get_logger(__name__)
@@ -46,7 +46,9 @@ async def log_requests(request, call_next):
             )
         return response
     except Exception as exc:
-        logger.error(f"API_FAILURE method={request.method} path={request.url.path} error={exc}")
+        logger.error(
+            f"API_FAILURE method={request.method} path={request.url.path} error={exc}"
+        )
         raise
 
 
