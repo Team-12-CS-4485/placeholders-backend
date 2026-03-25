@@ -30,7 +30,6 @@ class VectorService:
             return None
 
     def ensure_collection(self, vector_size: int) -> None:
-
         stored_size = self._get_stored_vector_size()
 
         if stored_size is not None:
@@ -59,7 +58,7 @@ class VectorService:
             ),
         )
 
-        # Keyword indexes — supports exact match + filtering
+        # Keyword indexes — exact match + filtering
         keyword_fields = (
             "transcript_key",
             "source_key",
@@ -67,7 +66,8 @@ class VectorService:
             "channel",
             "category",
             "sentiment",
-            "topics",  # array field — Qdrant indexes each element individually
+            "topics",  # array — Qdrant indexes each element
+            "thumbnail_tone",  # urgency/fear/anger/etc.
         )
         for field in keyword_fields:
             try:
@@ -81,7 +81,10 @@ class VectorService:
                 logger.warning(f"PAYLOAD_INDEX_SKIP field={field} reason={exc}")
 
         # Bool indexes
-        bool_fields = ("is_breaking",)
+        bool_fields = (
+            "is_breaking",
+            "thumbnail_brand_consistent",
+        )
         for field in bool_fields:
             try:
                 self.client.create_payload_index(
@@ -93,8 +96,13 @@ class VectorService:
             except Exception as exc:
                 logger.warning(f"PAYLOAD_INDEX_SKIP field={field} reason={exc}")
 
-        # Integer indexes — supports range queries (e.g. view_count > 100000)
-        integer_fields = ("view_count", "like_count", "comment_count")
+        # Integer indexes — range queries (e.g. view_count > 100000, clickbait_score >= 4)
+        integer_fields = (
+            "view_count",
+            "like_count",
+            "comment_count",
+            "thumbnail_clickbait_score",
+        )
         for field in integer_fields:
             try:
                 self.client.create_payload_index(
@@ -117,6 +125,50 @@ class VectorService:
         if self.collection_exists():
             self.client.delete_collection(self.collection_name)
             logger.info(f"QDRANT_COLLECTION_DELETED name={self.collection_name}")
+
+    def add_thumbnail_indexes(self) -> None:
+        """
+        Backfill payload indexes for thumbnail fields on an existing collection.
+        Safe to call multiple times — logs a warning if an index already exists
+        but does not raise. Run this once after upgrading from a pre-thumbnail
+        collection rather than recreating the entire collection.
+        """
+        if not self.collection_exists():
+            logger.warning("ADD_THUMBNAIL_INDEXES skipped — collection does not exist")
+            return
+
+        for field in ("thumbnail_tone",):
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.collection_name,
+                    field_name=field,
+                    field_schema=models.PayloadSchemaType.KEYWORD,
+                )
+                logger.info(f"THUMBNAIL_INDEX_CREATED field={field} type=keyword")
+            except Exception as exc:
+                logger.warning(f"THUMBNAIL_INDEX_SKIP field={field} reason={exc}")
+
+        for field in ("thumbnail_brand_consistent",):
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.collection_name,
+                    field_name=field,
+                    field_schema=models.PayloadSchemaType.BOOL,
+                )
+                logger.info(f"THUMBNAIL_INDEX_CREATED field={field} type=bool")
+            except Exception as exc:
+                logger.warning(f"THUMBNAIL_INDEX_SKIP field={field} reason={exc}")
+
+        for field in ("thumbnail_clickbait_score",):
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.collection_name,
+                    field_name=field,
+                    field_schema=models.PayloadSchemaType.INTEGER,
+                )
+                logger.info(f"THUMBNAIL_INDEX_CREATED field={field} type=integer")
+            except Exception as exc:
+                logger.warning(f"THUMBNAIL_INDEX_SKIP field={field} reason={exc}")
 
     # ── Upsert ───────────────────────────────────────────────────────────────
 
@@ -224,6 +276,16 @@ class VectorService:
                 "is_breaking": r.payload.get("is_breaking", False),
                 "chunk_index": r.payload.get("chunk_index", 0),
                 "text": r.payload.get("text", ""),
+                # thumbnail fields
+                "thumbnail_visual": r.payload.get("thumbnail_visual", ""),
+                "thumbnail_tone": r.payload.get("thumbnail_tone", ""),
+                "thumbnail_clickbait_score": r.payload.get(
+                    "thumbnail_clickbait_score", 0
+                ),
+                "thumbnail_brand_consistent": r.payload.get(
+                    "thumbnail_brand_consistent", False
+                ),
+                "thumbnail_insight": r.payload.get("thumbnail_insight", ""),
             }
             for r in results
         ]
