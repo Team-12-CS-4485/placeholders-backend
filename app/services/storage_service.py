@@ -1,4 +1,5 @@
 import base64
+
 """
 storage_service.py - S3 Storage Service
 
@@ -12,8 +13,10 @@ Handles all AWS S3 interactions for the pipeline:
 
 import json
 import re
+
 import boto3
 from botocore.exceptions import ClientError
+
 from app.core.config import settings
 from app.core.logging import get_logger
 
@@ -25,7 +28,9 @@ class StorageService:
         self.s3_client = s3_client or boto3.client("s3")
         self.dynamodb = dynamodb_resource or boto3.resource("dynamodb")
         self.bucket = bucket or settings.s3_bucket
-        self.dynamodb = dynamodb_resource or boto3.resource("dynamodb", region_name=settings.aws_region)
+        self.dynamodb = dynamodb_resource or boto3.resource(
+            "dynamodb", region_name=settings.aws_region
+        )
 
     def list_videos(self, limit: int = 20, cursor: str = None):
         list_kwargs = {
@@ -34,7 +39,9 @@ class StorageService:
             "MaxKeys": limit,
         }
         if cursor:
-            list_kwargs["ContinuationToken"] = base64.b64decode(cursor.encode()).decode()
+            list_kwargs["ContinuationToken"] = base64.b64decode(
+                cursor.encode()
+            ).decode()
 
         response = self.s3_client.list_objects_v2(**list_kwargs)
 
@@ -50,23 +57,29 @@ class StorageService:
 
             channel = payload.get("channel", "")
             for video in payload.get("videos", []):
-                items.append({
-                    "video_id": video.get("videoId", ""),
-                    "channel": channel,
-                    "title": video.get("title", ""),
-                    "description": video.get("description", ""),
-                    "published_at": video.get("publishedAt", ""),
-                    "view_count": int(video.get("viewCount", 0)),
-                    "like_count": int(video.get("likeCount", 0)),
-                    "comment_count": int(video.get("commentCount", 0)),
-                })
+                items.append(
+                    {
+                        "video_id": video.get("videoId", ""),
+                        "channel": channel,
+                        "title": video.get("title", ""),
+                        "description": video.get("description", ""),
+                        "published_at": video.get("publishedAt", ""),
+                        "view_count": int(video.get("viewCount", 0)),
+                        "like_count": int(video.get("likeCount", 0)),
+                        "comment_count": int(video.get("commentCount", 0)),
+                    }
+                )
 
         next_cursor = None
         if response.get("IsTruncated"):
             token = response.get("NextContinuationToken", "")
             next_cursor = base64.b64encode(token.encode()).decode()
 
-        return {"items": items, "total_returned": len(items), "next_cursor": next_cursor}
+        return {
+            "items": items,
+            "total_returned": len(items),
+            "next_cursor": next_cursor,
+        }
 
     def list_object_keys(self, prefix=None, limit=None):
         use_prefix = prefix if prefix is not None else settings.s3_prefix
@@ -156,16 +169,24 @@ class StorageService:
             if channel and video_id:
                 fresh_stats = self.get_video_metadata(channel, video_id)
 
-            videos.append({
-                "videoId":      video_id,
-                "title":        video.get("title", ""),
-                "channel":      channel,
-                "published_at": video.get("publishedAt", ""),
-                "view_count":   fresh_stats.get("view_count", int(video.get("viewCount", 0))),
-                "like_count":   fresh_stats.get("like_count", int(video.get("likeCount", 0))),
-                "comment_count":fresh_stats.get("comment_count", int(video.get("commentCount", 0))),
-                "transcript":   transcript,
-            })
+            videos.append(
+                {
+                    "videoId": video_id,
+                    "title": video.get("title", ""),
+                    "channel": channel,
+                    "published_at": video.get("publishedAt", ""),
+                    "view_count": fresh_stats.get(
+                        "view_count", int(video.get("viewCount", 0))
+                    ),
+                    "like_count": fresh_stats.get(
+                        "like_count", int(video.get("likeCount", 0))
+                    ),
+                    "comment_count": fresh_stats.get(
+                        "comment_count", int(video.get("commentCount", 0))
+                    ),
+                    "transcript": transcript,
+                }
+            )
 
         return videos
 
@@ -181,19 +202,23 @@ class StorageService:
             try:
                 payload = self.get_json_object(key)
                 videos = self.extract_videos(payload, source_key=key)
-                results.append({
-                    "key": key,
-                    "videos": videos,
-                    "video_count": len(videos),
-                })
+                results.append(
+                    {
+                        "key": key,
+                        "videos": videos,
+                        "video_count": len(videos),
+                    }
+                )
                 logger.info(f"S3_LOAD key={key} videos={len(videos)}")
             except (ClientError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-                results.append({
-                    "key": key,
-                    "error": str(exc),
-                    "videos": [],
-                    "video_count": 0,
-                })
+                results.append(
+                    {
+                        "key": key,
+                        "error": str(exc),
+                        "videos": [],
+                        "video_count": 0,
+                    }
+                )
                 logger.error(f"S3_LOAD_ERROR key={key} error={exc}")
 
         return results
@@ -233,16 +258,20 @@ class StorageService:
             try:
                 payload = self.get_json_object(key)
                 transcripts = self.extract_transcripts(payload)
-                results.append({
-                    "key": key,
-                    "transcripts": transcripts,
-                    "transcript_count": len(transcripts),
-                })
+                results.append(
+                    {
+                        "key": key,
+                        "transcripts": transcripts,
+                        "transcript_count": len(transcripts),
+                    }
+                )
             except (ClientError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-                results.append({
-                    "key": key,
-                    "error": str(exc),
-                    "transcripts": [],
-                    "transcript_count": 0,
-                })
+                results.append(
+                    {
+                        "key": key,
+                        "error": str(exc),
+                        "transcripts": [],
+                        "transcript_count": 0,
+                    }
+                )
         return results

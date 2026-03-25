@@ -8,6 +8,7 @@ sync_missing.py - Post-pipeline sync job
 
 import sys
 import os
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import boto3
@@ -46,7 +47,7 @@ def get_dynamo_video_ids():
     while "LastEvaluatedKey" in response:
         response = table.scan(
             ProjectionExpression="PartitionKey, SortKey",
-            ExclusiveStartKey=response["LastEvaluatedKey"]
+            ExclusiveStartKey=response["LastEvaluatedKey"],
         )
         for item in response["Items"]:
             video_ids.add(item["SortKey"])
@@ -54,7 +55,9 @@ def get_dynamo_video_ids():
 
 
 def get_qdrant_video_ids():
-    qdrant = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key or None)
+    qdrant = QdrantClient(
+        url=settings.qdrant_url, api_key=settings.qdrant_api_key or None
+    )
     video_ids = set()
     offset = None
     while True:
@@ -89,7 +92,7 @@ def index_videos(video_ids: list):
         response = table.scan(
             FilterExpression="SortKey = :vid",
             ExpressionAttributeValues={":vid": video_id},
-            ProjectionExpression="PartitionKey, SortKey, title, transcript, publishedAt, viewCount, likeCount, commentCount"
+            ProjectionExpression="PartitionKey, SortKey, title, transcript, publishedAt, viewCount, likeCount, commentCount",
         )
         items = response.get("Items", [])
         if not items:
@@ -119,18 +122,22 @@ def index_videos(video_ids: list):
             chunks = embedding_service.chunk_text(transcript)
             print(f"  Chunks: {len(chunks)}")
 
-            intelligence = embedding_service.extract_video_intelligence(chunks=chunks, title=title)
-            print(f"  Category: {intelligence['category']} | Sentiment: {intelligence['sentiment']}")
+            intelligence = embedding_service.extract_video_intelligence(
+                chunks=chunks, title=title
+            )
+            print(
+                f"  Category: {intelligence['category']} | Sentiment: {intelligence['sentiment']}"
+            )
             print(f"  Topics: {intelligence['topics']}")
 
             vectors = embedding_service.embed_chunks(chunks)
 
             video_metadata = {
-                "channel":       channel,
-                "title":         title,
-                "published_at":  published_at,
-                "view_count":    view_count,
-                "like_count":    like_count,
+                "channel": channel,
+                "title": title,
+                "published_at": published_at,
+                "view_count": view_count,
+                "like_count": like_count,
                 "comment_count": comment_count,
                 **intelligence,
             }

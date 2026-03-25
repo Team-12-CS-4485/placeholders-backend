@@ -70,19 +70,23 @@ CATEGORY_OPTIONS_STR = ", ".join(CATEGORY_OPTIONS)
 
 class EmbeddingService:
 
-    def __init__(self, client=None, chunker: Optional[SemanticChunker] = None, api_keys=None):
+    def __init__(
+        self, client=None, chunker: Optional[SemanticChunker] = None, api_keys=None
+    ):
         self.model_id = settings.gemini_model_id
 
         self.api_keys = api_keys or [settings.genai_api_key]
         self.current_key_index = 0
-        self.client = client or genai.Client(api_key=self.api_keys[0])  
+        self.client = client or genai.Client(api_key=self.api_keys[0])
 
         self._chunker = chunker or get_default_chunker(
             model_name=settings.embedding_model_id
         )
 
         if self._chunker.available:
-            logger.info(f"EMBEDDING_LOCAL model={settings.embedding_model_id} dims=768 cost=free")
+            logger.info(
+                f"EMBEDDING_LOCAL model={settings.embedding_model_id} dims=768 cost=free"
+            )
         else:
             logger.warning(
                 "Local embedding model not available — install sentence-transformers. "
@@ -111,7 +115,9 @@ class EmbeddingService:
         self.current_key_index = next_index
         new_key = self.api_keys[self.current_key_index]
         self.client = genai.Client(api_key=new_key)
-        logger.warning(f"API_KEY_ROTATED key_index={self.current_key_index}/{len(self.api_keys)-1}")
+        logger.warning(
+            f"API_KEY_ROTATED key_index={self.current_key_index}/{len(self.api_keys)-1}"
+        )
         return True
 
     def _gemini(self, prompt: str, max_retries: int = 6) -> str:
@@ -144,7 +150,9 @@ class EmbeddingService:
                 if is_rate_limit:
                     # Try rotating to next key first
                     if self._rotate_key():
-                        logger.warning(f"GEMINI_KEY_ROTATED attempt={attempt+1} retrying immediately")
+                        logger.warning(
+                            f"GEMINI_KEY_ROTATED attempt={attempt+1} retrying immediately"
+                        )
                         continue  # retry immediately with new key, no sleep
                     # No more keys — fall back to waiting
                     if attempt < max_retries - 1:
@@ -191,7 +199,7 @@ class EmbeddingService:
             '  "is_breaking": <true|false>\n'
             "}\n\n"
             "Rules:\n"
-           "- topics: 3 to 5 broad reusable tags like 'Iran Conflict', 'Oil Markets', 'Drone Warfare'. "
+            "- topics: 3 to 5 broad reusable tags like 'Iran Conflict', 'Oil Markets', 'Drone Warfare'. "
             "NOT headline-specific phrases. Should apply across multiple videos on the same story.\n"
             f"- category: must be exactly one of these options: {CATEGORY_OPTIONS_STR}\n"
             "- sentiment: overall tone of the coverage\n"
@@ -204,13 +212,27 @@ class EmbeddingService:
         try:
             raw = self._gemini(prompt)
             # Strip markdown fences if Gemini adds them anyway
-            clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            clean = (
+                raw.strip()
+                .removeprefix("```json")
+                .removeprefix("```")
+                .removesuffix("```")
+                .strip()
+            )
             data = json.loads(clean)
 
             return {
-                "topics":     data.get("topics", [])[:5],
-                "category":   data.get("category", "Other") if data.get("category") in CATEGORY_OPTIONS else "Other",
-                "sentiment":  data.get("sentiment", "neutral") if data.get("sentiment") in ("positive", "negative", "neutral") else "neutral",
+                "topics": data.get("topics", [])[:5],
+                "category": (
+                    data.get("category", "Other")
+                    if data.get("category") in CATEGORY_OPTIONS
+                    else "Other"
+                ),
+                "sentiment": (
+                    data.get("sentiment", "neutral")
+                    if data.get("sentiment") in ("positive", "negative", "neutral")
+                    else "neutral"
+                ),
                 "key_claims": data.get("key_claims", [])[:5],
                 "is_breaking": bool(data.get("is_breaking", False)),
             }
@@ -233,8 +255,7 @@ class EmbeddingService:
         for idx, chunk in enumerate(chunks, start=1):
             prompt = (
                 f"Analyze transcript chunk {idx}/{total}. "
-                "Return key points, notable claims, and a concise summary:\n\n"
-                + chunk
+                "Return key points, notable claims, and a concise summary:\n\n" + chunk
             )
             analyses.append(self._gemini(prompt))
         return analyses

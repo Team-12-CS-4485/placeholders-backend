@@ -7,6 +7,7 @@ Exposes REST endpoints for the Gemini transcript analysis pipeline:
 """
 
 from fastapi import APIRouter, HTTPException
+
 from app.schemas.pipeline import (
     PipelineRunRequest,
     PipelineRunResponse,
@@ -14,7 +15,6 @@ from app.schemas.pipeline import (
     VectorSearchResponse,
 )
 from app.services.pipeline_service import PipelineService
-
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
 
@@ -24,8 +24,7 @@ def run_s3_transcript_analysis(request: PipelineRunRequest):
     try:
         service = PipelineService()
         return service.run_s3_transcript_analysis(
-            prefix=request.prefix,
-            limit=request.limit
+            prefix=request.prefix, limit=request.limit
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Pipeline failed: {exc}") from exc

@@ -2,23 +2,22 @@
 Quick test to verify DynamoDB insertion logic from youtube_ingestion.py works.
 Inserts a sample item, reads it back, then cleans it up.
 """
+
 import os
 import sys
-from dotenv import load_dotenv
-
-# Load .env from the parent directory (same as config.py does)
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 import boto3
 from botocore.exceptions import ClientError
-from datetime import datetime, timezone
-from decimal import Decimal
+from dotenv import load_dotenv
 
 # Reuse the functions from youtube_ingestion
-from youtube_ingestion import convert_to_decimal, save_to_dynamodb
+from youtube_ingestion import save_to_dynamodb
+
+# Load .env from the parent directory (same as config.py does)
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 DYNAMODB_TABLE = os.getenv("DYNAMODB_TABLE", "youtube-videos")
-dynamodb = boto3.resource('dynamodb')
+dynamodb = boto3.resource("dynamodb")
 
 SAMPLE_VIDEO = {
     "videoId": "TEST_VIDEO_12345",
@@ -63,10 +62,12 @@ def test_insert():
     # Step 3: Read back the item
     print("\nReading item back from DynamoDB...")
     try:
-        response = table.get_item(Key={'PartitionKey': SAMPLE_VIDEO['videoId'], 'SortKey': 'TestChannel'})
-        item = response.get('Item')
+        response = table.get_item(
+            Key={"PartitionKey": SAMPLE_VIDEO["videoId"], "SortKey": "TestChannel"}
+        )
+        item = response.get("Item")
         if item:
-            print(f"[OK] Item found:")
+            print("[OK] Item found:")
             print(f"  PartitionKey: {item['PartitionKey']}")
             print(f"  channel:      {item['channel']}")
             print(f"  title:        {item['title']}")
@@ -92,7 +93,9 @@ def test_insert():
     # Step 5: Cleanup
     print(f"\nCleaning up test item (id={SAMPLE_VIDEO['videoId']})...")
     try:
-        table.delete_item(Key={'PartitionKey': SAMPLE_VIDEO['videoId'], 'SortKey': 'TestChannel'})
+        table.delete_item(
+            Key={"PartitionKey": SAMPLE_VIDEO["videoId"], "SortKey": "TestChannel"}
+        )
         print("[OK] Test item deleted")
     except ClientError as e:
         print(f"[WARN] Cleanup failed: {e.response['Error']['Message']}")

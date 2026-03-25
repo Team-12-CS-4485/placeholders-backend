@@ -1,12 +1,14 @@
+import nltk
+import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-import nltk
+
 nltk.download("punkt_tab")
-import numpy as np
 
 # Upgraded from all-MiniLM-L6-v2 (384 dims) to all-mpnet-base-v2 (768 dims)
 # Better semantic understanding, more accurate chunk boundaries
-model = SentenceTransformer('all-mpnet-base-v2')
+model = SentenceTransformer("all-mpnet-base-v2")
+
 
 def semantic_chunk(text, threshold=0.5, min_words=40):
     """
@@ -36,10 +38,7 @@ def semantic_chunk(text, threshold=0.5, min_words=40):
         current_embedding = np.mean(
             [embeddings[j] for j in range(i - len(current_chunk), i)], axis=0
         )
-        similarity = cosine_similarity(
-            [current_embedding],
-            [embeddings[i]]
-        )[0][0]
+        similarity = cosine_similarity([current_embedding], [embeddings[i]])[0][0]
 
         current_word_count = len(" ".join(current_chunk).split())
 

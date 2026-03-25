@@ -7,7 +7,8 @@ Defines all API request and response models for the pipeline endpoints:
 - Supporting models: TranscriptAnalysisResult, ObjectPipelineResult, AnalysisMapEntry, SearchHit
 """
 
-from typing import Optional, Any
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
