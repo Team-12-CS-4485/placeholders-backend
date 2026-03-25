@@ -10,15 +10,11 @@ Usage:
 
 import json
 import logging
-import os
-import re
 import sys
 import time as _time
-import tempfile
 from datetime import datetime, timedelta, timezone
 
 import boto3
-import yt_dlp
 from botocore.exceptions import ClientError
 
 from config import (
@@ -31,7 +27,6 @@ from config import (
     MIN_VIEW_COUNT,
     TIME_WINDOW_DAYS,
     COMMENTS_PER_VIDEO,
-    MAX_TRANSCRIPT_CHARS,
 )
 from youtube_ingestion import (
     build_client,
@@ -39,9 +34,12 @@ from youtube_ingestion import (
     get_latest_videos,
     get_video_statistics,
     get_top_comments,
+    get_video_transcript,
     save_to_dynamodb,
     get_existing_video_ids,
     is_within_duration_limit,
+    refresh_cookies,
+    _COOKIE_PATH,
 )
 from rate_limit import QuotaExhaustedError
 
@@ -51,7 +49,6 @@ from rate_limit import QuotaExhaustedError
 
 _ARCHIVE_LOCAL = "/tmp/archive.txt"
 _SKIPPED_LOG_S3_KEY = "logs/skipped_videos.txt"
-_TRANSCRIPT_RETRY_DELAYS = [60, 120, 300]  # seconds — mirrors rate_limit._BACKOFF_DELAYS
 
 # ---------------------------------------------------------------------------
 # AWS clients
@@ -103,108 +100,6 @@ def add_to_archive(video_id: str, archive_path: str = _ARCHIVE_LOCAL) -> None:
     """Append a successfully-processed video ID to archive_path."""
     with open(archive_path, "a", encoding="utf-8") as fh:
         fh.write(f"youtube {video_id}\n")
-
-
-# ---------------------------------------------------------------------------
-# Transcript fetching with inline 429 retry
-# ---------------------------------------------------------------------------
-
-def get_transcript(
-    video_id: str,
-    skipped_videos: list = None,
-) -> str | None:
-    """
-    Fetch the English VTT transcript for video_id via yt-dlp.
-
-    - Authenticates via Chrome cookies (cookiesfrombrowser).
-    - Uses randomised human-like delays (sleep_interval 3-8s).
-    - On HTTP 429: waits and retries up to 3 times (60 / 120 / 300s).
-    - After all retries exhausted: appends video_id to skipped_videos, returns None.
-    - Non-429 yt-dlp errors: logs warning, returns None (normal filter result).
-    - Truncates transcript to MAX_TRANSCRIPT_CHARS.
-    """
-    url = f"https://www.youtube.com/watch?v={video_id}"
-
-    last_exc = None
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        ydl_opts = {
-            "skip_download": True,
-            "quiet": True,
-            "writesubtitles": True,
-            "writeautomaticsub": True,
-            "subtitleslangs": ["en"],
-            "subtitlesformat": "vtt",
-            "noplaylist": True,
-            "outtmpl": os.path.join(tmpdir, "%(id)s.%(ext)s"),
-            "sleep_interval": 3,
-            "max_sleep_interval": 8,
-            "sleep_interval_requests": 1,
-            "ignoreconfig": True,
-            "extractor_args": {"youtube": {"player_client": ["android"]}},
-        }
-
-        for attempt, delay in enumerate([0] + _TRANSCRIPT_RETRY_DELAYS, start=1):
-            if delay:
-                logger.warning(
-                    f"[{video_id}] yt-dlp 429 — waiting {delay}s before attempt {attempt}"
-                )
-                _time.sleep(delay)
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([url])
-                last_exc = None
-                break
-            except Exception as exc:
-                msg = str(exc).lower()
-                if "429" in msg or "too many requests" in msg:
-                    logger.warning(
-                        f"[{video_id}] yt-dlp 429 on attempt {attempt}/{len(_TRANSCRIPT_RETRY_DELAYS) + 1}"
-                    )
-                    last_exc = exc
-                    continue
-                # Non-429 error — no retry needed
-                logger.warning(f"[{video_id}] yt-dlp error: {exc}")
-                return None
-        else:
-            # All retries exhausted on 429
-            logger.error(f"[{video_id}] Permanently rate-limited after all retries — skipping")
-            if skipped_videos is not None:
-                skipped_videos.append(video_id)
-            return None
-
-        # Find the subtitle file yt-dlp wrote to tmpdir (pick largest if multiple)
-        vtt_files = [
-            os.path.join(tmpdir, f)
-            for f in os.listdir(tmpdir)
-            if f.endswith(".vtt")
-        ]
-        if not vtt_files:
-            return None
-
-        with open(max(vtt_files, key=os.path.getsize), "r", encoding="utf-8") as fh:
-            vtt_content = fh.read()
-
-        # Parse VTT into plain text (deduplicated)
-        lines = []
-        seen: set = set()
-        for line in vtt_content.splitlines():
-            line = line.strip()
-            if not line or line.startswith("WEBVTT") or "-->" in line or re.match(r"^\d+$", line):
-                continue
-            line = re.sub(r"<[^>]+>", "", line)
-            if line and line not in seen:
-                seen.add(line)
-                lines.append(line)
-
-        transcript = " ".join(lines)
-        if not transcript:
-            return None
-
-        if len(transcript) > MAX_TRANSCRIPT_CHARS:
-            transcript = transcript[:MAX_TRANSCRIPT_CHARS]
-
-        return transcript
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +176,7 @@ def run_pipeline(partial: bool = False, dry_run: bool = False) -> None:
     """
     Full ingestion run across all NEWS_CHANNELS in a single pass.
 
-    1. Download cookies from S3 (hard-fail if missing)
+    1. Export fresh cookies from Chrome to /tmp/cookies.txt (hard-fail if Chrome unavailable)
     2. Load /tmp/archive.txt for resume support
     3. For each channel: fetch → dedup → filter → save → archive
     4. Upload skipped video log to S3
@@ -293,7 +188,10 @@ def run_pipeline(partial: bool = False, dry_run: bool = False) -> None:
         logger.info("=== DRY RUN — no data will be written ===")
     logger.info("=== YouTube Ingestion Pipeline starting ===")
 
-    # Step 1 — archive
+    # Step 1 — cookies
+    refresh_cookies(_COOKIE_PATH)
+
+    # Step 2 — archive
     processed_archive = load_archive(_ARCHIVE_LOCAL)
     logger.info(f"Archive loaded: {len(processed_archive)} previously processed video IDs")
 
@@ -301,6 +199,7 @@ def run_pipeline(partial: bool = False, dry_run: bool = False) -> None:
     youtube = build_client(YOUTUBE_API_KEY)
     skipped_videos: list = []
     results = []
+    retry_channels: list = []  # channels that hit 429 during the main pass
     cutoff_date = datetime.now(timezone.utc) - timedelta(days=TIME_WINDOW_DAYS)
 
     logger.info(
@@ -387,7 +286,7 @@ def run_pipeline(partial: bool = False, dry_run: bool = False) -> None:
                     continue
 
                 # Transcript (most expensive — last)
-                transcript = get_transcript(
+                transcript = get_video_transcript(
                     vid,
                     skipped_videos=skipped_videos,
                 )
@@ -452,15 +351,137 @@ def run_pipeline(partial: bool = False, dry_run: bool = False) -> None:
             results.append({"channel": channel_name, "status": "error", "error": "quota exhausted"})
             break
         except Exception as exc:
-            logger.error(f"[{channel_name}] Unexpected error: {exc}", exc_info=True)
-            results.append({"channel": channel_name, "status": "error", "error": str(exc)})
+            msg = str(exc)
+            if "429" in msg or "Too Many Requests" in msg.lower():
+                logger.warning(f"[{channel_name}] 429 rate-limited — will retry after all channels complete")
+                retry_channels.append((channel_name, channel_id))
+            else:
+                logger.error(f"[{channel_name}] Unexpected error: {exc}", exc_info=True)
+            results.append({"channel": channel_name, "status": "error", "error": msg})
 
         # Inter-channel sleep
         if idx < len(NEWS_CHANNELS):
             logger.info("[rate-limit] Sleeping 60s before next channel...")
             _time.sleep(60)
 
-    # Step 4 — skipped log
+    # Step 4 — retry 429'd channels
+    if retry_channels:
+        logger.info(
+            f"[retry-pass] {len(retry_channels)} channel(s) hit 429 — "
+            f"waiting 5 minutes before retrying: {[c for c, _ in retry_channels]}"
+        )
+        _time.sleep(300)
+
+        for channel_name, channel_id in retry_channels:
+            # Remove the earlier failed result so the summary reflects the retry outcome
+            results = [r for r in results if r["channel"] != channel_name]
+            try:
+                logger.info(f"[retry-pass] Retrying {channel_name}")
+
+                uploads_playlist = get_uploads_playlist(youtube, channel_id)
+                if not uploads_playlist:
+                    logger.warning(f"[{channel_name}] Channel not found — skipping")
+                    results.append({"channel": channel_name, "status": "error", "error": "not found"})
+                    continue
+
+                raw_videos = get_latest_videos(youtube, uploads_playlist, MAX_VIDEOS_PER_CHANNEL)
+                if not raw_videos:
+                    results.append({"channel": channel_name, "status": "error", "error": "no videos"})
+                    continue
+
+                existing_ids = get_existing_video_ids(dynamodb, DYNAMODB_TABLE, channel_name)
+                all_seen = existing_ids | processed_archive
+                raw_videos = [v for v in raw_videos if v["videoId"] not in all_seen]
+
+                if not raw_videos:
+                    logger.info(f"[{channel_name}] All videos already ingested")
+                    results.append({"channel": channel_name, "status": "success", "videoCount": 0})
+                    continue
+
+                stats_map = get_video_statistics(youtube, [v["videoId"] for v in raw_videos])
+
+                filtered: list = []
+                for video in raw_videos:
+                    if len(filtered) >= MAX_VIDEOS_PER_CHANNEL:
+                        break
+
+                    vid = video["videoId"]
+
+                    try:
+                        pub = datetime.fromisoformat(video["publishedAt"].replace("Z", "+00:00"))
+                        if pub < cutoff_date:
+                            continue
+                    except Exception:
+                        continue
+
+                    details = stats_map.get(vid, {})
+                    stats = details.get("statistics", {})
+                    duration = details.get("duration", "")
+
+                    view_count = int(stats.get("viewCount", 0))
+                    if view_count < MIN_VIEW_COUNT:
+                        continue
+
+                    if not is_within_duration_limit(duration, MAX_VIDEO_DURATION_MINUTES):
+                        continue
+
+                    top_comments = get_top_comments(youtube, vid, COMMENTS_PER_VIDEO)
+                    if len(top_comments) < COMMENTS_PER_VIDEO:
+                        continue
+
+                    transcript = get_video_transcript(vid, skipped_videos=skipped_videos)
+                    if not transcript:
+                        continue
+
+                    video["transcript"] = transcript
+                    video["topComments"] = top_comments
+                    video["viewCount"] = view_count
+                    video["likeCount"] = int(stats.get("likeCount", 0))
+                    video["commentCount"] = int(stats.get("commentCount", 0))
+                    filtered.append(video)
+
+                logger.info(
+                    f"[retry-pass] [{channel_name}] {len(filtered)}/{MAX_VIDEOS_PER_CHANNEL} videos passed all filters"
+                )
+
+                if not filtered:
+                    results.append({"channel": channel_name, "status": "error", "error": "no videos passed filters"})
+                    continue
+
+                if dry_run:
+                    logger.info(f"[DRY-RUN] [retry-pass] [{channel_name}] Would save {len(filtered)} videos to DynamoDB")
+                else:
+                    try:
+                        save_to_dynamodb(dynamodb, DYNAMODB_TABLE, channel_name, filtered)
+                    except Exception as exc:
+                        logger.error(f"[retry-pass] [{channel_name}] DynamoDB save failed: {exc}")
+                        results.append({"channel": channel_name, "status": "error", "error": str(exc)})
+                        continue
+
+                    try:
+                        _save_channel_to_s3(channel_name, filtered)
+                    except Exception as exc:
+                        logger.error(f"[retry-pass] [{channel_name}] S3 save failed: {exc}")
+                        results.append({"channel": channel_name, "status": "error", "error": str(exc)})
+                        continue
+
+                    for video in filtered:
+                        add_to_archive(video["videoId"], _ARCHIVE_LOCAL)
+                        processed_archive.add(video["videoId"])
+
+                results.append({"channel": channel_name, "status": "success", "videoCount": len(filtered)})
+                label = "would save" if dry_run else "saved"
+                logger.info(f"[retry-pass] [{channel_name}] Done — {len(filtered)} videos {label}")
+
+            except QuotaExhaustedError:
+                logger.error(f"[retry-pass] [{channel_name}] Quota exhausted — stopping")
+                results.append({"channel": channel_name, "status": "error", "error": "quota exhausted"})
+                break
+            except Exception as exc:
+                logger.error(f"[retry-pass] [{channel_name}] Failed again: {exc}", exc_info=True)
+                results.append({"channel": channel_name, "status": "error", "error": str(exc)})
+
+    # Step 5 — skipped log
     if dry_run:
         if skipped_videos:
             logger.info(f"[DRY-RUN] Would upload {len(skipped_videos)} skipped video IDs to S3")

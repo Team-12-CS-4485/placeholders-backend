@@ -14,9 +14,11 @@ both S3 (as JSON for the analysis pipeline) and DynamoDB (for metadata persisten
 """
 
 from googleapiclient.discovery import build
+import subprocess
+import urllib.request
 import yt_dlp
-from config import NEWS_CHANNELS, YOUTUBE_API_KEY, MAX_VIDEOS_PER_CHANNEL, MIN_VIEW_COUNT, TIME_WINDOW_DAYS, COMMENTS_PER_VIDEO, MAX_VIDEO_DURATION_MINUTES
-from rate_limit import retry_api_call, retry_transcript, QuotaExhaustedError
+from config import NEWS_CHANNELS, YOUTUBE_API_KEY, MAX_VIDEOS_PER_CHANNEL, MIN_VIEW_COUNT, TIME_WINDOW_DAYS, COMMENTS_PER_VIDEO, MAX_VIDEO_DURATION_MINUTES, MAX_TRANSCRIPT_CHARS
+from rate_limit import retry_api_call, QuotaExhaustedError
 import json
 import re
 import time as _time
@@ -46,6 +48,30 @@ dynamodb = boto3.resource('dynamodb')
 # Configuration
 S3_BUCKET = os.getenv("S3_BUCKET")
 DYNAMODB_TABLE = os.getenv("DYNAMODB_TABLE")
+
+# Cookie / transcript settings
+_COOKIE_PATH = os.getenv("YT_COOKIES_PATH", "/tmp/cookies.txt")
+_TRANSCRIPT_RETRY_DELAYS = [60, 120, 300]  # seconds
+
+
+def refresh_cookies(cookie_path: str = _COOKIE_PATH) -> None:
+    """Export fresh cookies from Chrome to cookie_path via yt-dlp CLI."""
+    logger.info("Exporting cookies from Chrome...")
+    result = subprocess.run(
+        [
+            "yt-dlp",
+            "--cookies-from-browser", "chrome",
+            "--cookies", cookie_path,
+            "--skip-download",
+            "--quiet",
+            "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to export cookies from Chrome: {result.stderr.strip()}")
+    logger.info(f"Cookies exported to {cookie_path}")
 
 
 def build_client(api_key: str):
@@ -151,72 +177,120 @@ def get_top_comments(youtube, video_id, max_results):
 
 
 
-@retry_transcript
-def get_video_transcript(video_id):
-    """Fetch transcript using yt-dlp Python API without writing to disk."""
-    import urllib.request
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    from time import sleep
-    sleep(3)  # Sleep to avoid hitting rate limits on yt-dlp or YouTube when processing multiple videos in a loop
-    ydl_opts = {
-        'skip_download': True,
-        'quiet': True,
-        'writesubtitles': True,
-        'writeautomaticsub': True,
-    }
+def get_video_transcript(video_id: str, skipped_videos: list = None) -> str | None:
+    """
+    Fetch the English VTT transcript for video_id via yt-dlp.
 
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-    except Exception as e:
-        logger.warning(f"[{video_id}] yt-dlp error fetching transcript: {e}")
+    Uses extract_info(download=False) to get subtitle URLs, then downloads
+    the VTT directly via urllib — avoids format resolution, n-challenge, and
+    PO-token failures entirely.
+
+    - Authenticates via Chrome cookies (cookiefile).
+    - Uses randomised human-like delays (sleep_interval 3-8s).
+    - On HTTP 429: waits and retries up to 3 times (60 / 120 / 300s).
+    - After all retries exhausted: appends video_id to skipped_videos, returns None.
+    - Truncates transcript to MAX_TRANSCRIPT_CHARS.
+    """
+    if not os.path.exists(_COOKIE_PATH):
+        logger.warning(f"[{video_id}] Cookie file not found at {_COOKIE_PATH} — skipping transcript")
         return None
 
-    # Get English subtitles (manual first, then auto)
+    url = f"https://www.youtube.com/watch?v={video_id}"
+
+    ydl_opts = {
+        "skip_download": True,
+        "quiet": True,
+        "noplaylist": True,
+        "sleep_interval": 3,
+        "max_sleep_interval": 8,
+        "sleep_interval_requests": 1,
+        "ignoreconfig": True,
+        "cookiefile": _COOKIE_PATH,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["ios"],  # no PO token required, reliable subtitle extraction
+            }
+        },
+    }
+
+    info = None
+
+    for attempt, delay in enumerate([0] + _TRANSCRIPT_RETRY_DELAYS, start=1):
+        if delay:
+            logger.warning(f"[{video_id}] yt-dlp 429 — waiting {delay}s before attempt {attempt}")
+            _time.sleep(delay)
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False, process=False)
+            break
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "429" in msg or "too many requests" in msg:
+                logger.warning(f"[{video_id}] yt-dlp 429 on attempt {attempt}/{len(_TRANSCRIPT_RETRY_DELAYS) + 1}")
+                continue
+            logger.warning(f"[{video_id}] yt-dlp error: {exc}")
+            return None
+    else:
+        logger.error(f"[{video_id}] Permanently rate-limited after all retries — skipping")
+        if skipped_videos is not None:
+            skipped_videos.append(video_id)
+        return None
+
+    if info is None:
+        return None
+
+    # Find English subtitle track (manual first, then auto-generated)
     subtitles = info.get("subtitles") or {}
     auto_subs = info.get("automatic_captions") or {}
-
     tracks = subtitles.get("en") or auto_subs.get("en")
 
     if not tracks:
         return None
 
-    # Get VTT subtitle URL
-    vtt_url = None
-    for track in tracks:
-        if track.get("ext") == "vtt":
-            vtt_url = track.get("url")
-            break
-
+    vtt_url = next((t["url"] for t in tracks if t.get("ext") == "vtt"), None)
     if not vtt_url:
         return None
 
-    try:
-        # Download subtitle content directly
-        with urllib.request.urlopen(vtt_url) as response:
-            vtt_content = response.read().decode("utf-8")
-    except Exception as e:
-        if "429" in str(e) or "Too Many Requests" in str(e):
-            raise  # let @retry_transcript catch and retry
-        logger.warning(f"[{video_id}] Error downloading VTT: {e}")
+    vtt_content = None
+    for attempt, delay in enumerate([0] + _TRANSCRIPT_RETRY_DELAYS, start=1):
+        if delay:
+            logger.warning(f"[{video_id}] VTT 429 — waiting {delay}s before attempt {attempt}")
+            _time.sleep(delay)
+        try:
+            with urllib.request.urlopen(vtt_url) as resp:
+                vtt_content = resp.read().decode("utf-8")
+            break
+        except Exception as e:
+            if "429" in str(e) or "Too Many Requests" in str(e):
+                logger.warning(f"[{video_id}] VTT download 429 (attempt {attempt}/{len(_TRANSCRIPT_RETRY_DELAYS) + 1})")
+                continue
+            logger.warning(f"[{video_id}] Error downloading VTT: {e}")
+            return None
+    else:
+        logger.error(f"[{video_id}] VTT still rate-limited after all retries — skipping")
+        if skipped_videos is not None:
+            skipped_videos.append(video_id)
         return None
 
     lines = []
-    seen = set()
-
+    seen: set = set()
     for line in vtt_content.splitlines():
         line = line.strip()
         if not line or line.startswith("WEBVTT") or "-->" in line or re.match(r"^\d+$", line):
             continue
-
         line = re.sub(r"<[^>]+>", "", line)
-
         if line and line not in seen:
             seen.add(line)
             lines.append(line)
 
     transcript = " ".join(lines)
-    return transcript if transcript else None
+    if not transcript:
+        return None
+
+    if len(transcript) > MAX_TRANSCRIPT_CHARS:
+        transcript = transcript[:MAX_TRANSCRIPT_CHARS]
+
+    return transcript
 
 
 _S3_CONFIG_KEY = "youtube-data/run_config.json"
