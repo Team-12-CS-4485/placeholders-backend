@@ -12,6 +12,7 @@ Run with: uvicorn app.main:app --reload
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
 from app.api.endpoints.pipeline import router as pipeline_router
 from app.api.endpoints.videos import router as videos_router
@@ -50,6 +51,11 @@ async def log_requests(request, call_next):
             f"API_FAILURE method={request.method} path={request.url.path} error={exc}"
         )
         raise
+
+
+@app.get("/", include_in_schema=False)
+def root():
+    return RedirectResponse(url="/docs")
 
 
 @app.get("/health")
