@@ -1,4 +1,4 @@
-# Full requirements for local development and testing
+# Lean API server requirements for Render deployment
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 python-dotenv>=1.0.0
@@ -10,9 +10,3 @@ google-auth==2.26.0
 google-auth-oauthlib==1.2.0
 google-auth-httplib2==0.2.0
 google-api-python-client==2.108.0
-sentence-transformers>=3.0.0
-numpy>=1.24.0
-einops>=0.7.0
-yt-dlp>=2026.2.21
-faiss-cpu>=1.7.0
-apscheduler>=3.10.0

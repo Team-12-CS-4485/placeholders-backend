@@ -97,16 +97,6 @@ class EmbeddingService:
             model_name=settings.embedding_model_id
         )
 
-        if self._chunker.available:
-            logger.info(
-                f"EMBEDDING_LOCAL model={settings.embedding_model_id} dims=768 cost=free"
-            )
-        else:
-            logger.warning(
-                "Local embedding model not available — install sentence-transformers. "
-                "Chunking will fall back to character mode and embed_chunks will raise."
-            )
-
     # ── Chunking ─────────────────────────────────────────────────────────────
 
     def chunk_text(self, text: str) -> list[str]:

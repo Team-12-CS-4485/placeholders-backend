@@ -47,7 +47,7 @@ class SemanticChunker:
         self.min_words_per_chunk = min_words_per_chunk
         self.max_words_per_chunk = max_words_per_chunk
         self.use_nomic_prefix = use_nomic_prefix
-        self._available = self._try_load_model()
+        self._available: Optional[bool] = None  # deferred — loaded on first use
 
     def _try_load_model(self) -> bool:
         if (
@@ -84,13 +84,15 @@ class SemanticChunker:
 
     @property
     def available(self) -> bool:
+        if self._available is None:
+            self._available = self._try_load_model()
         return self._available
 
     def chunk(self, text: str) -> list[str]:
 
         if not text or not text.strip():
             return []
-        if self._available:
+        if self.available:
             try:
                 return self._semantic_chunk(text)
             except Exception as exc:
@@ -101,7 +103,7 @@ class SemanticChunker:
 
     def embed(self, texts: list[str], is_query: bool = False) -> list[list[float]]:
 
-        if not self._available:
+        if not self.available:
             raise RuntimeError(
                 "Local model not loaded. "
                 "Ensure sentence-transformers is installed: pip install sentence-transformers"
