@@ -66,8 +66,8 @@ class VectorService:
             "channel",
             "category",
             "sentiment",
-            "topics",           # array — Qdrant indexes each element
-            "thumbnail_tone",   # urgency/fear/anger/etc.
+            "topics",  # array — Qdrant indexes each element
+            "thumbnail_tone",  # urgency/fear/anger/etc.
         )
         for field in keyword_fields:
             try:
@@ -261,27 +261,31 @@ class VectorService:
 
         return [
             {
-                "id":                        str(r.id),
-                "score":                     float(r.score),
-                "transcript_key":            r.payload.get("transcript_key", ""),
-                "source_key":                r.payload.get("source_key", ""),
-                "channel":                   r.payload.get("channel", ""),
-                "title":                     r.payload.get("title", ""),
-                "published_at":              r.payload.get("published_at", ""),
-                "view_count":                r.payload.get("view_count", 0),
-                "category":                  r.payload.get("category", ""),
-                "sentiment":                 r.payload.get("sentiment", ""),
-                "topics":                    r.payload.get("topics", []),
-                "key_claims":                r.payload.get("key_claims", []),
-                "is_breaking":               r.payload.get("is_breaking", False),
-                "chunk_index":               r.payload.get("chunk_index", 0),
-                "text":                      r.payload.get("text", ""),
+                "id": str(r.id),
+                "score": float(r.score),
+                "transcript_key": r.payload.get("transcript_key", ""),
+                "source_key": r.payload.get("source_key", ""),
+                "channel": r.payload.get("channel", ""),
+                "title": r.payload.get("title", ""),
+                "published_at": r.payload.get("published_at", ""),
+                "view_count": r.payload.get("view_count", 0),
+                "category": r.payload.get("category", ""),
+                "sentiment": r.payload.get("sentiment", ""),
+                "topics": r.payload.get("topics", []),
+                "key_claims": r.payload.get("key_claims", []),
+                "is_breaking": r.payload.get("is_breaking", False),
+                "chunk_index": r.payload.get("chunk_index", 0),
+                "text": r.payload.get("text", ""),
                 # thumbnail fields
-                "thumbnail_visual":          r.payload.get("thumbnail_visual", ""),
-                "thumbnail_tone":            r.payload.get("thumbnail_tone", ""),
-                "thumbnail_clickbait_score": r.payload.get("thumbnail_clickbait_score", 0),
-                "thumbnail_brand_consistent":r.payload.get("thumbnail_brand_consistent", False),
-                "thumbnail_insight":         r.payload.get("thumbnail_insight", ""),
+                "thumbnail_visual": r.payload.get("thumbnail_visual", ""),
+                "thumbnail_tone": r.payload.get("thumbnail_tone", ""),
+                "thumbnail_clickbait_score": r.payload.get(
+                    "thumbnail_clickbait_score", 0
+                ),
+                "thumbnail_brand_consistent": r.payload.get(
+                    "thumbnail_brand_consistent", False
+                ),
+                "thumbnail_insight": r.payload.get("thumbnail_insight", ""),
             }
             for r in results
         ]

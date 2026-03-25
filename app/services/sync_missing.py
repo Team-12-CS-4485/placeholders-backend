@@ -12,6 +12,7 @@ predate the thumbnail integration.
 
 import sys
 import os
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import argparse
@@ -51,7 +52,7 @@ def get_dynamo_video_ids():
     while "LastEvaluatedKey" in response:
         response = table.scan(
             ProjectionExpression="PartitionKey, SortKey",
-            ExclusiveStartKey=response["LastEvaluatedKey"]
+            ExclusiveStartKey=response["LastEvaluatedKey"],
         )
         for item in response["Items"]:
             video_ids.add(item["SortKey"])
@@ -59,7 +60,9 @@ def get_dynamo_video_ids():
 
 
 def get_qdrant_video_ids():
-    qdrant = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key or None)
+    qdrant = QdrantClient(
+        url=settings.qdrant_url, api_key=settings.qdrant_api_key or None
+    )
     video_ids = set()
     offset = None
     while True:
@@ -83,7 +86,9 @@ def get_qdrant_videos_missing_thumbnail():
     Return video IDs that are in Qdrant but have an empty thumbnail_tone —
     i.e. they were indexed before thumbnail analysis was added.
     """
-    qdrant = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key or None)
+    qdrant = QdrantClient(
+        url=settings.qdrant_url, api_key=settings.qdrant_api_key or None
+    )
     from qdrant_client.http import models
 
     video_ids = set()
@@ -129,7 +134,7 @@ def index_videos(video_ids: list):
         response = table.scan(
             FilterExpression="SortKey = :vid",
             ExpressionAttributeValues={":vid": video_id},
-            ProjectionExpression="PartitionKey, SortKey, title, transcript, publishedAt, viewCount, likeCount, commentCount"
+            ProjectionExpression="PartitionKey, SortKey, title, transcript, publishedAt, viewCount, likeCount, commentCount",
         )
         items = response.get("Items", [])
         if not items:
@@ -138,12 +143,12 @@ def index_videos(video_ids: list):
             continue
 
         item = items[0]
-        channel       = item.get("PartitionKey", "")
-        title         = item.get("title", "")
-        transcript    = item.get("transcript", "")
-        published_at  = item.get("publishedAt", "")
-        view_count    = int(item.get("viewCount", 0))
-        like_count    = int(item.get("likeCount", 0))
+        channel = item.get("PartitionKey", "")
+        title = item.get("title", "")
+        transcript = item.get("transcript", "")
+        published_at = item.get("publishedAt", "")
+        view_count = int(item.get("viewCount", 0))
+        like_count = int(item.get("likeCount", 0))
         comment_count = int(item.get("commentCount", 0))
 
         if not transcript:
@@ -151,8 +156,8 @@ def index_videos(video_ids: list):
             failed += 1
             continue
 
-        transcript    = storage_service._clean_transcript(transcript)
-        source_key    = f"youtube-data/week2/{channel.lower()}.json"
+        transcript = storage_service._clean_transcript(transcript)
+        source_key = f"youtube-data/week2/{channel.lower()}.json"
         transcript_key = f"{source_key}::{video_id}"
 
         try:
@@ -160,23 +165,31 @@ def index_videos(video_ids: list):
             print(f"  Chunks: {len(chunks)}")
 
             # Transcript intelligence
-            intelligence = embedding_service.extract_video_intelligence(chunks=chunks, title=title)
-            print(f"  Category: {intelligence['category']} | Sentiment: {intelligence['sentiment']}")
+            intelligence = embedding_service.extract_video_intelligence(
+                chunks=chunks, title=title
+            )
+            print(
+                f"  Category: {intelligence['category']} | Sentiment: {intelligence['sentiment']}"
+            )
             print(f"  Topics: {intelligence['topics']}")
 
             # Thumbnail intelligence
-            thumbnail_intel = embedding_service.analyze_thumbnail(video_id=video_id, title=title)
-            print(f"  Thumbnail tone: {thumbnail_intel['thumbnail_tone']} "
-                  f"| Clickbait: {thumbnail_intel['thumbnail_clickbait_score']}")
+            thumbnail_intel = embedding_service.analyze_thumbnail(
+                video_id=video_id, title=title
+            )
+            print(
+                f"  Thumbnail tone: {thumbnail_intel['thumbnail_tone']} "
+                f"| Clickbait: {thumbnail_intel['thumbnail_clickbait_score']}"
+            )
 
             vectors = embedding_service.embed_chunks(chunks)
 
             video_metadata = {
-                "channel":       channel,
-                "title":         title,
-                "published_at":  published_at,
-                "view_count":    view_count,
-                "like_count":    like_count,
+                "channel": channel,
+                "title": title,
+                "published_at": published_at,
+                "view_count": view_count,
+                "like_count": like_count,
                 "comment_count": comment_count,
                 **intelligence,
                 **thumbnail_intel,
@@ -205,7 +218,9 @@ def backfill_thumbnails(video_ids: list):
     For videos already in Qdrant, fetch + analyze thumbnails and patch the
     existing point payloads using set_payload (no re-embedding needed).
     """
-    qdrant = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key or None)
+    qdrant = QdrantClient(
+        url=settings.qdrant_url, api_key=settings.qdrant_api_key or None
+    )
     from qdrant_client.http import models as qdrant_models
 
     embedding_service = EmbeddingService(api_keys=settings.genai_api_keys)
@@ -224,7 +239,7 @@ def backfill_thumbnails(video_ids: list):
             resp = table.scan(
                 FilterExpression="SortKey = :vid",
                 ExpressionAttributeValues={":vid": video_id},
-                ProjectionExpression="title"
+                ProjectionExpression="title",
             )
             items = resp.get("Items", [])
             if items:
@@ -233,9 +248,13 @@ def backfill_thumbnails(video_ids: list):
             pass
 
         try:
-            thumbnail_intel = embedding_service.analyze_thumbnail(video_id=video_id, title=title)
-            print(f"  Tone: {thumbnail_intel['thumbnail_tone']} "
-                  f"| Clickbait: {thumbnail_intel['thumbnail_clickbait_score']}")
+            thumbnail_intel = embedding_service.analyze_thumbnail(
+                video_id=video_id, title=title
+            )
+            print(
+                f"  Tone: {thumbnail_intel['thumbnail_tone']} "
+                f"| Clickbait: {thumbnail_intel['thumbnail_clickbait_score']}"
+            )
 
             # Find all point IDs for this video_id
             point_ids = []
@@ -247,10 +266,12 @@ def backfill_thumbnails(video_ids: list):
                     offset=offset,
                     with_payload=False,
                     scroll_filter=qdrant_models.Filter(
-                        must=[qdrant_models.FieldCondition(
-                            key="transcript_index",
-                            match=qdrant_models.MatchValue(value=video_id)
-                        )]
+                        must=[
+                            qdrant_models.FieldCondition(
+                                key="transcript_index",
+                                match=qdrant_models.MatchValue(value=video_id),
+                            )
+                        ]
                     ),
                 )
                 point_ids.extend([r.id for r in results])

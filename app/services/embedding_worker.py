@@ -53,10 +53,18 @@ def run_transcript_analysis_job(prefix=None, limit=None, output_file=None):
                     thumb = video_result.get("thumbnail") or {}
                     if thumb.get("thumbnail_tone"):
                         file.write(f"  Thumbnail Tone: {thumb.get('thumbnail_tone')}\n")
-                        file.write(f"  Thumbnail Clickbait Score: {thumb.get('thumbnail_clickbait_score')}\n")
-                        file.write(f"  Thumbnail Brand Consistent: {thumb.get('thumbnail_brand_consistent')}\n")
-                        file.write(f"  Thumbnail Visual: {thumb.get('thumbnail_visual')}\n")
-                        file.write(f"  Thumbnail Insight: {thumb.get('thumbnail_insight')}\n")
+                        file.write(
+                            f"  Thumbnail Clickbait Score: {thumb.get('thumbnail_clickbait_score')}\n"
+                        )
+                        file.write(
+                            f"  Thumbnail Brand Consistent: {thumb.get('thumbnail_brand_consistent')}\n"
+                        )
+                        file.write(
+                            f"  Thumbnail Visual: {thumb.get('thumbnail_visual')}\n"
+                        )
+                        file.write(
+                            f"  Thumbnail Insight: {thumb.get('thumbnail_insight')}\n"
+                        )
 
                 file.write("\n")
 
@@ -71,4 +79,5 @@ if __name__ == "__main__":
     # Auto-sync any missing videos after pipeline completes
     print("\n=== Running post-pipeline sync ===")
     from scripts.sync_missing import main as sync_main
+
     sync_main()

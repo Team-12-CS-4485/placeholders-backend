@@ -70,8 +70,15 @@ CATEGORY_OPTIONS = [
 CATEGORY_OPTIONS_STR = ", ".join(CATEGORY_OPTIONS)
 
 THUMBNAIL_TONE_OPTIONS = (
-    "urgency", "fear", "anger", "sadness", "curiosity",
-    "hope", "neutral", "celebratory", "alarming",
+    "urgency",
+    "fear",
+    "anger",
+    "sadness",
+    "curiosity",
+    "hope",
+    "neutral",
+    "celebratory",
+    "alarming",
 )
 
 
@@ -156,10 +163,14 @@ class EmbeddingService:
                 )
                 if is_rate_limit:
                     if self._rotate_key():
-                        logger.warning(f"GEMINI_KEY_ROTATED attempt={attempt+1} retrying immediately")
+                        logger.warning(
+                            f"GEMINI_KEY_ROTATED attempt={attempt+1} retrying immediately"
+                        )
                         continue
                     # all keys exhausted — reset and wait
-                    logger.warning("ALL_KEYS_EXHAUSTED resetting to key 0 and waiting 60s")
+                    logger.warning(
+                        "ALL_KEYS_EXHAUSTED resetting to key 0 and waiting 60s"
+                    )
                     self.current_key_index = 0
                     self.client = genai.Client(api_key=self.api_keys[0])
                     time.sleep(60)
@@ -177,9 +188,7 @@ class EmbeddingService:
                     model=self.model_id,
                     contents=contents,
                     config=types.GenerateContentConfig(
-                        thinking_config=types.ThinkingConfig(
-                            thinking_level="low"
-                        )
+                        thinking_config=types.ThinkingConfig(thinking_level="low")
                     ),
                 )
                 return self._get_text(response)
@@ -197,9 +206,13 @@ class EmbeddingService:
                 )
                 if is_rate_limit:
                     if self._rotate_key():
-                        logger.warning(f"GEMINI_KEY_ROTATED (vision) attempt={attempt+1} retrying immediately")
+                        logger.warning(
+                            f"GEMINI_KEY_ROTATED (vision) attempt={attempt+1} retrying immediately"
+                        )
                         continue
-                    logger.warning("ALL_KEYS_EXHAUSTED (vision) resetting to key 0 and waiting 60s")
+                    logger.warning(
+                        "ALL_KEYS_EXHAUSTED (vision) resetting to key 0 and waiting 60s"
+                    )
                     self.current_key_index = 0
                     self.client = genai.Client(api_key=self.api_keys[0])
                     time.sleep(60)
@@ -284,7 +297,13 @@ class EmbeddingService:
                 types.Part.from_text(text=prompt),
             ]
             raw = self._gemini_vision(contents)
-            clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            clean = (
+                raw.strip()
+                .removeprefix("```json")
+                .removeprefix("```")
+                .removesuffix("```")
+                .strip()
+            )
             data = json.loads(clean)
 
             score = data.get("thumbnail_clickbait_score", 0)
@@ -298,14 +317,18 @@ class EmbeddingService:
                 tone = "neutral"
 
             return {
-                "thumbnail_visual":           str(data.get("thumbnail_visual", "")),
-                "thumbnail_tone":             tone,
-                "thumbnail_clickbait_score":  score if 1 <= score <= 5 else 0,
-                "thumbnail_brand_consistent": bool(data.get("thumbnail_brand_consistent", False)),
-                "thumbnail_insight":          str(data.get("thumbnail_insight", "")),
+                "thumbnail_visual": str(data.get("thumbnail_visual", "")),
+                "thumbnail_tone": tone,
+                "thumbnail_clickbait_score": score if 1 <= score <= 5 else 0,
+                "thumbnail_brand_consistent": bool(
+                    data.get("thumbnail_brand_consistent", False)
+                ),
+                "thumbnail_insight": str(data.get("thumbnail_insight", "")),
             }
         except (json.JSONDecodeError, Exception) as exc:
-            logger.error(f"THUMBNAIL_PARSE_ERROR videoId={video_id} error={exc} raw={raw[:200]}")
+            logger.error(
+                f"THUMBNAIL_PARSE_ERROR videoId={video_id} error={exc} raw={raw[:200]}"
+            )
             return _default
 
     # ── Video intelligence — ONE call per video ───────────────────────────────
@@ -349,7 +372,13 @@ class EmbeddingService:
         raw = ""
         try:
             raw = self._gemini(prompt)
-            clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            clean = (
+                raw.strip()
+                .removeprefix("```json")
+                .removeprefix("```")
+                .removesuffix("```")
+                .strip()
+            )
             data = json.loads(clean)
 
             return {
