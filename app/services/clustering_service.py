@@ -54,11 +54,13 @@ class ClusteringService:
                 with_payload=True,
             )
             for point in results:
-                all_points.append({
-                    "id": point.id,
-                    "vector": point.vector,
-                    "payload": point.payload,
-                })
+                all_points.append(
+                    {
+                        "id": point.id,
+                        "vector": point.vector,
+                        "payload": point.payload,
+                    }
+                )
             if offset is None:
                 break
 
@@ -78,8 +80,7 @@ class ClusteringService:
             video_groups.setdefault(video_id, []).append(point)
 
         logger.info(
-            f"CLUSTER_DEDUP videos={len(video_groups)} "
-            f"from_chunks={len(points)}"
+            f"CLUSTER_DEDUP videos={len(video_groups)} " f"from_chunks={len(points)}"
         )
         return video_groups
 
@@ -235,10 +236,10 @@ class ClusteringService:
         Label each cluster using its most DISTINCTIVE topic, not just the most
         frequent. Uses TF-IDF-style scoring:
             score = (topic_freq_in_cluster / cluster_size) * log(total_clusters / clusters_with_topic)
-        
+
         Also enforces uniqueness — no two clusters get the same label.
         If a cluster's top pick is taken, it falls back to the next best.
-        
+
         Returns {cluster_id: {label, video_count, channels, top_topics, ...}}
         """
         import math
@@ -303,7 +304,10 @@ class ClusteringService:
 
             for topic, count in tc.items():
                 tf = count / cluster_size
-                idf = math.log((n_clusters + 1) / (topic_cluster_count.get(topic, 0) + 1)) + 1
+                idf = (
+                    math.log((n_clusters + 1) / (topic_cluster_count.get(topic, 0) + 1))
+                    + 1
+                )
                 scored.append((topic, tf * idf))
 
             # Sort by TF-IDF score descending
@@ -504,9 +508,7 @@ class ClusteringService:
         self._create_indexes()
 
         # Build summary (exclude noise from "real" clusters)
-        real_clusters = {
-            k: v for k, v in cluster_info.items() if k != -1
-        }
+        real_clusters = {k: v for k, v in cluster_info.items() if k != -1}
         noise_info = cluster_info.get(-1, {})
 
         summary = {

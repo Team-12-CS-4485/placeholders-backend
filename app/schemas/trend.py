@@ -15,11 +15,12 @@ from pydantic import BaseModel
 
 class WeekData(BaseModel):
     """Per-week metrics for a single trend (powers sparklines + bar charts)."""
-    week: str                       # "week1", "week2", ...
-    video_count: int                # unique videos this week
-    channel_count: int              # distinct channels covering it
-    view_count: int                 # total views this week
-    breaking_count: int             # is_breaking videos
+
+    week: str  # "week1", "week2", ...
+    video_count: int  # unique videos this week
+    channel_count: int  # distinct channels covering it
+    view_count: int  # total views this week
+    breaking_count: int  # is_breaking videos
     sentiment_breakdown: dict[str, int]  # {"positive": 2, "negative": 5, "neutral": 1}
 
 
@@ -30,19 +31,20 @@ class TrendItem(BaseModel):
     List view uses: label, description, category, metric_badge, trend_type
     Grid view adds: week_data, sentiment_breakdown, channels
     """
+
     cluster_id: int
-    label: str                      # cluster_label — e.g. "Maritime Security"
-    description: str                # top key_claim or summary snippet
-    category: str                   # dominant_category — e.g. "Middle East Conflict"
-    trend_type: str                 # "rising" | "emerging" | "dominant" | "declining" | "stable"
-    metric_badge: str               # display string — "+40% Vol", "68% Neg", "High Impact"
+    label: str  # cluster_label — e.g. "Maritime Security"
+    description: str  # top key_claim or summary snippet
+    category: str  # dominant_category — e.g. "Middle East Conflict"
+    trend_type: str  # "rising" | "emerging" | "dominant" | "declining" | "stable"
+    metric_badge: str  # display string — "+40% Vol", "68% Neg", "High Impact"
 
     # Volume & engagement
-    video_count: int                # total videos across all weeks
-    channel_count: int              # total distinct channels
-    view_count_total: int           # total views across all weeks
-    breaking_count: int             # total is_breaking videos
-    heat_score: float               # composite ranking score
+    video_count: int  # total videos across all weeks
+    channel_count: int  # total distinct channels
+    view_count_total: int  # total views across all weeks
+    breaking_count: int  # total is_breaking videos
+    heat_score: float  # composite ranking score
 
     # Sentiment
     sentiment_breakdown: dict[str, int]
@@ -63,13 +65,15 @@ class TrendItem(BaseModel):
 
 class TrendHeaderStats(BaseModel):
     """Header bar stats — top of the Trends Archive page."""
-    active_narratives: int          # number of clusters (excluding noise)
-    total_volume: int               # sum of all view_counts
-    new_signals_pct: float          # week-over-week total volume % change
+
+    active_narratives: int  # number of clusters (excluding noise)
+    total_volume: int  # sum of all view_counts
+    new_signals_pct: float  # week-over-week total volume % change
 
 
 class TrendListResponse(BaseModel):
     """Full response for GET /api/trends/list."""
+
     header: TrendHeaderStats
     trends: list[TrendItem]
-    generated_at: str               # ISO timestamp
+    generated_at: str  # ISO timestamp

@@ -68,7 +68,9 @@ def main():
         print("\n--- Clusters ---\n")
         for cid, info in summary["clusters"].items():
             print(f"  Cluster {cid}: {info['label']!r}")
-            print(f"    Videos: {info['video_count']}  |  Channels: {info['channel_count']}")
+            print(
+                f"    Videos: {info['video_count']}  |  Channels: {info['channel_count']}"
+            )
             print(f"    Channels: {', '.join(info['channels'])}")
             print(f"    Top topics: {', '.join(info['top_topics'][:3])}")
             print(f"    Category: {info['dominant_category']}")

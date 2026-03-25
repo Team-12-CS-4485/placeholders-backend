@@ -43,4 +43,6 @@ def get_trend_detail(cluster_id: int):
         if trend["cluster_id"] == cluster_id:
             return trend
 
-    raise HTTPException(status_code=404, detail=f"Trend with cluster_id={cluster_id} not found")
+    raise HTTPException(
+        status_code=404, detail=f"Trend with cluster_id={cluster_id} not found"
+    )
