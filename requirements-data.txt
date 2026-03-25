@@ -1,5 +1,0 @@
-# Data collection pipeline dependencies — not needed for the API server
--r requirements.txt
-yt-dlp>=2026.2.21
-faiss-cpu>=1.7.0
-apscheduler>=3.10.0
