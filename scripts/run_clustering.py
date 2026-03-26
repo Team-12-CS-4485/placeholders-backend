@@ -62,7 +62,6 @@ def main():
     print(f"\nTotal videos:     {summary['total_videos']}")
     print(f"Clusters found:   {summary['cluster_count']}")
     print(f"Noise (outliers): {summary['noise_videos']}")
-    print(f"Chunks patched:   {summary['total_chunks_patched']}")
 
     if summary["clusters"]:
         print("\n--- Clusters ---\n")

@@ -134,7 +134,8 @@ class EmbeddingService:
                     contents=contents,
                     config=types.GenerateContentConfig(
                         thinking_config=types.ThinkingConfig(
-                            thinking_level=settings.gemini_thinking_level
+                            thinking_level=settings.gemini_thinking_level,
+                            max_output_tokens=256,
                         )
                     ),
                 )
