@@ -16,6 +16,9 @@ from app.schemas.pipeline import (
 from app.services.pipeline_service import PipelineService
 from app.services.clustering_service import ClusteringService
 from app.services.claim_analysis_service import ClaimAnalysisService
+from app.services.embedding_service import EmbeddingService
+from app.services.vector_service import VectorService
+from app.core.config import settings
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
 
@@ -67,9 +70,9 @@ def run_full_pipeline(request: PipelineRunRequest):
 @router.post("/search", response_model=VectorSearchResponse)
 def search_similar_chunks(request: VectorSearchRequest):
     try:
-        return PipelineService().search_similar_chunks(
-            query=request.query,
-            limit=request.limit or 5,
-        )
+        limit = request.limit or 5
+        query_vector = EmbeddingService(api_keys=settings.genai_api_keys).embed_query(request.query)
+        hits = VectorService().search_similar_chunks(query_vector=query_vector, limit=limit)
+        return {"query": request.query, "limit": limit, "hits": hits}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Search failed: {exc}") from exc

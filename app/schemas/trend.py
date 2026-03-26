@@ -133,3 +133,19 @@ class TrendSentiment(BaseModel):
 class TrendClaims(BaseModel):
     cluster_id: int
     claims: ClassifiedClaims
+
+
+# ── GET /api/weeks ────────────────────────────────────────────────────────────
+
+class WeekSummary(BaseModel):
+    week: str
+    total_videos: int
+    total_views: int
+    active_clusters: int
+    breaking_count: int
+    dominant_sentiment: str
+
+
+class WeeksResponse(BaseModel):
+    weeks: list[WeekSummary]
+    total: int

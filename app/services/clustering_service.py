@@ -25,7 +25,7 @@ import logging
 import math
 import os
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
@@ -47,6 +47,21 @@ def _dec(val):
     if isinstance(val, (int, float)):
         return Decimal(str(val))
     return val
+
+
+def _clean_for_dynamo(obj):
+    """Recursively convert floats/ints to Decimal and remove None values."""
+    if isinstance(obj, bool):
+        return obj
+    if isinstance(obj, float):
+        return Decimal(str(round(obj, 4)))
+    if isinstance(obj, int):
+        return Decimal(str(obj))
+    if isinstance(obj, dict):
+        return {k: _clean_for_dynamo(v) for k, v in obj.items() if v is not None}
+    if isinstance(obj, list):
+        return [_clean_for_dynamo(i) for i in obj if i is not None]
+    return obj
 
 
 class ClusteringService:
@@ -179,7 +194,7 @@ class ClusteringService:
     def _cluster_vectors(
         self,
         matrix,
-        min_cluster_size=3,
+        min_cluster_size=7,
         min_samples=2,
         umap_components=15,
         umap_neighbors=15,
@@ -232,6 +247,8 @@ class ClusteringService:
             categories = Counter()
             sentiments = Counter()
             breaking = views = likes = comments = 0
+            week_buckets: dict[str, list[dict]] = defaultdict(list)
+            claim_counts: Counter = Counter()
 
             for vid in vids:
                 m = meta_map.get(vid, {})
@@ -245,6 +262,30 @@ class ClusteringService:
                 views += m.get("view_count", 0)
                 likes += m.get("like_count", 0)
                 comments += m.get("comment_count", 0)
+                week_buckets[m.get("week", "unknown")].append(m)
+                for claim in m.get("key_claims", []):
+                    if claim:
+                        claim_counts[claim] += 1
+
+            # Build week_data list sorted chronologically
+            week_data = []
+            for week_name in sorted(
+                week_buckets,
+                key=lambda w: int(w[4:]) if w.startswith("week") and w[4:].isdigit() else 9999,
+            ):
+                wvids = week_buckets[week_name]
+                week_channels = {v.get("channel", "") for v in wvids}
+                week_sentiments = Counter(v.get("sentiment", "neutral") for v in wvids)
+                week_breaking = sum(1 for v in wvids if v.get("is_breaking"))
+                week_views = sum(v.get("view_count", 0) for v in wvids)
+                week_data.append({
+                    "week": week_name,
+                    "video_count": len(wvids),
+                    "channel_count": len(week_channels),
+                    "view_count": week_views,
+                    "breaking_count": week_breaking,
+                    "sentiment_breakdown": dict(week_sentiments),
+                })
 
             cluster_topic_counts[cid] = tc
             cluster_stats[cid] = {
@@ -256,6 +297,8 @@ class ClusteringService:
                 "views": views,
                 "likes": likes,
                 "comments": comments,
+                "week_data": week_data,
+                "top_claims": [claim for claim, _ in claim_counts.most_common(5)],
             }
 
         # TF-IDF scoring
@@ -327,6 +370,8 @@ class ClusteringService:
                 "total_views": stats["views"],
                 "total_likes": stats["likes"],
                 "total_comments": stats["comments"],
+                "week_data": stats["week_data"],
+                "top_claims": stats["top_claims"],  # ranked by cross-video frequency
             }
             logger.info(
                 f"CLUSTER_LABELED id={cid} label={cluster_labels[cid]!r} videos={len(vids)}"
@@ -396,10 +441,13 @@ class ClusteringService:
                 "top_topics": info["top_topics"],
                 "dominant_category": info["dominant_category"],
                 "dominant_sentiment": info["dominant_sentiment"],
+                "sentiment_breakdown": _clean_for_dynamo(info["sentiment_breakdown"]),
                 "breaking_count": _dec(info["breaking_count"]),
                 "total_views": _dec(info["total_views"]),
                 "total_likes": _dec(info["total_likes"]),
                 "total_comments": _dec(info["total_comments"]),
+                "week_data": _clean_for_dynamo(info["week_data"]),
+                "top_claims": info["top_claims"],
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
@@ -412,7 +460,12 @@ class ClusteringService:
     # ── Public API ───────────────────────────────────────────────────────────
 
     def run_clustering(
-        self, min_cluster_size=3, min_samples=2, umap_components=15, umap_neighbors=15
+        self,
+        min_cluster_size=7,
+        min_samples=2,
+        umap_components=15,
+        umap_neighbors=15,
+        dry_run=False,
     ):
         # 1. Vectors from Qdrant
         video_chunks = self._scroll_vectors()
@@ -439,13 +492,17 @@ class ClusteringService:
         # 5. Label
         cluster_info = self._label_clusters(video_ids, labels, filtered_meta)
 
-        # 6. Write to DynamoDB youtube-videos
-        videos_updated = self._write_clusters_to_dynamodb(
-            video_ids, labels, probabilities, cluster_info, filtered_meta
-        )
-
-        # 7. Write to DynamoDB narrative-clusters
-        clusters_written = self._write_cluster_summaries(cluster_info)
+        if dry_run:
+            logger.info("DRY_RUN skipping DynamoDB writes")
+            videos_updated = 0
+            clusters_written = 0
+        else:
+            # 6. Write to DynamoDB youtube-videos
+            videos_updated = self._write_clusters_to_dynamodb(
+                video_ids, labels, probabilities, cluster_info, filtered_meta
+            )
+            # 7. Write to DynamoDB narrative-clusters
+            clusters_written = self._write_cluster_summaries(cluster_info)
 
         real_clusters = {k: v for k, v in cluster_info.items() if k != -1}
         noise_info = cluster_info.get(-1, {})
@@ -456,6 +513,7 @@ class ClusteringService:
             "cluster_count": len(real_clusters),
             "clusters_written": clusters_written,
             "noise_videos": noise_info.get("video_count", 0),
+            "dry_run": dry_run,
             "clusters": {
                 cid: {
                     "label": info["label"],
@@ -467,6 +525,8 @@ class ClusteringService:
                     "dominant_sentiment": info["dominant_sentiment"],
                     "breaking_count": info["breaking_count"],
                     "total_views": info["total_views"],
+                    "week_data": info["week_data"],
+                    "top_claims": info["top_claims"],
                 }
                 for cid, info in sorted(real_clusters.items())
             },
