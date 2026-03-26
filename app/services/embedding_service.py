@@ -5,6 +5,7 @@ Handles:
 - Semantic chunking via local sentence-transformers model
 - Local chunk embedding (nomic-ai/nomic-embed-text-v1.5, 768 dims, free)
 - Gemini-powered video intelligence extraction (topics, sentiment, claims) — one call per video
+- Gemini-powered thumbnail analysis (visual, tone, clickbait score) — one call per video
 - Gemini chunk analysis and summarization
 """
 
@@ -13,7 +14,8 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Optional
+import urllib.request
+from typing import Optional, Union
 
 from google import genai
 from google.genai import types
@@ -67,6 +69,18 @@ CATEGORY_OPTIONS = [
 
 CATEGORY_OPTIONS_STR = ", ".join(CATEGORY_OPTIONS)
 
+THUMBNAIL_TONE_OPTIONS = (
+    "urgency",
+    "fear",
+    "anger",
+    "sadness",
+    "curiosity",
+    "hope",
+    "neutral",
+    "celebratory",
+    "alarming",
+)
+
 
 class EmbeddingService:
 
@@ -82,16 +96,6 @@ class EmbeddingService:
         self._chunker = chunker or get_default_chunker(
             model_name=settings.embedding_model_id
         )
-
-        if self._chunker.available:
-            logger.info(
-                f"EMBEDDING_LOCAL model={settings.embedding_model_id} dims=768 cost=free"
-            )
-        else:
-            logger.warning(
-                "Local embedding model not available — install sentence-transformers. "
-                "Chunking will fall back to character mode and embed_chunks will raise."
-            )
 
     # ── Chunking ─────────────────────────────────────────────────────────────
 
@@ -120,14 +124,14 @@ class EmbeddingService:
         )
         return True
 
-    def _gemini(self, prompt: str, max_retries: int = 6) -> str:
-        wait = 15
+    def _gemini(self, prompt: Union[str, list], max_retries: int = 6) -> str:
+        contents = prompt if isinstance(prompt, list) else [prompt]
         last_exc = None
-        for attempt in range(max_retries):
+        for attempt in range(max_retries * len(self.api_keys)):
             try:
                 response = self.client.models.generate_content(
                     model=self.model_id,
-                    contents=[prompt],
+                    contents=contents,
                     config=types.GenerateContentConfig(
                         thinking_config=types.ThinkingConfig(
                             thinking_level=settings.gemini_thinking_level
@@ -148,27 +152,174 @@ class EmbeddingService:
                     or getattr(exc, "code", None) == 429
                 )
                 if is_rate_limit:
-                    # Try rotating to next key first
                     if self._rotate_key():
                         logger.warning(
                             f"GEMINI_KEY_ROTATED attempt={attempt+1} retrying immediately"
                         )
-                        continue  # retry immediately with new key, no sleep
-                    # No more keys — fall back to waiting
-                    if attempt < max_retries - 1:
-                        logger.warning(
-                            f"GEMINI_RATE_LIMIT attempt={attempt+1}/{max_retries} "
-                            f"waiting={wait}s error={exc_str[:100]}"
-                        )
-                        time.sleep(wait)
-                        wait = min(wait * 2, 300)
-                    else:
-                        raise RuntimeError(
-                            f"Gemini rate limit exceeded after {max_retries} retries on all keys"
-                        ) from exc
+                        continue
+                    # all keys exhausted — reset and wait
+                    logger.warning(
+                        "ALL_KEYS_EXHAUSTED resetting to key 0 and waiting 60s"
+                    )
+                    self.current_key_index = 0
+                    self.client = genai.Client(api_key=self.api_keys[0])
+                    time.sleep(60)
+                    continue
                 else:
                     raise
         raise last_exc
+
+    def _gemini_vision(self, prompt: Union[str, list], max_retries: int = 6) -> str:
+        contents = prompt if isinstance(prompt, list) else [prompt]
+        last_exc = None
+        for attempt in range(max_retries * len(self.api_keys)):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model_id,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        thinking_config=types.ThinkingConfig(thinking_level="low")
+                    ),
+                )
+                return self._get_text(response)
+            except Exception as exc:
+                last_exc = exc
+                exc_str = str(exc)
+                is_rate_limit = (
+                    "429" in exc_str
+                    or "RESOURCE_EXHAUSTED" in exc_str
+                    or "rate" in exc_str.lower()
+                    or "quota" in exc_str.lower()
+                    or "too many" in exc_str.lower()
+                    or getattr(exc, "status_code", None) == 429
+                    or getattr(exc, "code", None) == 429
+                )
+                if is_rate_limit:
+                    if self._rotate_key():
+                        logger.warning(
+                            f"GEMINI_KEY_ROTATED (vision) attempt={attempt+1} retrying immediately"
+                        )
+                        continue
+                    logger.warning(
+                        "ALL_KEYS_EXHAUSTED (vision) resetting to key 0 and waiting 60s"
+                    )
+                    self.current_key_index = 0
+                    self.client = genai.Client(api_key=self.api_keys[0])
+                    time.sleep(60)
+                    continue
+                else:
+                    raise
+        raise last_exc
+
+    # ── Thumbnail helpers ─────────────────────────────────────────────────────
+
+    def _fetch_thumbnail(self, video_id: str) -> tuple:
+        """
+        Try maxresdefault then hqdefault from YouTube's image CDN.
+        Returns (bytes, mime_type) on success, (None, '') if unavailable.
+        Rejects YouTube's placeholder grey tile (< 5 KB).
+        """
+        for url in [
+            f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg",
+            f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
+        ]:
+            try:
+                with urllib.request.urlopen(url, timeout=8) as resp:
+                    data = resp.read()
+                if len(data) > 5000:
+                    return data, "image/jpeg"
+            except Exception:
+                continue
+        return None, ""
+
+    def analyze_thumbnail(self, video_id: str, title: str = "") -> dict:
+        """
+        Fetches the YouTube thumbnail for video_id and extracts structured
+        metadata via a single Gemini vision call (thinking_level=low).
+
+        Returns a dict with these keys — safe defaults on any failure:
+          thumbnail_visual           str   description of image contents (≤20 words)
+          thumbnail_tone             str   one of the THUMBNAIL_TONE_OPTIONS
+          thumbnail_clickbait_score  int   1 (editorial) – 5 (pure clickbait); 0 = unknown
+          thumbnail_brand_consistent bool  looks like professional broadcast news
+          thumbnail_insight          str   one-sentence engagement strategy
+        """
+        _default = {
+            "thumbnail_visual": "",
+            "thumbnail_tone": "",
+            "thumbnail_clickbait_score": 0,
+            "thumbnail_brand_consistent": False,
+            "thumbnail_insight": "",
+        }
+
+        img_bytes, mime = self._fetch_thumbnail(video_id)
+        if not img_bytes:
+            logger.warning(f"THUMBNAIL_FETCH_MISS videoId={video_id}")
+            return _default
+
+        tone_options = ", ".join(THUMBNAIL_TONE_OPTIONS)
+        title_line = f'Video title: "{title}"\n\n' if title else ""
+
+        prompt = (
+            f"{title_line}"
+            "Analyze this YouTube news thumbnail. "
+            "Return ONLY a valid JSON object with exactly these keys:\n"
+            "{\n"
+            '  "thumbnail_visual": "<key visual elements and text overlays, ≤20 words>",\n'
+            '  "thumbnail_tone": "<tone>",\n'
+            '  "thumbnail_clickbait_score": <1-5>,\n'
+            '  "thumbnail_brand_consistent": <true|false>,\n'
+            '  "thumbnail_insight": "<one sentence on engagement strategy>"\n'
+            "}\n\n"
+            "Rules:\n"
+            f"- thumbnail_tone: exactly one of: {tone_options}\n"
+            "- thumbnail_clickbait_score: 1=purely editorial, 5=pure clickbait\n"
+            "- thumbnail_brand_consistent: true if it looks like professional broadcast news\n"
+            "- thumbnail_visual: objective description, under 20 words\n"
+            "- thumbnail_insight: one sentence, no more\n"
+            "Return raw JSON only, no markdown fences, no explanation."
+        )
+
+        raw = ""
+        try:
+            contents = [
+                types.Part.from_bytes(data=img_bytes, mime_type=mime),
+                types.Part.from_text(text=prompt),
+            ]
+            raw = self._gemini_vision(contents)
+            clean = (
+                raw.strip()
+                .removeprefix("```json")
+                .removeprefix("```")
+                .removesuffix("```")
+                .strip()
+            )
+            data = json.loads(clean)
+
+            score = data.get("thumbnail_clickbait_score", 0)
+            try:
+                score = int(score)
+            except (ValueError, TypeError):
+                score = 0
+
+            tone = str(data.get("thumbnail_tone", "")).lower().strip()
+            if tone not in THUMBNAIL_TONE_OPTIONS:
+                tone = "neutral"
+
+            return {
+                "thumbnail_visual": str(data.get("thumbnail_visual", "")),
+                "thumbnail_tone": tone,
+                "thumbnail_clickbait_score": score if 1 <= score <= 5 else 0,
+                "thumbnail_brand_consistent": bool(
+                    data.get("thumbnail_brand_consistent", False)
+                ),
+                "thumbnail_insight": str(data.get("thumbnail_insight", "")),
+            }
+        except (json.JSONDecodeError, Exception) as exc:
+            logger.error(
+                f"THUMBNAIL_PARSE_ERROR videoId={video_id} error={exc} raw={raw[:200]}"
+            )
+            return _default
 
     # ── Video intelligence — ONE call per video ───────────────────────────────
 
@@ -211,7 +362,6 @@ class EmbeddingService:
         raw = ""
         try:
             raw = self._gemini(prompt)
-            # Strip markdown fences if Gemini adds them anyway
             clean = (
                 raw.strip()
                 .removeprefix("```json")

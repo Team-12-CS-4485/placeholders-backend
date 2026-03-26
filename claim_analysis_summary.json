@@ -1,0 +1,126 @@
+{
+  "clusters_processed": 12,
+  "total_patched": 370,
+  "per_cluster": {
+    "10": {
+      "total_claims": 70,
+      "groups_formed": 35,
+      "consensus_found": 2,
+      "debated_found": 4,
+      "unique_found": 28,
+      "consensus_selected": 2,
+      "debated_selected": 3,
+      "unique_selected": 3
+    },
+    "4": {
+      "total_claims": 105,
+      "groups_formed": 85,
+      "consensus_found": 1,
+      "debated_found": 2,
+      "unique_found": 75,
+      "consensus_selected": 1,
+      "debated_selected": 2,
+      "unique_selected": 3
+    },
+    "9": {
+      "total_claims": 83,
+      "groups_formed": 44,
+      "consensus_found": 3,
+      "debated_found": 6,
+      "unique_found": 28,
+      "consensus_selected": 3,
+      "debated_selected": 3,
+      "unique_selected": 3
+    },
+    "5": {
+      "total_claims": 69,
+      "groups_formed": 38,
+      "consensus_found": 3,
+      "debated_found": 7,
+      "unique_found": 24,
+      "consensus_selected": 3,
+      "debated_selected": 3,
+      "unique_selected": 3
+    },
+    "1": {
+      "total_claims": 45,
+      "groups_formed": 22,
+      "consensus_found": 1,
+      "debated_found": 1,
+      "unique_found": 8,
+      "consensus_selected": 1,
+      "debated_selected": 1,
+      "unique_selected": 3
+    },
+    "8": {
+      "total_claims": 79,
+      "groups_formed": 47,
+      "consensus_found": 1,
+      "debated_found": 2,
+      "unique_found": 32,
+      "consensus_selected": 1,
+      "debated_selected": 2,
+      "unique_selected": 3
+    },
+    "2": {
+      "total_claims": 35,
+      "groups_formed": 21,
+      "consensus_found": 0,
+      "debated_found": 0,
+      "unique_found": 16,
+      "consensus_selected": 0,
+      "debated_selected": 0,
+      "unique_selected": 3
+    },
+    "7": {
+      "total_claims": 63,
+      "groups_formed": 28,
+      "consensus_found": 2,
+      "debated_found": 7,
+      "unique_found": 15,
+      "consensus_selected": 2,
+      "debated_selected": 3,
+      "unique_selected": 3
+    },
+    "6": {
+      "total_claims": 33,
+      "groups_formed": 16,
+      "consensus_found": 2,
+      "debated_found": 2,
+      "unique_found": 7,
+      "consensus_selected": 2,
+      "debated_selected": 2,
+      "unique_selected": 3
+    },
+    "3": {
+      "total_claims": 38,
+      "groups_formed": 28,
+      "consensus_found": 0,
+      "debated_found": 1,
+      "unique_found": 19,
+      "consensus_selected": 0,
+      "debated_selected": 1,
+      "unique_selected": 3
+    },
+    "11": {
+      "total_claims": 35,
+      "groups_formed": 18,
+      "consensus_found": 1,
+      "debated_found": 5,
+      "unique_found": 11,
+      "consensus_selected": 1,
+      "debated_selected": 3,
+      "unique_selected": 3
+    },
+    "0": {
+      "total_claims": 55,
+      "groups_formed": 28,
+      "consensus_found": 3,
+      "debated_found": 3,
+      "unique_found": 20,
+      "consensus_selected": 3,
+      "debated_selected": 3,
+      "unique_selected": 3
+    }
+  }
+}

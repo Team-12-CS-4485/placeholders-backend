@@ -1,0 +1,473 @@
+"""
+clustering_service.py - Narrative Clustering Service
+
+Groups related videos into narrative clusters using HDBSCAN
+on Qdrant embeddings. Writes results to DynamoDB.
+
+Flow:
+1. Pull vectors from Qdrant (search data only)
+2. Pull metadata from DynamoDB (topics, channel, etc.)
+3. Deduplicate to one representative per video (mean-pool vectors)
+4. UMAP (768d → 15d) + HDBSCAN clustering
+5. Label each cluster using TF-IDF on existing topic fields
+6. Write cluster_id/label/confidence to DynamoDB youtube-videos
+7. Write cluster summary to DynamoDB narrative-clusters table
+
+Zero Gemini calls. Reads vectors from Qdrant, everything else from DynamoDB.
+
+Usage:
+    python -m scripts.run_clustering
+"""
+
+from __future__ import annotations
+
+import logging
+import math
+import os
+import re
+from collections import Counter
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Optional
+
+import numpy as np
+import boto3
+
+from app.core.config import settings
+from app.services.vector_service import VectorService
+
+logger = logging.getLogger(__name__)
+
+REGION = os.getenv("AWS_REGION", "us-east-2")
+
+
+def _dec(val):
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return Decimal(str(val))
+    return val
+
+
+class ClusteringService:
+
+    def __init__(self, vector_service: Optional[VectorService] = None):
+        self.vector_service = vector_service or VectorService()
+        self.collection_name = self.vector_service.collection_name
+        self.client = self.vector_service.client
+
+        self._dynamodb = boto3.resource("dynamodb", region_name=REGION)
+        self._videos_table = self._dynamodb.Table(settings.dynamodb_table)
+        self._clusters_table = self._dynamodb.Table("narrative-clusters")
+
+    # ── Step 1: Pull vectors from Qdrant ─────────────────────────────────────
+
+    def _scroll_vectors(self) -> dict[str, list[dict]]:
+        """
+        Scroll Qdrant for vectors grouped by video.
+        Returns {video_id: [{vector}, ...]}
+        """
+        video_chunks: dict[str, list[dict]] = {}
+        offset = None
+
+        while True:
+            results, offset = self.client.scroll(
+                collection_name=self.collection_name,
+                limit=100,
+                offset=offset,
+                with_vectors=True,
+                with_payload=["transcript_index"],
+            )
+            for point in results:
+                vid = point.payload.get("transcript_index", "")
+                if vid:
+                    video_chunks.setdefault(vid, []).append(
+                        {
+                            "vector": point.vector,
+                        }
+                    )
+            if offset is None:
+                break
+
+        logger.info(f"CLUSTER_SCROLL videos={len(video_chunks)}")
+        return video_chunks
+
+    # ── Step 2: Pull metadata from DynamoDB ──────────────────────────────────
+
+    def _get_video_metadata(self) -> dict[str, dict]:
+        """
+        Scan DynamoDB for all videos with intelligence data.
+        Returns {video_id: {channel, topics, category, sentiment, ...}}
+        """
+        meta = {}
+        scan_kwargs = {
+            "ProjectionExpression": "PartitionKey, SortKey, channel, topics, category, "
+            "sentiment, is_breaking, viewCount, likeCount, commentCount, "
+            "title, publishedAt, #wk, source_key, key_claims",
+            "ExpressionAttributeNames": {"#wk": "week"},
+        }
+
+        while True:
+            resp = self._videos_table.scan(**scan_kwargs)
+            for item in resp["Items"]:
+                vid = item.get("SortKey", "")
+                if vid and item.get("topics"):
+                    meta[vid] = {
+                        "channel": item.get("channel") or item.get("PartitionKey", ""),
+                        "topics": item.get("topics", []),
+                        "category": item.get("category", "Other"),
+                        "sentiment": item.get("sentiment", "neutral"),
+                        "is_breaking": bool(item.get("is_breaking", False)),
+                        "view_count": int(item.get("viewCount") or 0),
+                        "like_count": int(item.get("likeCount") or 0),
+                        "comment_count": int(item.get("commentCount") or 0),
+                        "title": item.get("title", ""),
+                        "week": item.get("week", "unknown"),
+                        "source_key": item.get("source_key", ""),
+                        "key_claims": item.get("key_claims", []),
+                    }
+            if "LastEvaluatedKey" not in resp:
+                break
+            scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+        logger.info(f"CLUSTER_DYNAMO_META videos_with_intel={len(meta)}")
+        return meta
+
+    # ── Step 3: Build video representatives ──────────────────────────────────
+
+    def _get_video_representatives(
+        self,
+        video_chunks: dict[str, list[dict]],
+        meta_map: dict[str, dict],
+    ) -> tuple[list[str], np.ndarray, dict[str, dict]]:
+        video_ids = []
+        vectors = []
+        filtered_meta = {}
+
+        for vid, chunks in video_chunks.items():
+            if vid not in meta_map:
+                continue
+            chunk_vecs = [c["vector"] for c in chunks]
+            mean_vec = np.mean(chunk_vecs, axis=0)
+            vectors.append(mean_vec)
+            video_ids.append(vid)
+            filtered_meta[vid] = meta_map[vid]
+
+        matrix = np.array(vectors, dtype=np.float32) if vectors else np.array([])
+        logger.info(f"CLUSTER_REPRESENTATIVES shape={matrix.shape}")
+        return video_ids, matrix, filtered_meta
+
+    # ── Step 4: UMAP + HDBSCAN ──────────────────────────────────────────────
+
+    def _reduce_dimensions(self, matrix, n_components=15, n_neighbors=15, min_dist=0.0):
+        try:
+            import umap
+        except ImportError:
+            raise ImportError("Install umap-learn: pip install umap-learn")
+
+        reducer = umap.UMAP(
+            n_components=n_components,
+            n_neighbors=min(n_neighbors, len(matrix) - 1),
+            min_dist=min_dist,
+            metric="cosine",
+            random_state=42,
+        )
+        reduced = reducer.fit_transform(matrix)
+        logger.info(f"UMAP_COMPLETE {matrix.shape[1]}d → {n_components}d")
+        return reduced
+
+    def _cluster_vectors(
+        self,
+        matrix,
+        min_cluster_size=3,
+        min_samples=2,
+        umap_components=15,
+        umap_neighbors=15,
+    ):
+        reduced = self._reduce_dimensions(
+            matrix, n_components=umap_components, n_neighbors=umap_neighbors
+        )
+        try:
+            from sklearn.cluster import HDBSCAN as SklearnHDBSCAN
+
+            clusterer = SklearnHDBSCAN(
+                min_cluster_size=min_cluster_size,
+                min_samples=min_samples,
+                metric="euclidean",
+                store_centers="centroid",
+            )
+            clusterer.fit(reduced)
+            labels = clusterer.labels_
+            probabilities = getattr(clusterer, "probabilities_", np.ones(len(labels)))
+        except ImportError:
+            import hdbscan
+
+            clusterer = hdbscan.HDBSCAN(
+                min_cluster_size=min_cluster_size,
+                min_samples=min_samples,
+                metric="euclidean",
+            )
+            clusterer.fit(reduced)
+            labels = clusterer.labels_
+            probabilities = clusterer.probabilities_
+
+        n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+        n_noise = int(np.sum(labels == -1))
+        logger.info(f"HDBSCAN_COMPLETE clusters={n_clusters} noise={n_noise}")
+        return labels, probabilities
+
+    # ── Step 5: Label clusters (TF-IDF) ──────────────────────────────────────
+
+    def _label_clusters(self, video_ids, labels, meta_map):
+        cluster_members: dict[int, list[str]] = {}
+        for vid, label in zip(video_ids, labels):
+            cluster_members.setdefault(int(label), []).append(vid)
+
+        cluster_topic_counts: dict[int, Counter] = {}
+        cluster_stats: dict[int, dict] = {}
+
+        for cid, vids in cluster_members.items():
+            tc = Counter()
+            channels = set()
+            categories = Counter()
+            sentiments = Counter()
+            breaking = views = likes = comments = 0
+
+            for vid in vids:
+                m = meta_map.get(vid, {})
+                for t in m.get("topics", []):
+                    tc[t] += 1
+                channels.add(m.get("channel", ""))
+                categories[m.get("category", "Other")] += 1
+                sentiments[m.get("sentiment", "neutral")] += 1
+                if m.get("is_breaking"):
+                    breaking += 1
+                views += m.get("view_count", 0)
+                likes += m.get("like_count", 0)
+                comments += m.get("comment_count", 0)
+
+            cluster_topic_counts[cid] = tc
+            cluster_stats[cid] = {
+                "vids": vids,
+                "channels": channels,
+                "categories": categories,
+                "sentiments": sentiments,
+                "breaking": breaking,
+                "views": views,
+                "likes": likes,
+                "comments": comments,
+            }
+
+        # TF-IDF scoring
+        real_cids = [c for c in cluster_members if c != -1]
+        n_clusters = max(len(real_cids), 1)
+        topic_cluster_count: Counter = Counter()
+        for cid in real_cids:
+            for topic in cluster_topic_counts[cid]:
+                topic_cluster_count[topic] += 1
+
+        cluster_scored: dict[int, list] = {}
+        for cid in cluster_members:
+            tc = cluster_topic_counts[cid]
+            size = len(cluster_members[cid])
+            scored = []
+            for topic, count in tc.items():
+                tf = count / size
+                idf = (
+                    math.log((n_clusters + 1) / (topic_cluster_count.get(topic, 0) + 1))
+                    + 1
+                )
+                scored.append((topic, tf * idf))
+            scored.sort(key=lambda x: x[1], reverse=True)
+            cluster_scored[cid] = scored
+
+        # Unique labels
+        used = set()
+        cluster_labels: dict[int, str] = {}
+        if -1 in cluster_members:
+            cluster_labels[-1] = "Unclustered"
+
+        for cid in sorted(
+            real_cids, key=lambda c: len(cluster_members[c]), reverse=True
+        ):
+            chosen = None
+            for topic, _ in cluster_scored[cid]:
+                if topic not in used:
+                    chosen = topic
+                    break
+            if not chosen:
+                top_two = [t[0] for t in cluster_scored[cid][:2]]
+                chosen = " & ".join(top_two) if len(top_two) == 2 else f"Cluster {cid}"
+            cluster_labels[cid] = chosen
+            used.add(chosen)
+
+        cluster_info = {}
+        for cid, vids in cluster_members.items():
+            stats = cluster_stats[cid]
+            top_topics = cluster_topic_counts[cid].most_common(5)
+            cluster_info[cid] = {
+                "label": cluster_labels[cid],
+                "video_count": len(vids),
+                "video_ids": vids,
+                "channels": sorted(stats["channels"]),
+                "channel_count": len(stats["channels"]),
+                "top_topics": [t[0] for t in top_topics],
+                "dominant_category": (
+                    stats["categories"].most_common(1)[0][0]
+                    if stats["categories"]
+                    else "Other"
+                ),
+                "dominant_sentiment": (
+                    stats["sentiments"].most_common(1)[0][0]
+                    if stats["sentiments"]
+                    else "neutral"
+                ),
+                "sentiment_breakdown": dict(stats["sentiments"]),
+                "breaking_count": stats["breaking"],
+                "total_views": stats["views"],
+                "total_likes": stats["likes"],
+                "total_comments": stats["comments"],
+            }
+            logger.info(
+                f"CLUSTER_LABELED id={cid} label={cluster_labels[cid]!r} videos={len(vids)}"
+            )
+
+        return cluster_info
+
+    # ── Step 6: Write to DynamoDB ────────────────────────────────────────────
+
+    def _write_clusters_to_dynamodb(
+        self, video_ids, labels, probabilities, cluster_info, meta_map
+    ):
+        updated = 0
+        for vid, label, prob in zip(video_ids, labels, probabilities):
+            label_int = int(label)
+            confidence = round(float(prob), 3)
+            cluster_label = cluster_info.get(label_int, {}).get("label", "Unclustered")
+            channel = meta_map.get(vid, {}).get("channel", "")
+            if not channel:
+                continue
+
+            if label_int == -1:
+                self._videos_table.update_item(
+                    Key={"PartitionKey": channel, "SortKey": vid},
+                    UpdateExpression="SET #clabel = :clabel, #cconf = :cconf REMOVE #cid",
+                    ExpressionAttributeNames={
+                        "#cid": "cluster_id",
+                        "#clabel": "cluster_label",
+                        "#cconf": "cluster_confidence",
+                    },
+                    ExpressionAttributeValues={
+                        ":clabel": "Unclustered",
+                        ":cconf": _dec(0),
+                    },
+                )
+            else:
+                self._videos_table.update_item(
+                    Key={"PartitionKey": channel, "SortKey": vid},
+                    UpdateExpression="SET #cid = :cid, #clabel = :clabel, #cconf = :cconf",
+                    ExpressionAttributeNames={
+                        "#cid": "cluster_id",
+                        "#clabel": "cluster_label",
+                        "#cconf": "cluster_confidence",
+                    },
+                    ExpressionAttributeValues={
+                        ":cid": _dec(label_int),
+                        ":clabel": cluster_label,
+                        ":cconf": _dec(confidence),
+                    },
+                )
+            updated += 1
+
+        logger.info(f"DYNAMO_CLUSTER_WRITE videos={updated}")
+        return updated
+
+    def _write_cluster_summaries(self, cluster_info):
+        written = 0
+        for cid, info in cluster_info.items():
+            if cid == -1:
+                continue
+            item = {
+                "cluster_id": _dec(cid),
+                "cluster_label": info["label"],
+                "video_count": _dec(info["video_count"]),
+                "channel_count": _dec(info["channel_count"]),
+                "channels": info["channels"],
+                "top_topics": info["top_topics"],
+                "dominant_category": info["dominant_category"],
+                "dominant_sentiment": info["dominant_sentiment"],
+                "breaking_count": _dec(info["breaking_count"]),
+                "total_views": _dec(info["total_views"]),
+                "total_likes": _dec(info["total_likes"]),
+                "total_comments": _dec(info["total_comments"]),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            self._clusters_table.put_item(Item=item)
+            written += 1
+            logger.info(f"DYNAMO_CLUSTER_SUMMARY cluster={cid} label={info['label']!r}")
+
+        return written
+
+    # ── Public API ───────────────────────────────────────────────────────────
+
+    def run_clustering(
+        self, min_cluster_size=3, min_samples=2, umap_components=15, umap_neighbors=15
+    ):
+        # 1. Vectors from Qdrant
+        video_chunks = self._scroll_vectors()
+        if not video_chunks:
+            return {"clusters": {}, "videos_updated": 0}
+
+        # 2. Metadata from DynamoDB
+        meta_map = self._get_video_metadata()
+        if not meta_map:
+            return {"clusters": {}, "videos_updated": 0}
+
+        # 3. Representatives
+        video_ids, matrix, filtered_meta = self._get_video_representatives(
+            video_chunks, meta_map
+        )
+        if len(video_ids) < min_cluster_size:
+            return {"clusters": {}, "videos_updated": 0}
+
+        # 4. UMAP + HDBSCAN
+        labels, probabilities = self._cluster_vectors(
+            matrix, min_cluster_size, min_samples, umap_components, umap_neighbors
+        )
+
+        # 5. Label
+        cluster_info = self._label_clusters(video_ids, labels, filtered_meta)
+
+        # 6. Write to DynamoDB youtube-videos
+        videos_updated = self._write_clusters_to_dynamodb(
+            video_ids, labels, probabilities, cluster_info, filtered_meta
+        )
+
+        # 7. Write to DynamoDB narrative-clusters
+        clusters_written = self._write_cluster_summaries(cluster_info)
+
+        real_clusters = {k: v for k, v in cluster_info.items() if k != -1}
+        noise_info = cluster_info.get(-1, {})
+
+        return {
+            "total_videos": len(video_ids),
+            "videos_updated": videos_updated,
+            "cluster_count": len(real_clusters),
+            "clusters_written": clusters_written,
+            "noise_videos": noise_info.get("video_count", 0),
+            "clusters": {
+                cid: {
+                    "label": info["label"],
+                    "video_count": info["video_count"],
+                    "channel_count": info["channel_count"],
+                    "channels": info["channels"],
+                    "top_topics": info["top_topics"],
+                    "dominant_category": info["dominant_category"],
+                    "dominant_sentiment": info["dominant_sentiment"],
+                    "breaking_count": info["breaking_count"],
+                    "total_views": info["total_views"],
+                }
+                for cid, info in sorted(real_clusters.items())
+            },
+        }

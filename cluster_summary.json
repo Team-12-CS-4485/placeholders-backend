@@ -1,0 +1,292 @@
+{
+  "total_videos": 180,
+  "total_chunks_patched": 458,
+  "cluster_count": 12,
+  "noise_videos": 35,
+  "clusters": {
+    "0": {
+      "label": "Hezbollah",
+      "video_count": 11,
+      "channel_count": 4,
+      "channels": [
+        "FoxNews",
+        "NewYorkTimes",
+        "SkyNews",
+        "aljazeeraenglish"
+      ],
+      "top_topics": [
+        "Middle East Conflict",
+        "Hezbollah",
+        "Humanitarian Crisis",
+        "Iran Conflict",
+        "Civilian Casualties"
+      ],
+      "dominant_category": "Middle East Conflict",
+      "dominant_sentiment": "negative",
+      "breaking_count": 9,
+      "total_views": 818453
+    },
+    "1": {
+      "label": "Missing Persons",
+      "video_count": 10,
+      "channel_count": 7,
+      "channels": [
+        "ABCNews",
+        "CBSNews",
+        "FoxNews",
+        "NBCNews",
+        "SkyNews",
+        "WashingtonPost",
+        "aljazeeraenglish"
+      ],
+      "top_topics": [
+        "Missing Persons",
+        "US Citizens Abroad",
+        "Martial Arts",
+        "Celebrity Deaths",
+        "International Travel"
+      ],
+      "dominant_category": "Crime & Law Enforcement",
+      "dominant_sentiment": "negative",
+      "breaking_count": 6,
+      "total_views": 217266
+    },
+    "2": {
+      "label": "Data Centers",
+      "video_count": 7,
+      "channel_count": 1,
+      "channels": [
+        "CNBC"
+      ],
+      "top_topics": [
+        "Data Centers",
+        "Nvidia",
+        "Semiconductors",
+        "Artificial Intelligence",
+        "AI Infrastructure"
+      ],
+      "dominant_category": "AI & Machine Learning",
+      "dominant_sentiment": "negative",
+      "breaking_count": 3,
+      "total_views": 475274
+    },
+    "3": {
+      "label": "Automotive Industry",
+      "video_count": 8,
+      "channel_count": 4,
+      "channels": [
+        "CNBC",
+        "NewYorkTimes",
+        "SkyNews",
+        "WashingtonPost"
+      ],
+      "top_topics": [
+        "Global Economy",
+        "Middle East Conflict",
+        "Automotive Industry",
+        "Climate Change",
+        "Sea Level Rise"
+      ],
+      "dominant_category": "Middle East Conflict",
+      "dominant_sentiment": "negative",
+      "breaking_count": 3,
+      "total_views": 322379
+    },
+    "4": {
+      "label": "Inflation",
+      "video_count": 21,
+      "channel_count": 8,
+      "channels": [
+        "ABCNews",
+        "CBSNews",
+        "CNBC",
+        "FoxNews",
+        "NewYorkTimes",
+        "SkyNews",
+        "WashingtonPost",
+        "aljazeeraenglish"
+      ],
+      "top_topics": [
+        "Iran Conflict",
+        "Oil Markets",
+        "Inflation",
+        "Energy Policy",
+        "Federal Reserve"
+      ],
+      "dominant_category": "White House & Executive",
+      "dominant_sentiment": "positive",
+      "breaking_count": 3,
+      "total_views": 545416
+    },
+    "5": {
+      "label": "Oil Markets",
+      "video_count": 14,
+      "channel_count": 7,
+      "channels": [
+        "BBCNews",
+        "CNBC",
+        "FoxNews",
+        "NBCNews",
+        "NewYorkTimes",
+        "SkyNews",
+        "aljazeeraenglish"
+      ],
+      "top_topics": [
+        "Oil Markets",
+        "Middle East Conflict",
+        "Iran Conflict",
+        "US Foreign Policy",
+        "US Military Operations"
+      ],
+      "dominant_category": "Middle East Conflict",
+      "dominant_sentiment": "negative",
+      "breaking_count": 10,
+      "total_views": 609005
+    },
+    "6": {
+      "label": "Maritime Security",
+      "video_count": 7,
+      "channel_count": 6,
+      "channels": [
+        "ABCNews",
+        "BBCNews",
+        "CBSNews",
+        "FoxNews",
+        "SkyNews",
+        "aljazeeraenglish"
+      ],
+      "top_topics": [
+        "Iran Conflict",
+        "Maritime Security",
+        "Military Strategy",
+        "US Foreign Policy",
+        "Strait of Hormuz"
+      ],
+      "dominant_category": "Middle East Conflict",
+      "dominant_sentiment": "negative",
+      "breaking_count": 4,
+      "total_views": 479333
+    },
+    "7": {
+      "label": "US Foreign Policy",
+      "video_count": 13,
+      "channel_count": 7,
+      "channels": [
+        "ABCNews",
+        "CBSNews",
+        "NBCNews",
+        "NewYorkTimes",
+        "SkyNews",
+        "WashingtonPost",
+        "aljazeeraenglish"
+      ],
+      "top_topics": [
+        "Iran Conflict",
+        "US Foreign Policy",
+        "International Relations",
+        "Middle East Conflict",
+        "War Powers"
+      ],
+      "dominant_category": "Congress & Legislation",
+      "dominant_sentiment": "negative",
+      "breaking_count": 7,
+      "total_views": 428182
+    },
+    "8": {
+      "label": "Jeffrey Epstein Investigation",
+      "video_count": 16,
+      "channel_count": 7,
+      "channels": [
+        "BBCNews",
+        "CBSNews",
+        "FoxNews",
+        "NBCNews",
+        "NewYorkTimes",
+        "SkyNews",
+        "WashingtonPost"
+      ],
+      "top_topics": [
+        "Jeffrey Epstein Investigation",
+        "Department of Homeland Security",
+        "Political Scandals",
+        "Public Safety",
+        "Jeffrey Epstein Case"
+      ],
+      "dominant_category": "Crime & Law Enforcement",
+      "dominant_sentiment": "negative",
+      "breaking_count": 4,
+      "total_views": 696705
+    },
+    "9": {
+      "label": "Middle East Conflict",
+      "video_count": 17,
+      "channel_count": 7,
+      "channels": [
+        "BBCNews",
+        "CBSNews",
+        "CNBC",
+        "NewYorkTimes",
+        "SkyNews",
+        "WashingtonPost",
+        "aljazeeraenglish"
+      ],
+      "top_topics": [
+        "Middle East Conflict",
+        "Iran Conflict",
+        "Oil Markets",
+        "Drone Warfare",
+        "Maritime Security"
+      ],
+      "dominant_category": "Middle East Conflict",
+      "dominant_sentiment": "negative",
+      "breaking_count": 15,
+      "total_views": 1656627
+    },
+    "10": {
+      "label": "Iran Conflict",
+      "video_count": 14,
+      "channel_count": 6,
+      "channels": [
+        "ABCNews",
+        "BBCNews",
+        "CBSNews",
+        "FoxNews",
+        "WashingtonPost",
+        "aljazeeraenglish"
+      ],
+      "top_topics": [
+        "Iran Conflict",
+        "Middle East Conflict",
+        "US Foreign Policy",
+        "Middle East Geopolitics",
+        "Geopolitics"
+      ],
+      "dominant_category": "Middle East Conflict",
+      "dominant_sentiment": "negative",
+      "breaking_count": 11,
+      "total_views": 494282
+    },
+    "11": {
+      "label": "Nuclear Proliferation",
+      "video_count": 7,
+      "channel_count": 4,
+      "channels": [
+        "ABCNews",
+        "BBCNews",
+        "NBCNews",
+        "NewYorkTimes"
+      ],
+      "top_topics": [
+        "US Foreign Policy",
+        "Middle East Conflict",
+        "Iran Conflict",
+        "Military Strategy",
+        "Nuclear Proliferation"
+      ],
+      "dominant_category": "Middle East Conflict",
+      "dominant_sentiment": "neutral",
+      "breaking_count": 2,
+      "total_views": 1453174
+    }
+  }
+}

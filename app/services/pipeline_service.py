@@ -6,37 +6,58 @@ Coordinates the end-to-end transcript analysis workflow:
 2. DynamoDB join for fresh viewCount/likeCount via StorageService
 3. Semantic chunking via EmbeddingService
 4. One Gemini call per video → topics, category, sentiment, key_claims, is_breaking
-5. Embeds chunks locally via EmbeddingService (nomic, free)
-6. Upserts to Qdrant with full enriched payload via VectorService
+5. Writes intelligence to DynamoDB (youtube-videos table)
+6. Embeds chunks locally via EmbeddingService (nomic, free)
+7. Upserts to Qdrant with search-only payload (vector, text, transcript_index)
 
-Final Qdrant payload per chunk:
-{
-  "transcript_key": "youtube-data/week1/cnbc.json::videoId",
-  "source_key": "youtube-data/week1/cnbc.json",
-  "chunk_index": 1,
-  "text": "...",
-  "channel": "CNBC",
-  "title": "...",
-  "published_at": "2026-03-04T19:57:29Z",
-  "view_count": 145000,
-  "like_count": 3200,
-  "comment_count": 400,
-  "topics": ["AI Policy", "Pentagon"],
-  "category": "Technology",
-  "sentiment": "negative",
-  "key_claims": ["DoD may invoke Defense Production Act"],
-  "is_breaking": true
-}
+DynamoDB youtube-videos item gets:
+  topics, category, sentiment, key_claims, is_breaking, source_key, week, chunk_count
+
+Qdrant transcript_chunks point gets:
+  vector, text, chunk_index, word_count, transcript_index, source_key
 """
 
+import re
 import time
+from datetime import datetime, timezone
+from decimal import Decimal
 
-from qdrant_client import models
+import boto3
+from qdrant_client.http import models
+
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.services.storage_service import StorageService
 from app.services.embedding_service import EmbeddingService
 from app.services.vector_service import VectorService
+
+
+def _extract_week(source_key: str) -> str:
+    """Extract week from source_key path."""
+    if not source_key:
+        return "unknown"
+    match = re.search(r"(week\d+)", source_key, re.IGNORECASE)
+    if match:
+        return match.group(1).lower()
+    date_match = re.search(r"(\d{4}-\d{2}-\d{2})", source_key)
+    if date_match:
+        try:
+            dt = datetime.strptime(date_match.group(1), "%Y-%m-%d")
+            wk = dt.isocalendar()[1] - 10 + 1
+            if wk >= 1:
+                return f"week{wk}"
+        except ValueError:
+            pass
+    return "unknown"
+
+
+def _dec(val):
+    """Convert numbers to Decimal for DynamoDB."""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return Decimal(str(val))
+    return val
 
 
 class PipelineService:
@@ -49,6 +70,97 @@ class PipelineService:
         )
         self.vector_service = vector_service or VectorService()
         self.logger = get_logger(__name__)
+
+        # DynamoDB table for intelligence writes
+        self._dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
+        self._videos_table = self._dynamodb.Table(settings.dynamodb_table)
+
+    # ── DynamoDB write ────────────────────────────────────────────────────────
+
+    def _write_intelligence_to_dynamodb(
+        self,
+        channel: str,
+        video_id: str,
+        source_key: str,
+        intelligence: dict,
+        chunk_count: int,
+    ) -> None:
+        """
+        Write Gemini intelligence fields to the existing DynamoDB video item.
+        Only writes fields that have real values — never writes None or empty strings
+        to GSI key fields (week, sentiment, cluster_id).
+        """
+        week = _extract_week(source_key)
+
+        set_parts = []
+        names = {}
+        values = {}
+
+        # Intelligence fields — only write if non-empty
+        topics = intelligence.get("topics") or []
+        if topics:
+            set_parts.append("#topics = :topics")
+            names["#topics"] = "topics"
+            values[":topics"] = topics
+
+        category = intelligence.get("category") or ""
+        if category:
+            set_parts.append("#category = :category")
+            names["#category"] = "category"
+            values[":category"] = category
+
+        sentiment = intelligence.get("sentiment") or ""
+        if sentiment:
+            set_parts.append("#sentiment = :sentiment")
+            names["#sentiment"] = "sentiment"
+            values[":sentiment"] = sentiment
+
+        key_claims = intelligence.get("key_claims") or []
+        if key_claims:
+            set_parts.append("#claims = :claims")
+            names["#claims"] = "key_claims"
+            values[":claims"] = key_claims
+
+        # Always write these (safe types)
+        set_parts.append("#breaking = :breaking")
+        names["#breaking"] = "is_breaking"
+        values[":breaking"] = bool(intelligence.get("is_breaking", False))
+
+        if source_key:
+            set_parts.append("#src = :src")
+            names["#src"] = "source_key"
+            values[":src"] = source_key
+
+        set_parts.append("#week = :week")
+        names["#week"] = "week"
+        values[":week"] = week
+
+        set_parts.append("#chunks = :chunks")
+        names["#chunks"] = "chunk_count"
+        values[":chunks"] = _dec(chunk_count)
+
+        set_parts.append("#ts = :ts")
+        names["#ts"] = "indexed_at"
+        values[":ts"] = datetime.now(timezone.utc).isoformat()
+
+        if not set_parts:
+            return
+
+        try:
+            self._videos_table.update_item(
+                Key={"PartitionKey": channel, "SortKey": video_id},
+                UpdateExpression="SET " + ", ".join(set_parts),
+                ExpressionAttributeNames=names,
+                ExpressionAttributeValues=values,
+            )
+            self.logger.info(
+                f"DYNAMO_INTEL_WRITTEN videoId={video_id} "
+                f"fields={list(names.values())}"
+            )
+        except Exception as exc:
+            self.logger.error(f"DYNAMO_INTEL_FAILED videoId={video_id} error={exc}")
+
+    # ── Main pipeline ─────────────────────────────────────────────────────────
 
     def run_s3_transcript_analysis(self, prefix=None, limit=None):
         use_prefix = prefix if prefix is not None else settings.s3_prefix
@@ -71,6 +183,7 @@ class PipelineService:
 
             for source in source_objects:
                 source_key = source.get("key", "")
+
                 object_result = {
                     "key": source_key,
                     "status": "success",
@@ -96,29 +209,31 @@ class PipelineService:
                     comment_count = video.get("comment_count", 0)
                     transcript = video.get("transcript", "")
 
-                    # Unique key per video (not per source file)
                     transcript_key = f"{source_key}::{video_id}"
 
                     # Check if already indexed — skip to save Gemini quota
-                    existing = self.vector_service.client.scroll(
-                        collection_name=self.vector_service.collection_name,
-                        scroll_filter=models.Filter(
-                            must=[
-                                models.FieldCondition(
-                                    key="transcript_index",
-                                    match=models.MatchValue(value=video_id),
-                                )
-                            ]
-                        ),
-                        limit=1,
-                    )[0]
-                    if existing:
-                        self.logger.info(
-                            f"VIDEO_SKIP_ALREADY_INDEXED videoId={video_id} channel={channel}"
-                        )
-                        analyzed_videos += 1
-                        total_chunks_stored += len(existing)
-                        continue
+                    try:
+                        existing = self.vector_service.client.scroll(
+                            collection_name=self.vector_service.collection_name,
+                            scroll_filter=models.Filter(
+                                must=[
+                                    models.FieldCondition(
+                                        key="transcript_index",
+                                        match=models.MatchValue(value=video_id),
+                                    )
+                                ]
+                            ),
+                            limit=1,
+                        )[0]
+                        if existing:
+                            self.logger.info(
+                                f"VIDEO_SKIP_ALREADY_INDEXED videoId={video_id} channel={channel}"
+                            )
+                            analyzed_videos += 1
+                            total_chunks_stored += len(existing)
+                            continue
+                    except Exception:
+                        pass  # Collection might not exist yet
 
                     # Step 1: Chunk
                     chunks = self.embedding_service.chunk_text(transcript)
@@ -127,7 +242,9 @@ class PipelineService:
                     try:
                         # Step 2: Gemini intelligence — one call per video
                         self.logger.info(
-                            f"GEMINI_INTELLIGENCE_START videoId={video_id} chunks={len(chunks)} key=#{self.embedding_service.current_key_index + 1}"
+                            f"GEMINI_INTELLIGENCE_START videoId={video_id} "
+                            f"chunks={len(chunks)} "
+                            f"key=#{self.embedding_service.current_key_index + 1}"
                         )
                         intelligence = (
                             self.embedding_service.extract_video_intelligence(
@@ -141,32 +258,29 @@ class PipelineService:
                             f"sentiment={intelligence['sentiment']} "
                             f"topics={intelligence['topics']}"
                         )
-                        time.sleep(
-                            10
-                        )  # brief pause between videos to avoid rate limits
+                        time.sleep(10)
 
-                        # Step 3: Embed chunks locally
+                        # Step 3: Write intelligence to DynamoDB
+                        self._write_intelligence_to_dynamodb(
+                            channel=channel,
+                            video_id=video_id,
+                            source_key=source_key,
+                            intelligence=intelligence,
+                            chunk_count=len(chunks),
+                        )
+
+                        # Step 4: Embed chunks locally
                         vectors = self.embedding_service.embed_chunks(chunks)
 
-                        # Step 4: Build enriched payload metadata (same for every chunk in this video)
-                        video_metadata = {
-                            "channel": channel,
-                            "title": title,
-                            "published_at": published_at,
-                            "view_count": view_count,
-                            "like_count": like_count,
-                            "comment_count": comment_count,
-                            **intelligence,  # topics, category, sentiment, key_claims, is_breaking
-                        }
-
-                        # Step 5: Upsert to Qdrant with full payload
+                        # Step 5: Upsert to Qdrant — SEARCH FIELDS ONLY
+                        # No intelligence, no metadata — just vectors + text + IDs
                         points_indexed = self.vector_service.upsert_transcript_chunks(
                             transcript_key=transcript_key,
                             source_key=source_key,
                             transcript_index=video_id,
                             chunks=chunks,
                             vectors=vectors,
-                            extra_metadata=video_metadata,
+                            extra_metadata=None,  # No extra metadata on chunks
                         )
 
                         analysis_map[transcript_key] = {
@@ -213,49 +327,27 @@ class PipelineService:
                             }
                         )
                         self.logger.error(
-                            f"VIDEO_INDEX_FAILURE videoId={video_id} error={exc}"
+                            f"VIDEO_FAILED videoId={video_id} error={exc}"
                         )
 
                 object_results.append(object_result)
 
-            response = {
+            result = {
                 "prefix": use_prefix,
                 "object_limit": use_limit,
                 "objects_processed": len(source_objects),
                 "videos_found": total_videos,
                 "videos_indexed": analyzed_videos,
                 "total_chunks_stored": total_chunks_stored,
-                "chunk_map": chunk_map,
-                "analysis_map": analysis_map,
                 "results": object_results,
             }
-
-            if analyzed_videos > 0:
-                self.logger.info(
-                    f"PIPELINE_SUCCESS objects={len(source_objects)} "
-                    f"videos={analyzed_videos} chunks={total_chunks_stored}"
-                )
-            else:
-                self.logger.error(
-                    f"PIPELINE_FAILURE objects={len(source_objects)} videos={analyzed_videos}"
-                )
-
-            return response
+            self.logger.info(
+                f"PIPELINE_COMPLETE videos_found={total_videos} "
+                f"videos_indexed={analyzed_videos} "
+                f"chunks_stored={total_chunks_stored}"
+            )
+            return result
 
         except Exception as exc:
-            self.logger.error(f"PIPELINE_FAILURE error={exc}")
+            self.logger.error(f"PIPELINE_FATAL error={exc}")
             raise
-
-    def search_similar_chunks(self, query: str, limit: int = 5):
-        self.logger.info(f"SEARCH_START query='{query[:50]}' limit={limit}")
-        query_vector = self.embedding_service.embed_query(query)
-        hits = self.vector_service.search_similar_chunks(
-            query_vector=query_vector,
-            limit=limit,
-        )
-        self.logger.info(f"SEARCH_SUCCESS hits={len(hits)}")
-        return {
-            "query": query,
-            "limit": limit,
-            "hits": hits,
-        }
