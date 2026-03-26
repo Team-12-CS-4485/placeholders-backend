@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import re
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
 from app.core.config import settings
@@ -474,27 +474,30 @@ class TrendService:
             "new_signals_pct": new_signals_pct,
         }
 
+    # ── Internal: full cluster computation ───────────────────────────────────
+
+    def _get_all_clusters(self) -> dict[int, dict]:
+        """Scroll Qdrant, deduplicate, and aggregate into a cluster dict."""
+        payloads = self._scroll_all_payloads()
+        videos = self._deduplicate_to_videos(payloads)
+        return self._aggregate_by_cluster(videos)
+
+    def _find_cluster(self, cluster_id: int) -> dict:
+        """Return a single cluster dict or raise KeyError if not found."""
+        clusters = self._get_all_clusters()
+        if cluster_id not in clusters:
+            raise KeyError(cluster_id)
+        return clusters[cluster_id]
+
     # ── Public API ───────────────────────────────────────────────────────────
 
     def get_trends(self, sort_by: str = "heat_score") -> dict:
         """
-        Main entry point. Returns full trend data for the frontend.
-
-        Args:
-            sort_by: field to sort trends by (heat_score, video_count, view_count_total)
-
-        Returns dict matching TrendListResponse schema.
+        Lean cluster list for the trends list view.
+        Returns only the fields needed for list/grid rendering.
         """
-        # 1. Pull all payloads
-        payloads = self._scroll_all_payloads()
+        clusters = self._get_all_clusters()
 
-        # 2. Deduplicate to video level
-        videos = self._deduplicate_to_videos(payloads)
-
-        # 3. Aggregate by cluster
-        clusters = self._aggregate_by_cluster(videos)
-
-        # 4. Sort
         valid_sort_fields = {
             "heat_score",
             "video_count",
@@ -511,11 +514,88 @@ class TrendService:
             reverse=True,
         )
 
-        # 5. Header stats
-        header = self._compute_header_stats(clusters, videos)
+        lean = [
+            {
+                "cluster_id": c["cluster_id"],
+                "label": c["label"],
+                "category": c["category"],
+                "trend_type": c["trend_type"],
+                "metric_badge": c["metric_badge"],
+                "heat_score": c["heat_score"],
+                "video_count": c["video_count"],
+                "channel_count": c["channel_count"],
+                "view_count_total": c["view_count_total"],
+                "breaking_count": c["breaking_count"],
+                "sentiment_label": c["sentiment_label"],
+                "recent_sentiment_label": c["recent_sentiment_label"],
+                "dominant_sentiment": c["dominant_sentiment"],
+                "top_topics": c["top_topics"],
+            }
+            for c in sorted_trends
+        ]
+
+        return {"trends": lean, "total": len(lean)}
+
+    def get_trend_detail(self, cluster_id: int) -> dict:
+        """Full detail for a single cluster (everything except claims)."""
+        c = self._find_cluster(cluster_id)
+        return {
+            "cluster_id": c["cluster_id"],
+            "label": c["label"],
+            "category": c["category"],
+            "trend_type": c["trend_type"],
+            "metric_badge": c["metric_badge"],
+            "heat_score": c["heat_score"],
+            "video_count": c["video_count"],
+            "channel_count": c["channel_count"],
+            "view_count_total": c["view_count_total"],
+            "total_likes": c["total_likes"],
+            "total_comments": c["total_comments"],
+            "engagement_index": c["engagement_index"],
+            "breaking_count": c["breaking_count"],
+            "sentiment_breakdown": c["sentiment_breakdown"],
+            "sentiment_label": c["sentiment_label"],
+            "recent_sentiment_label": c["recent_sentiment_label"],
+            "dominant_sentiment": c["dominant_sentiment"],
+            "channels": c["channels"],
+            "week_data": c["week_data"],
+            "top_claims": c["top_claims"],
+            "top_topics": c["top_topics"],
+        }
+
+    def get_trend_sentiment(self, cluster_id: int) -> dict:
+        """Sentiment breakdown + per-week sentiment for a single cluster."""
+        c = self._find_cluster(cluster_id)
+
+        by_week = [
+            {
+                "week": w["week"],
+                "sentiment_breakdown": w["sentiment_breakdown"],
+                "dominant_sentiment": (
+                    max(w["sentiment_breakdown"], key=w["sentiment_breakdown"].get)
+                    if w["sentiment_breakdown"]
+                    else "neutral"
+                ),
+            }
+            for w in c["week_data"]
+        ]
 
         return {
-            "header": header,
-            "trends": sorted_trends,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "cluster_id": cluster_id,
+            "sentiment_breakdown": c["sentiment_breakdown"],
+            "sentiment_label": c["sentiment_label"],
+            "recent_sentiment_label": c["recent_sentiment_label"],
+            "dominant_sentiment": c["dominant_sentiment"],
+            "by_week": by_week,
+        }
+
+    def get_trend_claims(self, cluster_id: int) -> dict:
+        """Classified claims (consensus / debated / unique) for a single cluster."""
+        c = self._find_cluster(cluster_id)
+        return {
+            "cluster_id": cluster_id,
+            "claims": c.get(
+                "claims",
+                {"consensus": [], "debated": [], "unique": []},
+            ),
         }
