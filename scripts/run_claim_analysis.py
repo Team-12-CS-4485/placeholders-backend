@@ -46,9 +46,15 @@ def main():
             print(f"  Cluster {cid}:")
             print(f"    Raw claims: {info['total_claims']}")
             print(f"    Similarity groups: {info['groups_formed']}")
-            print(f"    Consensus found/selected: {info['consensus_found']}/{info['consensus_selected']}")
-            print(f"    Debated found/selected: {info['debated_found']}/{info['debated_selected']}")
-            print(f"    Unique found/selected: {info['unique_found']}/{info['unique_selected']}")
+            print(
+                f"    Consensus found/selected: {info['consensus_found']}/{info['consensus_selected']}"
+            )
+            print(
+                f"    Debated found/selected: {info['debated_found']}/{info['debated_selected']}"
+            )
+            print(
+                f"    Unique found/selected: {info['unique_found']}/{info['unique_selected']}"
+            )
             print()
 
     # Write summary

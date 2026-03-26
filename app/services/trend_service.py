@@ -73,6 +73,7 @@ class TrendService:
         if date_match:
             try:
                 from datetime import datetime
+
                 date = datetime.strptime(date_match.group(1), "%Y-%m-%d")
                 # Map to week based on ISO week number relative to earliest data
                 # For now, use iso calendar week modulo to assign
@@ -158,18 +159,22 @@ class TrendService:
             for week_name in sorted(week_buckets.keys()):
                 week_vids = week_buckets[week_name]
                 week_channels = set(v.get("channel", "") for v in week_vids)
-                week_sentiments = Counter(v.get("sentiment", "neutral") for v in week_vids)
+                week_sentiments = Counter(
+                    v.get("sentiment", "neutral") for v in week_vids
+                )
                 week_breaking = sum(1 for v in week_vids if v.get("is_breaking"))
                 week_views = sum(v.get("view_count", 0) for v in week_vids)
 
-                week_data.append({
-                    "week": week_name,
-                    "video_count": len(week_vids),
-                    "channel_count": len(week_channels),
-                    "view_count": week_views,
-                    "breaking_count": week_breaking,
-                    "sentiment_breakdown": dict(week_sentiments),
-                })
+                week_data.append(
+                    {
+                        "week": week_name,
+                        "video_count": len(week_vids),
+                        "channel_count": len(week_channels),
+                        "view_count": week_views,
+                        "breaking_count": week_breaking,
+                        "sentiment_breakdown": dict(week_sentiments),
+                    }
+                )
 
             # ── Trend classification ─────────────────────────────────
             trend_type, metric_badge = self._classify_trend(
@@ -222,11 +227,14 @@ class TrendService:
                 "channels": sorted(channels),
                 "week_data": week_data,
                 "top_claims": all_claims[:5],
-                "claims": vids[0].get("classified_claims", {
-                    "consensus": [],
-                    "debated": [],
-                    "unique": [],
-                }),
+                "claims": vids[0].get(
+                    "classified_claims",
+                    {
+                        "consensus": [],
+                        "debated": [],
+                        "unique": [],
+                    },
+                ),
                 "top_topics": [t[0] for t in all_topics.most_common(5)],
             }
 
@@ -397,7 +405,9 @@ class TrendService:
         latest_is_favorable = "Favorable" in latest_label
 
         # Reversal — flipped direction
-        if (prev_is_critical and latest_is_favorable) or (prev_is_favorable and latest_is_critical):
+        if (prev_is_critical and latest_is_favorable) or (
+            prev_is_favorable and latest_is_critical
+        ):
             return f"Sentiment Reversal — {latest_label}"
 
         # Collapse — was mixed/neutral, now strongly one direction
@@ -485,7 +495,13 @@ class TrendService:
         clusters = self._aggregate_by_cluster(videos)
 
         # 4. Sort
-        valid_sort_fields = {"heat_score", "video_count", "view_count_total", "channel_count", "engagement_index"}
+        valid_sort_fields = {
+            "heat_score",
+            "video_count",
+            "view_count_total",
+            "channel_count",
+            "engagement_index",
+        }
         if sort_by not in valid_sort_fields:
             sort_by = "heat_score"
 

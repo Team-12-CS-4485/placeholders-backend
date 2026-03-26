@@ -58,10 +58,12 @@ class ClaimAnalysisService:
                 with_vectors=False,
             )
             for point in results:
-                all_points.append({
-                    "id": point.id,
-                    "payload": point.payload,
-                })
+                all_points.append(
+                    {
+                        "id": point.id,
+                        "payload": point.payload,
+                    }
+                )
             if offset is None:
                 break
 
@@ -70,9 +72,7 @@ class ClaimAnalysisService:
 
     # ── Step 2: Collect claims with source attribution ───────────────────────
 
-    def _collect_attributed_claims(
-        self, points: list[dict]
-    ) -> dict[int, list[dict]]:
+    def _collect_attributed_claims(self, points: list[dict]) -> dict[int, list[dict]]:
         """
         Group by cluster_id, deduplicate to video level, collect claims
         with full source attribution.
@@ -122,14 +122,16 @@ class ClaimAnalysisService:
                     # Find excerpt — window around claim keywords
                     excerpt = self._extract_excerpt(full_text, claim)
 
-                    claims.append({
-                        "claim": claim,
-                        "channel": channel,
-                        "video_id": video_id,
-                        "video_title": title,
-                        "sentiment": sentiment,
-                        "transcript_excerpt": excerpt,
-                    })
+                    claims.append(
+                        {
+                            "claim": claim,
+                            "channel": channel,
+                            "video_id": video_id,
+                            "video_title": title,
+                            "sentiment": sentiment,
+                            "transcript_excerpt": excerpt,
+                        }
+                    )
 
             cluster_claims[cluster_id] = claims
             logger.info(
@@ -229,9 +231,7 @@ class ClaimAnalysisService:
 
             groups.append(group)
 
-        logger.info(
-            f"CLAIM_GROUPS total_claims={n} groups_formed={len(groups)}"
-        )
+        logger.info(f"CLAIM_GROUPS total_claims={n} groups_formed={len(groups)}")
         return groups
 
     # ── Step 5: Classify groups into consensus/debated/unique ────────────────
@@ -297,13 +297,15 @@ class ClaimAnalysisService:
             representative = group_claims[0]
 
             if len(channels) >= 3:
-                consensus.append({
-                    "claim": representative["claim"],
-                    "sources": sorted(channels),
-                    "source_count": len(channels),
-                    "video_ids": [c["video_id"] for c in group_claims],
-                    "transcript_excerpt": representative["transcript_excerpt"],
-                })
+                consensus.append(
+                    {
+                        "claim": representative["claim"],
+                        "sources": sorted(channels),
+                        "source_count": len(channels),
+                        "video_ids": [c["video_id"] for c in group_claims],
+                        "transcript_excerpt": representative["transcript_excerpt"],
+                    }
+                )
 
             elif len(channels) >= 2:
                 # DEBATED — 2 channels cover the same claim
@@ -311,29 +313,35 @@ class ClaimAnalysisService:
 
                 perspectives = []
                 for c in group_claims:
-                    perspectives.append({
-                        "channel": c["channel"],
-                        "sentiment": c["sentiment"],
-                        "video_id": c["video_id"],
-                        "video_title": c["video_title"],
-                        "transcript_excerpt": c["transcript_excerpt"],
-                    })
+                    perspectives.append(
+                        {
+                            "channel": c["channel"],
+                            "sentiment": c["sentiment"],
+                            "video_id": c["video_id"],
+                            "video_title": c["video_title"],
+                            "transcript_excerpt": c["transcript_excerpt"],
+                        }
+                    )
 
-                debated.append({
-                    "claim": representative["claim"],
-                    "perspectives": perspectives,
-                    "source_count": len(channels),
-                    "framing_divergence": divergence,
-                })
+                debated.append(
+                    {
+                        "claim": representative["claim"],
+                        "perspectives": perspectives,
+                        "source_count": len(channels),
+                        "framing_divergence": divergence,
+                    }
+                )
 
             elif len(channels) == 1 and len(group_indices) == 1:
-                unique.append({
-                    "claim": representative["claim"],
-                    "channel": representative["channel"],
-                    "video_id": representative["video_id"],
-                    "video_title": representative["video_title"],
-                    "transcript_excerpt": representative["transcript_excerpt"],
-                })
+                unique.append(
+                    {
+                        "claim": representative["claim"],
+                        "channel": representative["channel"],
+                        "video_id": representative["video_id"],
+                        "video_title": representative["video_title"],
+                        "transcript_excerpt": representative["transcript_excerpt"],
+                    }
+                )
 
         return {
             "consensus": consensus,
