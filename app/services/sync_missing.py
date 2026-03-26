@@ -204,7 +204,6 @@ def index_videos(video_ids: list):
         "aljazeeraenglish",
     ]
 
-    # Build S3 lookup for correct source_key per video
     print("  Building S3 video map...")
     s3_map = build_s3_video_map()
 
@@ -214,7 +213,6 @@ def index_videos(video_ids: list):
     for video_id in video_ids:
         print(f"\nProcessing {video_id}...")
 
-        # Direct lookup — try each channel until found
         item = None
         for channel_name in CHANNELS:
             try:
@@ -235,10 +233,6 @@ def index_videos(video_ids: list):
         channel = item.get("PartitionKey", "")
         title = item.get("title", "")
         transcript = item.get("transcript", "")
-        published_at = item.get("publishedAt", "")
-        view_count = int(item.get("viewCount", 0))
-        like_count = int(item.get("likeCount", 0))
-        comment_count = int(item.get("commentCount", 0))
 
         if not transcript:
             print(f"  NO TRANSCRIPT: {video_id}")
@@ -247,7 +241,6 @@ def index_videos(video_ids: list):
 
         transcript = storage_service._clean_transcript(transcript)
 
-        # Look up real source_key from S3, fallback to constructed path
         source_key = s3_map.get(
             video_id, f"youtube-data/unknown/{channel.lower()}.json"
         )
@@ -265,7 +258,6 @@ def index_videos(video_ids: list):
                 chunks=chunks, title=title
             )
 
-            # Guard: if Gemini failed (503, empty response), skip this video
             if not intelligence.get("topics"):
                 print(f"  SKIPPED: Gemini returned empty results (likely 503)")
                 failed += 1
@@ -275,7 +267,6 @@ def index_videos(video_ids: list):
                 f"  Category: {intelligence['category']} | "
                 f"Sentiment: {intelligence['sentiment']}"
             )
-            print(f"  Topics: {intelligence['topics']}")
 
             # Step 3: Write intelligence to DynamoDB
             write_intelligence_to_dynamodb(
@@ -288,17 +279,67 @@ def index_videos(video_ids: list):
             )
             print(f"  DynamoDB: intelligence written")
 
-            # Step 4: Embed chunks
+            # Step 4: Thumbnail analysis — non-fatal if it fails
+            thumbnail = embedding_service.analyze_thumbnail(
+                video_id=video_id, title=title
+            )
+            thumbnail_ok = (
+                thumbnail.get("thumbnail_visual")
+                or thumbnail.get("thumbnail_tone")
+                or thumbnail.get("thumbnail_clickbait_score", 0) > 0
+            )
+            if thumbnail_ok:
+                set_parts = []
+                names = {}
+                values = {}
+
+                if thumbnail.get("thumbnail_visual"):
+                    set_parts.append("#tv = :tv")
+                    names["#tv"] = "thumbnail_visual"
+                    values[":tv"] = thumbnail["thumbnail_visual"]
+
+                if thumbnail.get("thumbnail_tone"):
+                    set_parts.append("#tt = :tt")
+                    names["#tt"] = "thumbnail_tone"
+                    values[":tt"] = thumbnail["thumbnail_tone"]
+
+                score = thumbnail.get("thumbnail_clickbait_score", 0)
+                if score:
+                    set_parts.append("#tcs = :tcs")
+                    names["#tcs"] = "thumbnail_clickbait_score"
+                    values[":tcs"] = Decimal(str(score))
+
+                set_parts.append("#tbc = :tbc")
+                names["#tbc"] = "thumbnail_brand_consistent"
+                values[":tbc"] = bool(thumbnail.get("thumbnail_brand_consistent", False))
+
+                if thumbnail.get("thumbnail_insight"):
+                    set_parts.append("#ti = :ti")
+                    names["#ti"] = "thumbnail_insight"
+                    values[":ti"] = thumbnail["thumbnail_insight"]
+
+                if set_parts:
+                    table.update_item(
+                        Key={"PartitionKey": channel, "SortKey": video_id},
+                        UpdateExpression="SET " + ", ".join(set_parts),
+                        ExpressionAttributeNames=names,
+                        ExpressionAttributeValues=values,
+                    )
+                    print(f"  DynamoDB: thumbnail written ({thumbnail['thumbnail_tone']})")
+            else:
+                print(f"  WARN: thumbnail empty (503 or fetch miss) — skipping thumbnail write")
+
+            # Step 5: Embed chunks
             vectors = embedding_service.embed_chunks(chunks)
 
-            # Step 5: Upsert to Qdrant — search fields only
+            # Step 6: Upsert to Qdrant
             points = vector_service.upsert_transcript_chunks(
                 transcript_key=transcript_key,
                 source_key=source_key,
                 transcript_index=video_id,
                 chunks=chunks,
                 vectors=vectors,
-                extra_metadata=None,  # No extra metadata — DynamoDB has it
+                extra_metadata=None,
             )
             print(f"  Qdrant: {points} points indexed")
             indexed += 1
@@ -308,7 +349,6 @@ def index_videos(video_ids: list):
             failed += 1
 
     return indexed, failed
-
 
 def main():
     print("=== Sync Missing Videos ===\n")

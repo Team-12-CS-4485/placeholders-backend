@@ -38,23 +38,13 @@ def main():
     summary = service.run_claim_analysis(max_per_type=args.max_per_type)
 
     print(f"\nClusters processed: {summary['clusters_processed']}")
-    print(f"Total chunks patched: {summary['total_patched']}")
 
     if summary.get("per_cluster"):
         print("\n--- Per Cluster ---\n")
         for cid, info in sorted(summary["per_cluster"].items()):
             print(f"  Cluster {cid}:")
             print(f"    Raw claims: {info['total_claims']}")
-            print(f"    Similarity groups: {info['groups_formed']}")
-            print(
-                f"    Consensus found/selected: {info['consensus_found']}/{info['consensus_selected']}"
-            )
-            print(
-                f"    Debated found/selected: {info['debated_found']}/{info['debated_selected']}"
-            )
-            print(
-                f"    Unique found/selected: {info['unique_found']}/{info['unique_selected']}"
-            )
+            print(f"    Selected: {info.get('selected_c',0)}c / {info.get('selected_d',0)}d / {info.get('selected_u',0)}u")
             print()
 
     # Write summary

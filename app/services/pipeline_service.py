@@ -7,11 +7,15 @@ Coordinates the end-to-end transcript analysis workflow:
 3. Semantic chunking via EmbeddingService
 4. One Gemini call per video → topics, category, sentiment, key_claims, is_breaking
 5. Writes intelligence to DynamoDB (youtube-videos table)
-6. Embeds chunks locally via EmbeddingService (nomic, free)
-7. Upserts to Qdrant with search-only payload (vector, text, transcript_index)
+6. One Gemini vision call per video → thumbnail fields (with 503 guard)
+7. Writes thumbnail fields to DynamoDB (youtube-videos table)
+8. Embeds chunks locally via EmbeddingService (nomic, free)
+9. Upserts to Qdrant with search-only payload (vector, text, transcript_index)
 
 DynamoDB youtube-videos item gets:
   topics, category, sentiment, key_claims, is_breaking, source_key, week, chunk_count
+  thumbnail_visual, thumbnail_tone, thumbnail_clickbait_score,
+  thumbnail_brand_consistent, thumbnail_insight
 
 Qdrant transcript_chunks point gets:
   vector, text, chunk_index, word_count, transcript_index, source_key
@@ -60,6 +64,20 @@ def _dec(val):
     return val
 
 
+def _thumbnail_is_empty(thumb: dict) -> bool:
+    """
+    Returns True if analyze_thumbnail() returned all-default values,
+    indicating a Gemini 503 error or unavailable image.
+
+    A real result always has a non-empty tone AND score >= 1.
+    """
+    return (
+        not thumb.get("thumbnail_visual")
+        and not thumb.get("thumbnail_tone")
+        and thumb.get("thumbnail_clickbait_score", 0) == 0
+    )
+
+
 class PipelineService:
     def __init__(
         self, storage_service=None, embedding_service=None, vector_service=None
@@ -71,11 +89,10 @@ class PipelineService:
         self.vector_service = vector_service or VectorService()
         self.logger = get_logger(__name__)
 
-        # DynamoDB table for intelligence writes
         self._dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
         self._videos_table = self._dynamodb.Table(settings.dynamodb_table)
 
-    # ── DynamoDB write ────────────────────────────────────────────────────────
+    # ── DynamoDB: intelligence write ──────────────────────────────────────────
 
     def _write_intelligence_to_dynamodb(
         self,
@@ -96,7 +113,6 @@ class PipelineService:
         names = {}
         values = {}
 
-        # Intelligence fields — only write if non-empty
         topics = intelligence.get("topics") or []
         if topics:
             set_parts.append("#topics = :topics")
@@ -121,7 +137,6 @@ class PipelineService:
             names["#claims"] = "key_claims"
             values[":claims"] = key_claims
 
-        # Always write these (safe types)
         set_parts.append("#breaking = :breaking")
         names["#breaking"] = "is_breaking"
         values[":breaking"] = bool(intelligence.get("is_breaking", False))
@@ -160,6 +175,76 @@ class PipelineService:
         except Exception as exc:
             self.logger.error(f"DYNAMO_INTEL_FAILED videoId={video_id} error={exc}")
 
+    # ── DynamoDB: thumbnail write ─────────────────────────────────────────────
+
+    def _write_thumbnail_to_dynamodb(
+        self,
+        channel: str,
+        video_id: str,
+        thumbnail: dict,
+    ) -> None:
+        """
+        Write Gemini vision thumbnail fields to the existing DynamoDB video item.
+
+        Fields written:
+          thumbnail_visual           str
+          thumbnail_tone             str
+          thumbnail_clickbait_score  int (Decimal)
+          thumbnail_brand_consistent bool
+          thumbnail_insight          str
+
+        Skips entirely if thumbnail result is all defaults (503 / no image).
+        """
+        if _thumbnail_is_empty(thumbnail):
+            self.logger.info(f"THUMBNAIL_SKIP_EMPTY videoId={video_id}")
+            return
+
+        set_parts = []
+        names = {}
+        values = {}
+
+        if thumbnail.get("thumbnail_visual"):
+            set_parts.append("#tvis = :tvis")
+            names["#tvis"] = "thumbnail_visual"
+            values[":tvis"] = str(thumbnail["thumbnail_visual"])
+
+        if thumbnail.get("thumbnail_tone"):
+            set_parts.append("#ttone = :ttone")
+            names["#ttone"] = "thumbnail_tone"
+            values[":ttone"] = str(thumbnail["thumbnail_tone"])
+
+        # Always write score and brand_consistent (safe defaults are fine to store)
+        set_parts.append("#tscore = :tscore")
+        names["#tscore"] = "thumbnail_clickbait_score"
+        values[":tscore"] = _dec(thumbnail.get("thumbnail_clickbait_score", 0))
+
+        set_parts.append("#tbrand = :tbrand")
+        names["#tbrand"] = "thumbnail_brand_consistent"
+        values[":tbrand"] = bool(thumbnail.get("thumbnail_brand_consistent", False))
+
+        if thumbnail.get("thumbnail_insight"):
+            set_parts.append("#tins = :tins")
+            names["#tins"] = "thumbnail_insight"
+            values[":tins"] = str(thumbnail["thumbnail_insight"])
+
+        if not set_parts:
+            return
+
+        try:
+            self._videos_table.update_item(
+                Key={"PartitionKey": channel, "SortKey": video_id},
+                UpdateExpression="SET " + ", ".join(set_parts),
+                ExpressionAttributeNames=names,
+                ExpressionAttributeValues=values,
+            )
+            self.logger.info(
+                f"DYNAMO_THUMBNAIL_WRITTEN videoId={video_id} "
+                f"tone={thumbnail.get('thumbnail_tone')} "
+                f"score={thumbnail.get('thumbnail_clickbait_score')}"
+            )
+        except Exception as exc:
+            self.logger.error(f"DYNAMO_THUMBNAIL_FAILED videoId={video_id} error={exc}")
+
     # ── Main pipeline ─────────────────────────────────────────────────────────
 
     def run_s3_transcript_analysis(self, prefix=None, limit=None):
@@ -177,7 +262,6 @@ class PipelineService:
             total_videos = 0
             analyzed_videos = 0
             total_chunks_stored = 0
-            total_points_indexed = 0
             chunk_map = {}
             analysis_map = {}
 
@@ -203,15 +287,11 @@ class PipelineService:
                     video_id = video.get("videoId", "")
                     title = video.get("title", "")
                     channel = video.get("channel", "")
-                    published_at = video.get("published_at", "")
-                    view_count = video.get("view_count", 0)
-                    like_count = video.get("like_count", 0)
-                    comment_count = video.get("comment_count", 0)
                     transcript = video.get("transcript", "")
 
                     transcript_key = f"{source_key}::{video_id}"
 
-                    # Check if already indexed — skip to save Gemini quota
+                    # Check if already indexed in Qdrant — skip to save Gemini quota
                     try:
                         existing = self.vector_service.client.scroll(
                             collection_name=self.vector_service.collection_name,
@@ -233,7 +313,7 @@ class PipelineService:
                             total_chunks_stored += len(existing)
                             continue
                     except Exception:
-                        pass  # Collection might not exist yet
+                        pass
 
                     # Step 1: Chunk
                     chunks = self.embedding_service.chunk_text(transcript)
@@ -246,19 +326,35 @@ class PipelineService:
                             f"chunks={len(chunks)} "
                             f"key=#{self.embedding_service.current_key_index + 1}"
                         )
-                        intelligence = (
-                            self.embedding_service.extract_video_intelligence(
-                                chunks=chunks,
-                                title=title,
-                            )
+                        intelligence = self.embedding_service.extract_video_intelligence(
+                            chunks=chunks,
+                            title=title,
                         )
+
+                        # Guard: Gemini 503 returns empty topics — skip this video
+                        if not intelligence.get("topics"):
+                            self.logger.warning(
+                                f"GEMINI_INTELLIGENCE_EMPTY videoId={video_id} "
+                                f"— skipping (likely 503)"
+                            )
+                            object_result["transcript_results"].append({
+                                "transcript_key": transcript_key,
+                                "video_id": video_id,
+                                "chunk_count": len(chunks),
+                                "chunks_stored": 0,
+                                "intelligence": None,
+                                "thumbnail": None,
+                                "error": "Gemini returned empty intelligence (503)",
+                            })
+                            continue
+
                         self.logger.info(
                             f"GEMINI_INTELLIGENCE_DONE videoId={video_id} "
                             f"category={intelligence['category']} "
                             f"sentiment={intelligence['sentiment']} "
                             f"topics={intelligence['topics']}"
                         )
-                        time.sleep(10)
+                        time.sleep(5)
 
                         # Step 3: Write intelligence to DynamoDB
                         self._write_intelligence_to_dynamodb(
@@ -269,18 +365,45 @@ class PipelineService:
                             chunk_count=len(chunks),
                         )
 
-                        # Step 4: Embed chunks locally
+                        # Step 4: Gemini vision — thumbnail analysis
+                        self.logger.info(f"THUMBNAIL_ANALYSIS_START videoId={video_id}")
+                        thumbnail = self.embedding_service.analyze_thumbnail(
+                            video_id=video_id,
+                            title=title,
+                        )
+
+                        # Guard: 503 or no image — log and continue (non-fatal)
+                        if _thumbnail_is_empty(thumbnail):
+                            self.logger.warning(
+                                f"THUMBNAIL_EMPTY videoId={video_id} "
+                                f"— skipping thumbnail write (503 or no image)"
+                            )
+                        else:
+                            self.logger.info(
+                                f"THUMBNAIL_ANALYSIS_DONE videoId={video_id} "
+                                f"tone={thumbnail.get('thumbnail_tone')} "
+                                f"score={thumbnail.get('thumbnail_clickbait_score')}"
+                            )
+                            # Step 5: Write thumbnail to DynamoDB
+                            self._write_thumbnail_to_dynamodb(
+                                channel=channel,
+                                video_id=video_id,
+                                thumbnail=thumbnail,
+                            )
+
+                        time.sleep(5)
+
+                        # Step 6: Embed chunks locally
                         vectors = self.embedding_service.embed_chunks(chunks)
 
-                        # Step 5: Upsert to Qdrant — SEARCH FIELDS ONLY
-                        # No intelligence, no metadata — just vectors + text + IDs
+                        # Step 7: Upsert to Qdrant — SEARCH FIELDS ONLY
                         points_indexed = self.vector_service.upsert_transcript_chunks(
                             transcript_key=transcript_key,
                             source_key=source_key,
                             transcript_index=video_id,
                             chunks=chunks,
                             vectors=vectors,
-                            extra_metadata=None,  # No extra metadata on chunks
+                            extra_metadata=None,
                         )
 
                         analysis_map[transcript_key] = {
@@ -288,18 +411,18 @@ class PipelineService:
                             "chunk_count": len(chunks),
                             "chunks_stored": points_indexed,
                             "intelligence": intelligence,
+                            "thumbnail": thumbnail,
                             "error": None,
                         }
-                        object_result["transcript_results"].append(
-                            {
-                                "transcript_key": transcript_key,
-                                "video_id": video_id,
-                                "chunk_count": len(chunks),
-                                "chunks_stored": points_indexed,
-                                "intelligence": intelligence,
-                                "error": None,
-                            }
-                        )
+                        object_result["transcript_results"].append({
+                            "transcript_key": transcript_key,
+                            "video_id": video_id,
+                            "chunk_count": len(chunks),
+                            "chunks_stored": points_indexed,
+                            "intelligence": intelligence,
+                            "thumbnail": thumbnail,
+                            "error": None,
+                        })
                         analyzed_videos += 1
                         total_chunks_stored += points_indexed
                         self.logger.info(
@@ -313,22 +436,20 @@ class PipelineService:
                             "chunk_count": len(chunks),
                             "chunks_stored": 0,
                             "intelligence": None,
+                            "thumbnail": None,
                             "error": str(exc),
                         }
                         object_result["status"] = "partial_failed"
-                        object_result["transcript_results"].append(
-                            {
-                                "transcript_key": transcript_key,
-                                "video_id": video_id,
-                                "chunk_count": len(chunks),
-                                "chunks_stored": 0,
-                                "intelligence": None,
-                                "error": str(exc),
-                            }
-                        )
-                        self.logger.error(
-                            f"VIDEO_FAILED videoId={video_id} error={exc}"
-                        )
+                        object_result["transcript_results"].append({
+                            "transcript_key": transcript_key,
+                            "video_id": video_id,
+                            "chunk_count": len(chunks),
+                            "chunks_stored": 0,
+                            "intelligence": None,
+                            "thumbnail": None,
+                            "error": str(exc),
+                        })
+                        self.logger.error(f"VIDEO_FAILED videoId={video_id} error={exc}")
 
                 object_results.append(object_result)
 
