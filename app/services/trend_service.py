@@ -73,7 +73,6 @@ class TrendService:
         if date_match:
             try:
                 from datetime import datetime
-
                 date = datetime.strptime(date_match.group(1), "%Y-%m-%d")
                 # Map to week based on ISO week number relative to earliest data
                 # For now, use iso calendar week modulo to assign
@@ -126,6 +125,8 @@ class TrendService:
             categories = Counter()
             breaking_count = 0
             total_views = 0
+            total_likes = 0
+            total_comments = 0
             all_claims = []
             all_topics = Counter()
 
@@ -139,6 +140,8 @@ class TrendService:
                 if v.get("is_breaking"):
                     breaking_count += 1
                 total_views += v.get("view_count", 0)
+                total_likes += v.get("like_count", 0)
+                total_comments += v.get("comment_count", 0)
 
                 for claim in v.get("key_claims", []):
                     if claim and len(all_claims) < 10:
@@ -155,22 +158,18 @@ class TrendService:
             for week_name in sorted(week_buckets.keys()):
                 week_vids = week_buckets[week_name]
                 week_channels = set(v.get("channel", "") for v in week_vids)
-                week_sentiments = Counter(
-                    v.get("sentiment", "neutral") for v in week_vids
-                )
+                week_sentiments = Counter(v.get("sentiment", "neutral") for v in week_vids)
                 week_breaking = sum(1 for v in week_vids if v.get("is_breaking"))
                 week_views = sum(v.get("view_count", 0) for v in week_vids)
 
-                week_data.append(
-                    {
-                        "week": week_name,
-                        "video_count": len(week_vids),
-                        "channel_count": len(week_channels),
-                        "view_count": week_views,
-                        "breaking_count": week_breaking,
-                        "sentiment_breakdown": dict(week_sentiments),
-                    }
-                )
+                week_data.append({
+                    "week": week_name,
+                    "video_count": len(week_vids),
+                    "channel_count": len(week_channels),
+                    "view_count": week_views,
+                    "breaking_count": week_breaking,
+                    "sentiment_breakdown": dict(week_sentiments),
+                })
 
             # ── Trend classification ─────────────────────────────────
             trend_type, metric_badge = self._classify_trend(
@@ -180,6 +179,21 @@ class TrendService:
             # ── Heat score ───────────────────────────────────────────
             heat_score = self._compute_heat_score(
                 len(channels), breaking_count, total_views
+            )
+
+            # ── Engagement index ──────────────────────────────────────
+            # (likes + comments) / views × 10000 — measures reaction intensity
+            if total_views > 0:
+                engagement_index = round(
+                    ((total_likes + total_comments) / total_views) * 10000, 1
+                )
+            else:
+                engagement_index = 0.0
+
+            # ── Sentiment labels ──────────────────────────────────────
+            sentiment_label = self._compute_sentiment_label(sentiments)
+            recent_sentiment_label = self._compute_recent_sentiment_label(
+                week_data, sentiment_label
             )
 
             clusters[cluster_id] = {
@@ -194,15 +208,25 @@ class TrendService:
                 "video_count": len(vids),
                 "channel_count": len(channels),
                 "view_count_total": total_views,
+                "total_likes": total_likes,
+                "total_comments": total_comments,
+                "engagement_index": engagement_index,
                 "breaking_count": breaking_count,
                 "heat_score": round(heat_score, 2),
                 "sentiment_breakdown": dict(sentiments),
+                "sentiment_label": sentiment_label,
+                "recent_sentiment_label": recent_sentiment_label,
                 "dominant_sentiment": (
                     sentiments.most_common(1)[0][0] if sentiments else "neutral"
                 ),
                 "channels": sorted(channels),
                 "week_data": week_data,
                 "top_claims": all_claims[:5],
+                "claims": vids[0].get("classified_claims", {
+                    "consensus": [],
+                    "debated": [],
+                    "unique": [],
+                }),
                 "top_topics": [t[0] for t in all_topics.most_common(5)],
             }
 
@@ -221,12 +245,14 @@ class TrendService:
         """
         Classify a trend and generate a human-readable metric badge.
         Returns (trend_type, metric_badge).
+
+        Status values: surging, emerging, dominant, fading, holding
         """
         if len(week_data) < 2:
             # Only one week of data
             if week_data and week_data[0]["video_count"] > 0:
                 return "emerging", "New"
-            return "stable", "Stable"
+            return "holding", "Holding"
 
         # Sort by week name to get chronological order
         sorted_weeks = sorted(week_data, key=lambda w: w["week"])
@@ -242,9 +268,9 @@ class TrendService:
         if prev_count == 0 and latest_count > 0:
             return "emerging", "New"
 
-        # ── Declining: zero in latest week ───────────────────────
+        # ── Fading: zero in latest week ──────────────────────────
         if latest_count == 0 and prev_count > 0:
-            return "declining", "Fading"
+            return "fading", "Fading"
 
         # ── Volume change % ──────────────────────────────────────
         if prev_count > 0:
@@ -260,14 +286,14 @@ class TrendService:
         # ── Dominant: highest channel spread ─────────────────────
         if channel_count >= 7:
             if vol_change > 20:
-                return "rising", f"+{int(vol_change)}% Vol"
+                return "surging", f"+{int(vol_change)}% Vol"
             return "dominant", "High Impact"
 
-        # ── Rising / Declining by volume ─────────────────────────
+        # ── Surging / Fading by volume ───────────────────────────
         if vol_change > 30:
-            return "rising", f"+{int(vol_change)}% Vol"
+            return "surging", f"+{int(vol_change)}% Vol"
         if vol_change < -30:
-            return "declining", f"{int(vol_change)}% Vol"
+            return "fading", f"{int(vol_change)}% Vol"
 
         # ── Sentiment-based badge ────────────────────────────────
         total_sent = sum(sentiments.values())
@@ -275,11 +301,120 @@ class TrendService:
             neg_pct = int((sentiments.get("negative", 0) / total_sent) * 100)
             pos_pct = int((sentiments.get("positive", 0) / total_sent) * 100)
             if neg_pct >= 70:
-                return "stable", f"{neg_pct}% Neg"
+                return "holding", f"{neg_pct}% Neg"
             if pos_pct >= 60:
-                return "stable", f"{pos_pct}% Pos"
+                return "holding", f"{pos_pct}% Pos"
 
-        return "stable", "Stable"
+        return "holding", "Holding"
+
+    # ── Sentiment labels ─────────────────────────────────────────────────────
+
+    def _compute_sentiment_label(self, sentiments: Counter) -> str:
+        """
+        Generate a journalism-grade sentiment label from raw counts.
+
+        Returns labels like:
+        - "Overwhelmingly Critical" (90%+ negative)
+        - "Heavily Critical" (70-89% negative)
+        - "Leaning Critical" (50-69% negative)
+        - "Strongly Favorable" (90%+ positive)
+        - "Mostly Favorable" (70-89% positive)
+        - "Leaning Favorable" (50-69% positive)
+        - "Polarized" (both pos and neg > 30%)
+        - "Contested" (no sentiment > 50%)
+        - "Measured" (70%+ neutral)
+        - "Neutral"
+        """
+        total = sum(sentiments.values())
+        if total == 0:
+            return "Neutral"
+
+        neg = sentiments.get("negative", 0)
+        pos = sentiments.get("positive", 0)
+        neu = sentiments.get("neutral", 0)
+
+        neg_pct = neg / total
+        pos_pct = pos / total
+        neu_pct = neu / total
+
+        # Check for polarization first — both sides active
+        if neg_pct > 0.30 and pos_pct > 0.30:
+            return "Polarized"
+
+        # Negative labels
+        if neg_pct >= 0.90:
+            return "Overwhelmingly Critical"
+        if neg_pct >= 0.70:
+            return "Heavily Critical"
+        if neg_pct >= 0.50:
+            return "Leaning Critical"
+
+        # Positive labels
+        if pos_pct >= 0.90:
+            return "Strongly Favorable"
+        if pos_pct >= 0.70:
+            return "Mostly Favorable"
+        if pos_pct >= 0.50:
+            return "Leaning Favorable"
+
+        # Neutral-heavy
+        if neu_pct >= 0.70:
+            return "Measured"
+
+        # No clear majority
+        return "Contested"
+
+    def _compute_recent_sentiment_label(
+        self, week_data: list[dict], overall_label: str
+    ) -> str:
+        """
+        Compute sentiment label for the most recent week, with shift detection.
+
+        If sentiment changed from previous week, prefix with:
+        - "Sentiment Reversal —" (flipped direction)
+        - "Sentiment Collapse —" (was mixed/neutral, now 90%+ one direction)
+        - "Intensifying —" (same direction but stronger)
+        """
+        if not week_data:
+            return overall_label
+
+        sorted_weeks = sorted(week_data, key=lambda w: w["week"])
+        latest = sorted_weeks[-1]
+        latest_sentiment = Counter(latest.get("sentiment_breakdown", {}))
+        latest_label = self._compute_sentiment_label(latest_sentiment)
+
+        if len(sorted_weeks) < 2:
+            return latest_label
+
+        previous = sorted_weeks[-2]
+        prev_sentiment = Counter(previous.get("sentiment_breakdown", {}))
+        prev_label = self._compute_sentiment_label(prev_sentiment)
+
+        # Detect shifts
+        prev_is_critical = "Critical" in prev_label
+        prev_is_favorable = "Favorable" in prev_label
+        latest_is_critical = "Critical" in latest_label
+        latest_is_favorable = "Favorable" in latest_label
+
+        # Reversal — flipped direction
+        if (prev_is_critical and latest_is_favorable) or (prev_is_favorable and latest_is_critical):
+            return f"Sentiment Reversal — {latest_label}"
+
+        # Collapse — was mixed/neutral, now strongly one direction
+        if prev_label in ("Contested", "Measured", "Polarized", "Neutral"):
+            if "Overwhelmingly" in latest_label:
+                return f"Sentiment Collapse — {latest_label}"
+
+        # Intensifying — same direction but stronger
+        if prev_is_critical and latest_is_critical:
+            if "Overwhelmingly" in latest_label and "Overwhelmingly" not in prev_label:
+                return f"Intensifying — {latest_label}"
+        if prev_is_favorable and latest_is_favorable:
+            if "Strongly" in latest_label and "Strongly" not in prev_label:
+                return f"Intensifying — {latest_label}"
+
+        # No shift — just return latest week's label
+        return latest_label
 
     def _compute_heat_score(
         self,
@@ -350,12 +485,7 @@ class TrendService:
         clusters = self._aggregate_by_cluster(videos)
 
         # 4. Sort
-        valid_sort_fields = {
-            "heat_score",
-            "video_count",
-            "view_count_total",
-            "channel_count",
-        }
+        valid_sort_fields = {"heat_score", "video_count", "view_count_total", "channel_count", "engagement_index"}
         if sort_by not in valid_sort_fields:
             sort_by = "heat_score"
 
