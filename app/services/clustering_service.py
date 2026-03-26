@@ -1,17 +1,19 @@
 """
 clustering_service.py - Narrative Clustering Service
 
-Groups related transcript chunks into narrative clusters using HDBSCAN
-on existing Qdrant embeddings. Zero Gemini calls — labels derived from
-the most frequent topics already stored in each chunk's payload.
+Groups related videos into narrative clusters using HDBSCAN
+on Qdrant embeddings. Writes results to DynamoDB.
 
 Flow:
-1. Scroll all points from Qdrant (vectors + payload)
-2. Deduplicate to one representative per video (transcript_index)
-3. Run HDBSCAN clustering on the vectors
-4. Label each cluster using most frequent topics across its members
-5. Patch cluster_id, cluster_label, cluster_confidence back to ALL chunks
-6. Create payload indexes for fast filtering
+1. Pull vectors from Qdrant (search data only)
+2. Pull metadata from DynamoDB (topics, channel, etc.)
+3. Deduplicate to one representative per video (mean-pool vectors)
+4. UMAP (768d → 15d) + HDBSCAN clustering
+5. Label each cluster using TF-IDF on existing topic fields
+6. Write cluster_id/label/confidence to DynamoDB youtube-videos
+7. Write cluster summary to DynamoDB narrative-clusters table
+
+Zero Gemini calls. Reads vectors from Qdrant, everything else from DynamoDB.
 
 Usage:
     python -m scripts.run_clustering
@@ -20,15 +22,31 @@ Usage:
 from __future__ import annotations
 
 import logging
+import math
+import os
+import re
 from collections import Counter
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Optional
 
 import numpy as np
+import boto3
 
 from app.core.config import settings
 from app.services.vector_service import VectorService
 
 logger = logging.getLogger(__name__)
+
+REGION = os.getenv("AWS_REGION", "us-east-2")
+
+
+def _dec(val):
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return Decimal(str(val))
+    return val
 
 
 class ClusteringService:
@@ -38,11 +56,18 @@ class ClusteringService:
         self.collection_name = self.vector_service.collection_name
         self.client = self.vector_service.client
 
-    # ── Step 1: Pull everything from Qdrant ──────────────────────────────────
+        self._dynamodb = boto3.resource("dynamodb", region_name=REGION)
+        self._videos_table = self._dynamodb.Table(settings.dynamodb_table)
+        self._clusters_table = self._dynamodb.Table("narrative-clusters")
 
-    def _scroll_all_points(self) -> list[dict]:
-        """Scroll the entire collection. Returns list of {id, vector, payload}."""
-        all_points = []
+    # ── Step 1: Pull vectors from Qdrant ─────────────────────────────────────
+
+    def _scroll_vectors(self) -> dict[str, list[dict]]:
+        """
+        Scroll Qdrant for vectors grouped by video.
+        Returns {video_id: [{vector}, ...]}
+        """
+        video_chunks: dict[str, list[dict]] = {}
         offset = None
 
         while True:
@@ -51,470 +76,340 @@ class ClusteringService:
                 limit=100,
                 offset=offset,
                 with_vectors=True,
-                with_payload=True,
+                with_payload=["transcript_index"],
             )
             for point in results:
-                all_points.append(
-                    {
-                        "id": point.id,
+                vid = point.payload.get("transcript_index", "")
+                if vid:
+                    video_chunks.setdefault(vid, []).append({
                         "vector": point.vector,
-                        "payload": point.payload,
-                    }
-                )
+                    })
             if offset is None:
                 break
 
-        logger.info(f"CLUSTER_SCROLL_COMPLETE total_points={len(all_points)}")
-        return all_points
+        logger.info(f"CLUSTER_SCROLL videos={len(video_chunks)}")
+        return video_chunks
 
-    # ── Step 2: Deduplicate to video-level representatives ───────────────────
+    # ── Step 2: Pull metadata from DynamoDB ──────────────────────────────────
 
-    def _deduplicate_by_video(self, points: list[dict]) -> dict[str, list[dict]]:
+    def _get_video_metadata(self) -> dict[str, dict]:
         """
-        Group points by transcript_index (videoId).
-        Returns {video_id: [point, point, ...]}
+        Scan DynamoDB for all videos with intelligence data.
+        Returns {video_id: {channel, topics, category, sentiment, ...}}
         """
-        video_groups: dict[str, list[dict]] = {}
-        for point in points:
-            video_id = point["payload"].get("transcript_index", "unknown")
-            video_groups.setdefault(video_id, []).append(point)
+        meta = {}
+        scan_kwargs = {
+            "ProjectionExpression": "PartitionKey, SortKey, channel, topics, category, "
+            "sentiment, is_breaking, viewCount, likeCount, commentCount, "
+            "title, publishedAt, #wk, source_key, key_claims",
+            "ExpressionAttributeNames": {"#wk": "week"},
+        }
 
-        logger.info(
-            f"CLUSTER_DEDUP videos={len(video_groups)} " f"from_chunks={len(points)}"
-        )
-        return video_groups
+        while True:
+            resp = self._videos_table.scan(**scan_kwargs)
+            for item in resp["Items"]:
+                vid = item.get("SortKey", "")
+                if vid and item.get("topics"):
+                    meta[vid] = {
+                        "channel": item.get("channel") or item.get("PartitionKey", ""),
+                        "topics": item.get("topics", []),
+                        "category": item.get("category", "Other"),
+                        "sentiment": item.get("sentiment", "neutral"),
+                        "is_breaking": bool(item.get("is_breaking", False)),
+                        "view_count": int(item.get("viewCount") or 0),
+                        "like_count": int(item.get("likeCount") or 0),
+                        "comment_count": int(item.get("commentCount") or 0),
+                        "title": item.get("title", ""),
+                        "week": item.get("week", "unknown"),
+                        "source_key": item.get("source_key", ""),
+                        "key_claims": item.get("key_claims", []),
+                    }
+            if "LastEvaluatedKey" not in resp:
+                break
+            scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+        logger.info(f"CLUSTER_DYNAMO_META videos_with_intel={len(meta)}")
+        return meta
+
+    # ── Step 3: Build video representatives ──────────────────────────────────
 
     def _get_video_representatives(
-        self, video_groups: dict[str, list[dict]]
+        self,
+        video_chunks: dict[str, list[dict]],
+        meta_map: dict[str, dict],
     ) -> tuple[list[str], np.ndarray, dict[str, dict]]:
-        """
-        For each video, compute the mean vector across its chunks.
-        Returns:
-            video_ids:  ordered list of video IDs
-            matrix:     (n_videos, dims) numpy array of mean vectors
-            meta_map:   {video_id: {topics, channel, category, ...}} for labeling
-        """
         video_ids = []
         vectors = []
-        meta_map = {}
+        filtered_meta = {}
 
-        for video_id, chunks in video_groups.items():
-            # Mean-pool all chunk vectors for this video
-            chunk_vectors = [c["vector"] for c in chunks]
-            mean_vec = np.mean(chunk_vectors, axis=0)
+        for vid, chunks in video_chunks.items():
+            if vid not in meta_map:
+                continue
+            chunk_vecs = [c["vector"] for c in chunks]
+            mean_vec = np.mean(chunk_vecs, axis=0)
             vectors.append(mean_vec)
-            video_ids.append(video_id)
+            video_ids.append(vid)
+            filtered_meta[vid] = meta_map[vid]
 
-            # Grab metadata from first chunk (same across all chunks of a video)
-            payload = chunks[0]["payload"]
-            meta_map[video_id] = {
-                "topics": payload.get("topics", []),
-                "channel": payload.get("channel", ""),
-                "category": payload.get("category", ""),
-                "sentiment": payload.get("sentiment", ""),
-                "is_breaking": payload.get("is_breaking", False),
-                "view_count": payload.get("view_count", 0),
-                "title": payload.get("title", ""),
-            }
-
-        matrix = np.array(vectors, dtype=np.float32)
+        matrix = np.array(vectors, dtype=np.float32) if vectors else np.array([])
         logger.info(f"CLUSTER_REPRESENTATIVES shape={matrix.shape}")
-        return video_ids, matrix, meta_map
+        return video_ids, matrix, filtered_meta
 
-    # ── Step 3: Dimensionality reduction + HDBSCAN clustering ──────────────
+    # ── Step 4: UMAP + HDBSCAN ──────────────────────────────────────────────
 
-    def _reduce_dimensions(
-        self,
-        matrix: np.ndarray,
-        n_components: int = 15,
-        n_neighbors: int = 15,
-        min_dist: float = 0.0,
-    ) -> np.ndarray:
-        """
-        UMAP dimensionality reduction: 768 dims → n_components.
-        Essential for HDBSCAN — density-based clustering fails in high dimensions
-        because distances become uniform (curse of dimensionality).
-
-        Args:
-            n_components: target dimensions (15-25 is ideal for clustering)
-            n_neighbors:  local neighborhood size (higher = more global structure)
-            min_dist:     how tightly UMAP packs points (0.0 = tight, best for clustering)
-        """
+    def _reduce_dimensions(self, matrix, n_components=15, n_neighbors=15, min_dist=0.0):
         try:
             import umap
         except ImportError:
-            raise ImportError(
-                "umap-learn is required for dimensionality reduction. "
-                "Install it: pip install umap-learn"
-            )
+            raise ImportError("Install umap-learn: pip install umap-learn")
 
         reducer = umap.UMAP(
             n_components=n_components,
-            n_neighbors=min(n_neighbors, len(matrix) - 1),  # can't exceed dataset size
+            n_neighbors=min(n_neighbors, len(matrix) - 1),
             min_dist=min_dist,
-            metric="cosine",  # cosine works best for normalized text embeddings
-            random_state=42,  # reproducible results
+            metric="cosine",
+            random_state=42,
         )
         reduced = reducer.fit_transform(matrix)
-        logger.info(
-            f"UMAP_COMPLETE input_dims={matrix.shape[1]} output_dims={n_components} "
-            f"n_neighbors={min(n_neighbors, len(matrix) - 1)} min_dist={min_dist}"
-        )
+        logger.info(f"UMAP_COMPLETE {matrix.shape[1]}d → {n_components}d")
         return reduced
 
-    def _cluster_vectors(
-        self,
-        matrix: np.ndarray,
-        min_cluster_size: int = 3,
-        min_samples: int = 2,
-        umap_components: int = 15,
-        umap_neighbors: int = 15,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """
-        UMAP → HDBSCAN pipeline.
-        Reduces 768-dim vectors to umap_components dims, then clusters.
-        Returns (labels, probabilities) arrays — one entry per video.
-        label == -1 means noise (unclustered).
-        """
-        # Dimensionality reduction first
-        reduced = self._reduce_dimensions(
-            matrix,
-            n_components=umap_components,
-            n_neighbors=umap_neighbors,
-        )
-
+    def _cluster_vectors(self, matrix, min_cluster_size=3, min_samples=2,
+                         umap_components=15, umap_neighbors=15):
+        reduced = self._reduce_dimensions(matrix, n_components=umap_components,
+                                          n_neighbors=umap_neighbors)
         try:
             from sklearn.cluster import HDBSCAN as SklearnHDBSCAN
-
             clusterer = SklearnHDBSCAN(
-                min_cluster_size=min_cluster_size,
-                min_samples=min_samples,
-                metric="euclidean",
-                store_centers="centroid",
+                min_cluster_size=min_cluster_size, min_samples=min_samples,
+                metric="euclidean", store_centers="centroid",
             )
             clusterer.fit(reduced)
             labels = clusterer.labels_
             probabilities = getattr(clusterer, "probabilities_", np.ones(len(labels)))
-
         except ImportError:
-            try:
-                import hdbscan
-
-                clusterer = hdbscan.HDBSCAN(
-                    min_cluster_size=min_cluster_size,
-                    min_samples=min_samples,
-                    metric="euclidean",
-                )
-                clusterer.fit(reduced)
-                labels = clusterer.labels_
-                probabilities = clusterer.probabilities_
-
-            except ImportError:
-                raise ImportError(
-                    "Neither sklearn>=1.3 HDBSCAN nor the hdbscan package is installed. "
-                    "Install one: pip install scikit-learn>=1.3 or pip install hdbscan"
-                )
+            import hdbscan
+            clusterer = hdbscan.HDBSCAN(
+                min_cluster_size=min_cluster_size, min_samples=min_samples,
+                metric="euclidean",
+            )
+            clusterer.fit(reduced)
+            labels = clusterer.labels_
+            probabilities = clusterer.probabilities_
 
         n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
         n_noise = int(np.sum(labels == -1))
-        logger.info(
-            f"HDBSCAN_COMPLETE clusters={n_clusters} noise_videos={n_noise} "
-            f"min_cluster_size={min_cluster_size} min_samples={min_samples} "
-            f"umap_dims={umap_components}"
-        )
+        logger.info(f"HDBSCAN_COMPLETE clusters={n_clusters} noise={n_noise}")
         return labels, probabilities
 
-    # ── Step 4: Label clusters with distinctive topics (TF-IDF style) ───────
+    # ── Step 5: Label clusters (TF-IDF) ──────────────────────────────────────
 
-    def _label_clusters(
-        self,
-        video_ids: list[str],
-        labels: np.ndarray,
-        meta_map: dict[str, dict],
-    ) -> dict[int, dict]:
-        """
-        Label each cluster using its most DISTINCTIVE topic, not just the most
-        frequent. Uses TF-IDF-style scoring:
-            score = (topic_freq_in_cluster / cluster_size) * log(total_clusters / clusters_with_topic)
-
-        Also enforces uniqueness — no two clusters get the same label.
-        If a cluster's top pick is taken, it falls back to the next best.
-
-        Returns {cluster_id: {label, video_count, channels, top_topics, ...}}
-        """
-        import math
-
-        cluster_info: dict[int, dict] = {}
-
-        # ── First pass: group videos by cluster, collect raw stats ───────
+    def _label_clusters(self, video_ids, labels, meta_map):
         cluster_members: dict[int, list[str]] = {}
         for vid, label in zip(video_ids, labels):
-            label = int(label)
-            cluster_members.setdefault(label, []).append(vid)
+            cluster_members.setdefault(int(label), []).append(vid)
 
-        # Per-cluster topic counts + metadata
         cluster_topic_counts: dict[int, Counter] = {}
         cluster_stats: dict[int, dict] = {}
 
-        for cluster_id, member_vids in cluster_members.items():
-            topic_counter = Counter()
+        for cid, vids in cluster_members.items():
+            tc = Counter()
             channels = set()
             categories = Counter()
             sentiments = Counter()
-            breaking_count = 0
-            total_views = 0
+            breaking = views = likes = comments = 0
 
-            for vid in member_vids:
-                meta = meta_map[vid]
-                for topic in meta["topics"]:
-                    topic_counter[topic] += 1
-                channels.add(meta["channel"])
-                categories[meta["category"]] += 1
-                sentiments[meta["sentiment"]] += 1
-                if meta["is_breaking"]:
-                    breaking_count += 1
-                total_views += meta.get("view_count", 0)
+            for vid in vids:
+                m = meta_map.get(vid, {})
+                for t in m.get("topics", []):
+                    tc[t] += 1
+                channels.add(m.get("channel", ""))
+                categories[m.get("category", "Other")] += 1
+                sentiments[m.get("sentiment", "neutral")] += 1
+                if m.get("is_breaking"):
+                    breaking += 1
+                views += m.get("view_count", 0)
+                likes += m.get("like_count", 0)
+                comments += m.get("comment_count", 0)
 
-            cluster_topic_counts[cluster_id] = topic_counter
-            cluster_stats[cluster_id] = {
-                "member_vids": member_vids,
-                "channels": channels,
-                "categories": categories,
-                "sentiments": sentiments,
-                "breaking_count": breaking_count,
-                "total_views": total_views,
+            cluster_topic_counts[cid] = tc
+            cluster_stats[cid] = {
+                "vids": vids, "channels": channels, "categories": categories,
+                "sentiments": sentiments, "breaking": breaking,
+                "views": views, "likes": likes, "comments": comments,
             }
 
-        # ── Compute IDF: how many clusters each topic appears in ─────────
-        real_cluster_ids = [cid for cid in cluster_members if cid != -1]
-        n_clusters = max(len(real_cluster_ids), 1)
-
+        # TF-IDF scoring
+        real_cids = [c for c in cluster_members if c != -1]
+        n_clusters = max(len(real_cids), 1)
         topic_cluster_count: Counter = Counter()
-        for cid in real_cluster_ids:
+        for cid in real_cids:
             for topic in cluster_topic_counts[cid]:
                 topic_cluster_count[topic] += 1
 
-        # ── Score topics per cluster using TF-IDF ────────────────────────
-        cluster_scored_topics: dict[int, list[tuple[str, float]]] = {}
-
+        cluster_scored: dict[int, list] = {}
         for cid in cluster_members:
             tc = cluster_topic_counts[cid]
-            cluster_size = len(cluster_members[cid])
+            size = len(cluster_members[cid])
             scored = []
-
             for topic, count in tc.items():
-                tf = count / cluster_size
-                idf = (
-                    math.log((n_clusters + 1) / (topic_cluster_count.get(topic, 0) + 1))
-                    + 1
-                )
+                tf = count / size
+                idf = math.log((n_clusters + 1) / (topic_cluster_count.get(topic, 0) + 1)) + 1
                 scored.append((topic, tf * idf))
-
-            # Sort by TF-IDF score descending
             scored.sort(key=lambda x: x[1], reverse=True)
-            cluster_scored_topics[cid] = scored
+            cluster_scored[cid] = scored
 
-        # ── Assign unique labels (greedy, highest-scoring first) ─────────
-        used_labels: set[str] = set()
+        # Unique labels
+        used = set()
         cluster_labels: dict[int, str] = {}
-
-        # Noise cluster gets a fixed label
         if -1 in cluster_members:
             cluster_labels[-1] = "Unclustered"
 
-        # Sort real clusters by size (largest first gets first pick)
-        sorted_cids = sorted(
-            real_cluster_ids,
-            key=lambda cid: len(cluster_members[cid]),
-            reverse=True,
-        )
-
-        for cid in sorted_cids:
-            scored = cluster_scored_topics[cid]
+        for cid in sorted(real_cids, key=lambda c: len(cluster_members[c]), reverse=True):
             chosen = None
-
-            for topic, score in scored:
-                if topic not in used_labels:
+            for topic, _ in cluster_scored[cid]:
+                if topic not in used:
                     chosen = topic
                     break
-
-            if chosen is None:
-                # All topics taken — combine top two for a unique label
-                top_two = [t[0] for t in scored[:2]]
+            if not chosen:
+                top_two = [t[0] for t in cluster_scored[cid][:2]]
                 chosen = " & ".join(top_two) if len(top_two) == 2 else f"Cluster {cid}"
-
             cluster_labels[cid] = chosen
-            used_labels.add(chosen)
+            used.add(chosen)
 
-        # ── Build final cluster_info dict ────────────────────────────────
-        for cluster_id, member_vids in cluster_members.items():
-            stats = cluster_stats[cluster_id]
-            top_topics_raw = cluster_topic_counts[cluster_id].most_common(5)
-
-            cluster_info[cluster_id] = {
-                "label": cluster_labels[cluster_id],
-                "video_count": len(member_vids),
-                "video_ids": member_vids,
+        cluster_info = {}
+        for cid, vids in cluster_members.items():
+            stats = cluster_stats[cid]
+            top_topics = cluster_topic_counts[cid].most_common(5)
+            cluster_info[cid] = {
+                "label": cluster_labels[cid],
+                "video_count": len(vids),
+                "video_ids": vids,
                 "channels": sorted(stats["channels"]),
                 "channel_count": len(stats["channels"]),
-                "top_topics": [t[0] for t in top_topics_raw],
-                "dominant_category": (
-                    stats["categories"].most_common(1)[0][0]
-                    if stats["categories"]
-                    else "Other"
-                ),
+                "top_topics": [t[0] for t in top_topics],
+                "dominant_category": stats["categories"].most_common(1)[0][0] if stats["categories"] else "Other",
+                "dominant_sentiment": stats["sentiments"].most_common(1)[0][0] if stats["sentiments"] else "neutral",
                 "sentiment_breakdown": dict(stats["sentiments"]),
-                "dominant_sentiment": (
-                    stats["sentiments"].most_common(1)[0][0]
-                    if stats["sentiments"]
-                    else "neutral"
-                ),
-                "breaking_count": stats["breaking_count"],
-                "total_views": stats["total_views"],
+                "breaking_count": stats["breaking"],
+                "total_views": stats["views"],
+                "total_likes": stats["likes"],
+                "total_comments": stats["comments"],
             }
-
-            logger.info(
-                f"CLUSTER_LABELED id={cluster_id} "
-                f"label={cluster_labels[cluster_id]!r} "
-                f"videos={len(member_vids)} channels={len(stats['channels'])}"
-            )
+            logger.info(f"CLUSTER_LABELED id={cid} label={cluster_labels[cid]!r} videos={len(vids)}")
 
         return cluster_info
 
-        return cluster_info
+    # ── Step 6: Write to DynamoDB ────────────────────────────────────────────
 
-    # ── Step 5: Patch results back to Qdrant ─────────────────────────────────
-
-    def _patch_qdrant(
-        self,
-        video_groups: dict[str, list[dict]],
-        video_ids: list[str],
-        labels: np.ndarray,
-        probabilities: np.ndarray,
-        cluster_info: dict[int, dict],
-    ) -> int:
-        """
-        Write cluster_id, cluster_label, cluster_confidence back to
-        every chunk in Qdrant. Returns total points patched.
-        """
-        total_patched = 0
-
+    def _write_clusters_to_dynamodb(self, video_ids, labels, probabilities,
+                                     cluster_info, meta_map):
+        updated = 0
         for vid, label, prob in zip(video_ids, labels, probabilities):
-            label = int(label)
+            label_int = int(label)
             confidence = round(float(prob), 3)
+            cluster_label = cluster_info.get(label_int, {}).get("label", "Unclustered")
+            channel = meta_map.get(vid, {}).get("channel", "")
+            if not channel:
+                continue
 
-            # Get the cluster label (noise gets "Unclustered")
-            if label == -1:
-                cluster_label = "Unclustered"
+            if label_int == -1:
+                self._videos_table.update_item(
+                    Key={"PartitionKey": channel, "SortKey": vid},
+                    UpdateExpression="SET #clabel = :clabel, #cconf = :cconf REMOVE #cid",
+                    ExpressionAttributeNames={
+                        "#cid": "cluster_id", "#clabel": "cluster_label", "#cconf": "cluster_confidence",
+                    },
+                    ExpressionAttributeValues={":clabel": "Unclustered", ":cconf": _dec(0)},
+                )
             else:
-                cluster_label = cluster_info[label]["label"]
+                self._videos_table.update_item(
+                    Key={"PartitionKey": channel, "SortKey": vid},
+                    UpdateExpression="SET #cid = :cid, #clabel = :clabel, #cconf = :cconf",
+                    ExpressionAttributeNames={
+                        "#cid": "cluster_id", "#clabel": "cluster_label", "#cconf": "cluster_confidence",
+                    },
+                    ExpressionAttributeValues={
+                        ":cid": _dec(label_int), ":clabel": cluster_label, ":cconf": _dec(confidence),
+                    },
+                )
+            updated += 1
 
-            # Get all chunk point IDs for this video
-            chunk_point_ids = [chunk["id"] for chunk in video_groups[vid]]
+        logger.info(f"DYNAMO_CLUSTER_WRITE videos={updated}")
+        return updated
 
-            self.client.set_payload(
-                collection_name=self.collection_name,
-                payload={
-                    "cluster_id": label,
-                    "cluster_label": cluster_label,
-                    "cluster_confidence": confidence,
-                },
-                points=chunk_point_ids,
-            )
-            total_patched += len(chunk_point_ids)
+    def _write_cluster_summaries(self, cluster_info):
+        written = 0
+        for cid, info in cluster_info.items():
+            if cid == -1:
+                continue
+            item = {
+                "cluster_id": _dec(cid),
+                "cluster_label": info["label"],
+                "video_count": _dec(info["video_count"]),
+                "channel_count": _dec(info["channel_count"]),
+                "channels": info["channels"],
+                "top_topics": info["top_topics"],
+                "dominant_category": info["dominant_category"],
+                "dominant_sentiment": info["dominant_sentiment"],
+                "breaking_count": _dec(info["breaking_count"]),
+                "total_views": _dec(info["total_views"]),
+                "total_likes": _dec(info["total_likes"]),
+                "total_comments": _dec(info["total_comments"]),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            self._clusters_table.put_item(Item=item)
+            written += 1
+            logger.info(f"DYNAMO_CLUSTER_SUMMARY cluster={cid} label={info['label']!r}")
 
-        logger.info(f"CLUSTER_PATCH_COMPLETE total_points_patched={total_patched}")
-        return total_patched
-
-    # ── Step 6: Create payload indexes ───────────────────────────────────────
-
-    def _create_indexes(self) -> None:
-        """Add cluster_id (integer) and cluster_label (keyword) indexes."""
-        from qdrant_client.http import models as qmodels
-
-        try:
-            self.client.create_payload_index(
-                collection_name=self.collection_name,
-                field_name="cluster_id",
-                field_schema=qmodels.PayloadSchemaType.INTEGER,
-            )
-            logger.info("PAYLOAD_INDEX_CREATED field=cluster_id type=integer")
-        except Exception as exc:
-            logger.warning(f"PAYLOAD_INDEX_SKIP field=cluster_id reason={exc}")
-
-        try:
-            self.client.create_payload_index(
-                collection_name=self.collection_name,
-                field_name="cluster_label",
-                field_schema=qmodels.PayloadSchemaType.KEYWORD,
-            )
-            logger.info("PAYLOAD_INDEX_CREATED field=cluster_label type=keyword")
-        except Exception as exc:
-            logger.warning(f"PAYLOAD_INDEX_SKIP field=cluster_label reason={exc}")
+        return written
 
     # ── Public API ───────────────────────────────────────────────────────────
 
-    def run_clustering(
-        self,
-        min_cluster_size: int = 3,
-        min_samples: int = 2,
-        umap_components: int = 15,
-        umap_neighbors: int = 15,
-    ) -> dict:
-        """
-        Full clustering pipeline. Returns summary dict with cluster info.
+    def run_clustering(self, min_cluster_size=3, min_samples=2,
+                       umap_components=15, umap_neighbors=15):
+        # 1. Vectors from Qdrant
+        video_chunks = self._scroll_vectors()
+        if not video_chunks:
+            return {"clusters": {}, "videos_updated": 0}
 
-        Args:
-            min_cluster_size: minimum videos to form a cluster (default 3)
-            min_samples:      HDBSCAN density param (default 2)
-            umap_components:  UMAP target dimensions (default 15)
-            umap_neighbors:   UMAP neighborhood size (default 15)
-        """
-        # 1. Pull all points
-        all_points = self._scroll_all_points()
-        if not all_points:
-            logger.warning("CLUSTER_ABORT no points in collection")
-            return {"clusters": {}, "total_patched": 0}
+        # 2. Metadata from DynamoDB
+        meta_map = self._get_video_metadata()
+        if not meta_map:
+            return {"clusters": {}, "videos_updated": 0}
 
-        # 2. Deduplicate to video level
-        video_groups = self._deduplicate_by_video(all_points)
-        video_ids, matrix, meta_map = self._get_video_representatives(video_groups)
-
+        # 3. Representatives
+        video_ids, matrix, filtered_meta = self._get_video_representatives(
+            video_chunks, meta_map
+        )
         if len(video_ids) < min_cluster_size:
-            logger.warning(
-                f"CLUSTER_ABORT only {len(video_ids)} videos, "
-                f"need at least {min_cluster_size}"
-            )
-            return {"clusters": {}, "total_patched": 0}
+            return {"clusters": {}, "videos_updated": 0}
 
-        # 3. UMAP → HDBSCAN
+        # 4. UMAP + HDBSCAN
         labels, probabilities = self._cluster_vectors(
-            matrix,
-            min_cluster_size=min_cluster_size,
-            min_samples=min_samples,
-            umap_components=umap_components,
-            umap_neighbors=umap_neighbors,
+            matrix, min_cluster_size, min_samples, umap_components, umap_neighbors
         )
 
-        # 4. Label
-        cluster_info = self._label_clusters(video_ids, labels, meta_map)
+        # 5. Label
+        cluster_info = self._label_clusters(video_ids, labels, filtered_meta)
 
-        # 5. Patch back to Qdrant
-        total_patched = self._patch_qdrant(
-            video_groups, video_ids, labels, probabilities, cluster_info
+        # 6. Write to DynamoDB youtube-videos
+        videos_updated = self._write_clusters_to_dynamodb(
+            video_ids, labels, probabilities, cluster_info, filtered_meta
         )
 
-        # 6. Create indexes
-        self._create_indexes()
+        # 7. Write to DynamoDB narrative-clusters
+        clusters_written = self._write_cluster_summaries(cluster_info)
 
-        # Build summary (exclude noise from "real" clusters)
         real_clusters = {k: v for k, v in cluster_info.items() if k != -1}
         noise_info = cluster_info.get(-1, {})
 
-        summary = {
+        return {
             "total_videos": len(video_ids),
-            "total_chunks_patched": total_patched,
+            "videos_updated": videos_updated,
             "cluster_count": len(real_clusters),
+            "clusters_written": clusters_written,
             "noise_videos": noise_info.get("video_count", 0),
             "clusters": {
                 cid: {
@@ -531,9 +426,3 @@ class ClusteringService:
                 for cid, info in sorted(real_clusters.items())
             },
         }
-
-        logger.info(
-            f"CLUSTERING_COMPLETE clusters={len(real_clusters)} "
-            f"noise={summary['noise_videos']} patched={total_patched}"
-        )
-        return summary

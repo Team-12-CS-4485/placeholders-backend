@@ -1,16 +1,12 @@
 """
 claim_analysis_service.py - Claim Classification Service
 
-For each narrative cluster, collects all claims with source attribution,
-embeds them locally (nomic, free), groups by semantic similarity, then
-classifies into three types:
+Reads video intelligence from DynamoDB (grouped by cluster_id),
+embeds claims locally (nomic, free), groups by semantic similarity,
+classifies into consensus/debated/unique, writes results to
+DynamoDB narrative-clusters table.
 
-- CONSENSUS: 3+ channels independently report the same claim
-- CONTROVERSIAL: 2+ channels report the same claim with opposing sentiment
-- UNIQUE: only one channel reports this claim
-
-Results (top 2-3 of each type) are patched back to Qdrant as cluster-level
-payload. Zero Gemini calls.
+Zero Gemini calls. Zero Qdrant reads.
 
 Usage:
     python -m scripts.run_claim_analysis
@@ -19,153 +15,147 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 from collections import defaultdict
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Optional
 
 import numpy as np
+import boto3
 
 from app.core.config import settings
-from app.services.vector_service import VectorService
 from app.services.chunking_service import get_default_chunker
 
 logger = logging.getLogger(__name__)
 
-# Minimum cosine similarity to consider two claims "the same"
+REGION = os.getenv("AWS_REGION", "us-east-2")
 CLAIM_SIMILARITY_THRESHOLD = 0.75
+
+
+def _dec(val):
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return Decimal(str(val))
+    return val
+
+
+def _clean_for_dynamo(obj):
+    """Recursively convert floats to Decimal and remove None values."""
+    if isinstance(obj, bool):
+        return obj
+    if isinstance(obj, float):
+        return Decimal(str(round(obj, 4)))
+    if isinstance(obj, int):
+        return Decimal(str(obj))
+    if isinstance(obj, dict):
+        return {k: _clean_for_dynamo(v) for k, v in obj.items() if v is not None}
+    if isinstance(obj, list):
+        return [_clean_for_dynamo(i) for i in obj if i is not None]
+    return obj
 
 
 class ClaimAnalysisService:
 
-    def __init__(self, vector_service: Optional[VectorService] = None):
-        self.vector_service = vector_service or VectorService()
-        self.client = self.vector_service.client
-        self.collection_name = self.vector_service.collection_name
+    def __init__(self):
         self._chunker = get_default_chunker(model_name=settings.embedding_model_id)
+        self._dynamodb = boto3.resource("dynamodb", region_name=REGION)
+        self._videos_table = self._dynamodb.Table(settings.dynamodb_table)
+        self._clusters_table = self._dynamodb.Table("narrative-clusters")
 
-    # ── Step 1: Pull all data from Qdrant ────────────────────────────────────
+    # ── Step 1: Read video data from DynamoDB ────────────────────────────────
 
-    def _scroll_all_points(self) -> list[dict]:
-        """Pull all point payloads + IDs from Qdrant."""
-        all_points = []
-        offset = None
+    def _get_clustered_videos(self) -> dict[int, list[dict]]:
+        """
+        Scan DynamoDB for videos with cluster_id and key_claims.
+        Returns {cluster_id: [{video_id, channel, sentiment, key_claims, title, transcript}, ...]}
+        """
+        cluster_videos: dict[int, list[dict]] = defaultdict(list)
+
+        scan_kwargs = {
+            "ProjectionExpression": "SortKey, PartitionKey, channel, title, sentiment, "
+            "key_claims, cluster_id, transcript",
+        }
 
         while True:
-            results, offset = self.client.scroll(
-                collection_name=self.collection_name,
-                limit=100,
-                offset=offset,
-                with_payload=True,
-                with_vectors=False,
-            )
-            for point in results:
-                all_points.append(
-                    {
-                        "id": point.id,
-                        "payload": point.payload,
-                    }
-                )
-            if offset is None:
+            resp = self._videos_table.scan(**scan_kwargs)
+            for item in resp["Items"]:
+                cid = item.get("cluster_id")
+                claims = item.get("key_claims", [])
+                if cid is not None and claims:
+                    cluster_videos[int(cid)].append({
+                        "video_id": item.get("SortKey", ""),
+                        "channel": item.get("channel") or item.get("PartitionKey", ""),
+                        "title": item.get("title", ""),
+                        "sentiment": item.get("sentiment", "neutral"),
+                        "key_claims": claims,
+                        "transcript": item.get("transcript", ""),
+                    })
+            if "LastEvaluatedKey" not in resp:
                 break
+            scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
 
-        logger.info(f"CLAIM_SCROLL_COMPLETE total_chunks={len(all_points)}")
-        return all_points
-
-    # ── Step 2: Collect claims with source attribution ───────────────────────
-
-    def _collect_attributed_claims(self, points: list[dict]) -> dict[int, list[dict]]:
-        """
-        Group by cluster_id, deduplicate to video level, collect claims
-        with full source attribution.
-
-        Returns {cluster_id: [
-            {claim, channel, video_id, video_title, sentiment, chunk_text},
-            ...
-        ]}
-        """
-        # Group points by cluster, then by video
-        cluster_videos: dict[int, dict[str, list[dict]]] = defaultdict(
-            lambda: defaultdict(list)
+        logger.info(
+            f"CLAIM_READ clusters={len(cluster_videos)} "
+            f"total_videos={sum(len(v) for v in cluster_videos.values())}"
         )
+        return cluster_videos
 
-        for point in points:
-            p = point["payload"]
-            cluster_id = p.get("cluster_id")
-            if cluster_id is None or cluster_id == -1:
-                continue
-            video_id = p.get("transcript_index", "")
-            if video_id:
-                cluster_videos[int(cluster_id)][video_id].append(p)
+    # ── Step 2: Collect attributed claims ─────────────────────────────────────
 
-        # Extract claims per cluster with attribution
+    def _collect_attributed_claims(
+        self, cluster_videos: dict[int, list[dict]]
+    ) -> dict[int, list[dict]]:
+        """
+        Flatten claims with attribution per cluster.
+        Returns {cluster_id: [{claim, channel, video_id, sentiment, excerpt}, ...]}
+        """
         cluster_claims: dict[int, list[dict]] = {}
 
-        for cluster_id, videos in cluster_videos.items():
+        for cid, videos in cluster_videos.items():
             claims = []
-            seen_claims = set()  # deduplicate exact text within cluster
+            seen = set()
 
-            for video_id, chunks in videos.items():
-                # Use first chunk for video-level metadata
-                first = chunks[0]
-                channel = first.get("channel", "")
-                sentiment = first.get("sentiment", "neutral")
-                title = first.get("title", "")
-                video_claims = first.get("key_claims", [])
-
-                # Combine all chunk text for transcript excerpts
-                full_text = " ".join(c.get("text", "") for c in chunks)
-
-                for claim in video_claims:
-                    if not claim or claim in seen_claims:
+            for v in videos:
+                transcript = v.get("transcript", "")
+                for claim in v["key_claims"]:
+                    if not claim or claim in seen:
                         continue
-                    seen_claims.add(claim)
+                    seen.add(claim)
 
-                    # Find excerpt — window around claim keywords
-                    excerpt = self._extract_excerpt(full_text, claim)
+                    excerpt = self._extract_excerpt(transcript, claim)
+                    claims.append({
+                        "claim": claim,
+                        "channel": v["channel"],
+                        "video_id": v["video_id"],
+                        "video_title": v["title"],
+                        "sentiment": v["sentiment"],
+                        "transcript_excerpt": excerpt,
+                    })
 
-                    claims.append(
-                        {
-                            "claim": claim,
-                            "channel": channel,
-                            "video_id": video_id,
-                            "video_title": title,
-                            "sentiment": sentiment,
-                            "transcript_excerpt": excerpt,
-                        }
-                    )
-
-            cluster_claims[cluster_id] = claims
-            logger.info(
-                f"CLAIM_COLLECT cluster={cluster_id} "
-                f"videos={len(videos)} claims={len(claims)}"
-            )
+            cluster_claims[cid] = claims
+            logger.info(f"CLAIM_COLLECT cluster={cid} claims={len(claims)}")
 
         return cluster_claims
 
-    def _extract_excerpt(self, full_text: str, claim: str, window: int = 80) -> str:
-        """
-        Find the best matching region in the transcript for a claim
-        and return a ~window-word excerpt around it.
-        """
-        words = full_text.split()
+    def _extract_excerpt(self, transcript: str, claim: str, window: int = 80) -> str:
+        words = transcript.split()
         claim_words = claim.lower().split()
-
         if not words or not claim_words:
             return ""
 
-        # Find the position with the most overlapping words
         best_pos = 0
         best_score = 0
-        claim_word_set = set(claim_words)
+        claim_set = set(claim_words)
 
         for i in range(len(words)):
-            chunk = words[i : i + len(claim_words) + 10]
-            chunk_lower = set(w.lower().strip(".,!?\"'") for w in chunk)
-            overlap = len(claim_word_set & chunk_lower)
+            chunk = words[i:i + len(claim_words) + 10]
+            overlap = len(claim_set & set(w.lower().strip(".,!?\"'") for w in chunk))
             if overlap > best_score:
                 best_score = overlap
                 best_pos = i
 
-        # Extract window around best position
         start = max(0, best_pos - window // 4)
         end = min(len(words), best_pos + window)
         excerpt = " ".join(words[start:end])
@@ -174,118 +164,55 @@ class ClaimAnalysisService:
             excerpt = "..." + excerpt
         if end < len(words):
             excerpt = excerpt + "..."
-
         return excerpt
 
-    # ── Step 3: Embed claims and compute similarity matrix ───────────────────
+    # ── Step 3: Embed + similarity ───────────────────────────────────────────
 
     def _embed_claims(self, claim_texts: list[str]) -> np.ndarray:
-        """Embed claim texts using local nomic model. Returns (n, 768) array."""
         if not claim_texts:
             return np.array([])
-
         vectors = self._chunker.embed(claim_texts, is_query=False)
         return np.array(vectors, dtype=np.float32)
 
-    def _compute_similarity_matrix(self, embeddings: np.ndarray) -> np.ndarray:
-        """Cosine similarity matrix. Embeddings are already L2-normalized by nomic."""
-        if len(embeddings) == 0:
-            return np.array([])
-        return embeddings @ embeddings.T
-
-    # ── Step 4: Group similar claims ─────────────────────────────────────────
-
-    def _group_similar_claims(
-        self,
-        claims: list[dict],
-        similarity_matrix: np.ndarray,
-        threshold: float = CLAIM_SIMILARITY_THRESHOLD,
-    ) -> list[list[int]]:
-        """
-        Greedy grouping: iterate claims, merge into existing group if
-        similarity > threshold, otherwise start new group.
-        Returns list of groups, each group is a list of claim indices.
-        """
+    def _group_similar_claims(self, claims, similarity_matrix, threshold=CLAIM_SIMILARITY_THRESHOLD):
         n = len(claims)
         if n == 0:
             return []
 
-        assigned = [-1] * n  # which group each claim belongs to
-        groups: list[list[int]] = []
+        assigned = [-1] * n
+        groups = []
 
         for i in range(n):
             if assigned[i] != -1:
                 continue
-
-            # Start a new group with this claim
             group = [i]
             assigned[i] = len(groups)
-
-            # Find all unassigned claims similar to this one
             for j in range(i + 1, n):
                 if assigned[j] != -1:
                     continue
                 if similarity_matrix[i][j] >= threshold:
                     group.append(j)
                     assigned[j] = len(groups)
-
             groups.append(group)
 
-        logger.info(f"CLAIM_GROUPS total_claims={n} groups_formed={len(groups)}")
         return groups
 
-    # ── Step 5: Classify groups into consensus/debated/unique ────────────────
+    # ── Step 4: Classify ─────────────────────────────────────────────────────
 
-    def _compute_framing_divergence(self, group_claims: list[dict]) -> float:
-        """
-        Measure how differently channels frame the same claim by comparing
-        their transcript excerpts. Lower cosine similarity between excerpts
-        = higher framing divergence = more "debated."
-
-        Returns 0.0 (identical framing) to 1.0 (completely different framing).
-        """
-        excerpts = [
-            c["transcript_excerpt"]
-            for c in group_claims
-            if c.get("transcript_excerpt", "").strip()
-        ]
-
+    def _compute_framing_divergence(self, group_claims):
+        excerpts = [c["transcript_excerpt"] for c in group_claims if c.get("transcript_excerpt", "").strip()]
         if len(excerpts) < 2:
             return 0.0
-
         vectors = self._embed_claims(excerpts)
         if len(vectors) < 2:
             return 0.0
-
-        # Average pairwise cosine similarity
-        sim_matrix = vectors @ vectors.T
+        sim = vectors @ vectors.T
         n = len(vectors)
-        total_sim = 0.0
-        pairs = 0
-        for i in range(n):
-            for j in range(i + 1, n):
-                total_sim += float(sim_matrix[i][j])
-                pairs += 1
+        total = sum(float(sim[i][j]) for i in range(n) for j in range(i + 1, n))
+        pairs = n * (n - 1) / 2
+        return round(1.0 - (total / pairs if pairs else 0), 3)
 
-        if pairs == 0:
-            return 0.0
-
-        avg_similarity = total_sim / pairs
-        return round(1.0 - avg_similarity, 3)
-
-    def _classify_groups(
-        self,
-        claims: list[dict],
-        groups: list[list[int]],
-    ) -> dict[str, list[dict]]:
-        """
-        Classify each claim group:
-        - CONSENSUS: 3+ channels report the same claim
-        - DEBATED: 2 channels report the same claim (scored by framing divergence)
-        - UNIQUE: only one channel reports this claim
-
-        Returns {"consensus": [...], "debated": [...], "unique": [...]}
-        """
+    def _classify_groups(self, claims, groups):
         consensus = []
         debated = []
         unique = []
@@ -293,236 +220,140 @@ class ClaimAnalysisService:
         for group_indices in groups:
             group_claims = [claims[i] for i in group_indices]
             channels = set(c["channel"] for c in group_claims)
-
             representative = group_claims[0]
 
             if len(channels) >= 3:
-                consensus.append(
-                    {
-                        "claim": representative["claim"],
-                        "sources": sorted(channels),
-                        "source_count": len(channels),
-                        "video_ids": [c["video_id"] for c in group_claims],
-                        "transcript_excerpt": representative["transcript_excerpt"],
-                    }
-                )
-
+                consensus.append({
+                    "claim": representative["claim"],
+                    "sources": sorted(channels),
+                    "source_count": len(channels),
+                    "video_ids": [c["video_id"] for c in group_claims],
+                    "transcript_excerpt": representative["transcript_excerpt"],
+                })
             elif len(channels) >= 2:
-                # DEBATED — 2 channels cover the same claim
                 divergence = self._compute_framing_divergence(group_claims)
-
-                perspectives = []
-                for c in group_claims:
-                    perspectives.append(
-                        {
-                            "channel": c["channel"],
-                            "sentiment": c["sentiment"],
-                            "video_id": c["video_id"],
-                            "video_title": c["video_title"],
-                            "transcript_excerpt": c["transcript_excerpt"],
-                        }
-                    )
-
-                debated.append(
-                    {
-                        "claim": representative["claim"],
-                        "perspectives": perspectives,
-                        "source_count": len(channels),
-                        "framing_divergence": divergence,
-                    }
-                )
-
+                perspectives = [{
+                    "channel": c["channel"],
+                    "sentiment": c["sentiment"],
+                    "video_id": c["video_id"],
+                    "video_title": c["video_title"],
+                    "transcript_excerpt": c["transcript_excerpt"],
+                } for c in group_claims]
+                debated.append({
+                    "claim": representative["claim"],
+                    "perspectives": perspectives,
+                    "source_count": len(channels),
+                    "framing_divergence": divergence,
+                })
             elif len(channels) == 1 and len(group_indices) == 1:
-                unique.append(
-                    {
-                        "claim": representative["claim"],
-                        "channel": representative["channel"],
-                        "video_id": representative["video_id"],
-                        "video_title": representative["video_title"],
-                        "transcript_excerpt": representative["transcript_excerpt"],
-                    }
+                unique.append({
+                    "claim": representative["claim"],
+                    "channel": representative["channel"],
+                    "video_id": representative["video_id"],
+                    "video_title": representative["video_title"],
+                    "transcript_excerpt": representative["transcript_excerpt"],
+                })
+
+        return {"consensus": consensus, "debated": debated, "unique": unique}
+
+    def _select_top_claims(self, classified, max_per_type=3):
+        consensus = sorted(classified["consensus"], key=lambda c: c["source_count"], reverse=True)[:max_per_type]
+        debated = sorted(classified["debated"], key=lambda c: c.get("framing_divergence", 0), reverse=True)[:max_per_type]
+        unique = sorted(classified["unique"], key=lambda c: len(c.get("transcript_excerpt", "")), reverse=True)[:max_per_type]
+        return {"consensus": consensus, "debated": debated, "unique": unique}
+
+    # ── Step 5: Write to DynamoDB ────────────────────────────────────────────
+
+    def _write_claims_to_dynamodb(self, cluster_results: dict[int, dict]) -> int:
+        """Update narrative-clusters items with classified_claims."""
+        written = 0
+
+        for cid, claims_data in cluster_results.items():
+            clean_claims = _clean_for_dynamo(claims_data)
+
+            try:
+                self._clusters_table.update_item(
+                    Key={"cluster_id": _dec(cid)},
+                    UpdateExpression="SET #claims = :claims, #updated = :updated",
+                    ExpressionAttributeNames={
+                        "#claims": "classified_claims",
+                        "#updated": "updated_at",
+                    },
+                    ExpressionAttributeValues={
+                        ":claims": clean_claims,
+                        ":updated": datetime.now(timezone.utc).isoformat(),
+                    },
                 )
+                written += 1
+                c = len(claims_data.get("consensus", []))
+                d = len(claims_data.get("debated", []))
+                u = len(claims_data.get("unique", []))
+                logger.info(f"CLAIM_WRITTEN cluster={cid} consensus={c} debated={d} unique={u}")
+            except Exception as exc:
+                logger.error(f"CLAIM_WRITE_FAILED cluster={cid} error={exc}")
 
-        return {
-            "consensus": consensus,
-            "debated": debated,
-            "unique": unique,
-        }
-
-    # ── Step 6: Rank and pick top 2-3 of each type ──────────────────────────
-
-    def _select_top_claims(
-        self,
-        classified: dict[str, list[dict]],
-        max_per_type: int = 3,
-    ) -> dict[str, list[dict]]:
-        """
-        Rank and pick the best claims of each type.
-
-        Consensus: ranked by source_count (more channels = stronger)
-        Debated: ranked by framing_divergence (higher = more different framing = most interesting)
-        Unique: ranked by transcript_excerpt length (richer context = better)
-        """
-        consensus = sorted(
-            classified["consensus"],
-            key=lambda c: c["source_count"],
-            reverse=True,
-        )[:max_per_type]
-
-        debated = sorted(
-            classified["debated"],
-            key=lambda c: c.get("framing_divergence", 0),
-            reverse=True,
-        )[:max_per_type]
-
-        unique = sorted(
-            classified["unique"],
-            key=lambda c: len(c.get("transcript_excerpt", "")),
-            reverse=True,
-        )[:max_per_type]
-
-        return {
-            "consensus": consensus,
-            "debated": debated,
-            "unique": unique,
-        }
-
-    # ── Step 7: Patch results back to Qdrant ─────────────────────────────────
-
-    def _patch_qdrant(
-        self,
-        cluster_claims_results: dict[int, dict],
-        all_points: list[dict],
-    ) -> int:
-        """
-        Write classified claims to every chunk in each cluster.
-        Returns total points patched.
-        """
-        # Build cluster_id → point_ids mapping
-        cluster_point_ids: dict[int, list] = defaultdict(list)
-        for point in all_points:
-            cid = point["payload"].get("cluster_id")
-            if cid is not None and cid != -1:
-                cluster_point_ids[int(cid)].append(point["id"])
-
-        total_patched = 0
-
-        for cluster_id, claims_data in cluster_claims_results.items():
-            point_ids = cluster_point_ids.get(cluster_id, [])
-            if not point_ids:
-                continue
-
-            self.client.set_payload(
-                collection_name=self.collection_name,
-                payload={"classified_claims": claims_data},
-                points=point_ids,
-            )
-            total_patched += len(point_ids)
-
-            c_count = len(claims_data.get("consensus", []))
-            v_count = len(claims_data.get("controversial", []))
-            u_count = len(claims_data.get("unique", []))
-            logger.info(
-                f"CLAIM_PATCH cluster={cluster_id} "
-                f"consensus={c_count} controversial={v_count} unique={u_count} "
-                f"points={len(point_ids)}"
-            )
-
-        logger.info(f"CLAIM_PATCH_COMPLETE total_patched={total_patched}")
-        return total_patched
+        return written
 
     # ── Public API ───────────────────────────────────────────────────────────
 
     def run_claim_analysis(self, max_per_type: int = 3) -> dict:
-        """
-        Full claim analysis pipeline. Returns summary dict.
+        # 1. Read from DynamoDB
+        cluster_videos = self._get_clustered_videos()
+        if not cluster_videos:
+            return {"clusters_processed": 0, "total_written": 0}
 
-        Args:
-            max_per_type: how many claims to keep per type (default 3)
-        """
-        # 1. Pull all points
-        all_points = self._scroll_all_points()
-        if not all_points:
-            logger.warning("CLAIM_ABORT no points in collection")
-            return {"clusters_processed": 0, "total_patched": 0}
-
-        # 2. Collect attributed claims per cluster
-        cluster_claims = self._collect_attributed_claims(all_points)
-
-        if not cluster_claims:
-            logger.warning("CLAIM_ABORT no clusters found")
-            return {"clusters_processed": 0, "total_patched": 0}
+        # 2. Collect attributed claims
+        cluster_claims = self._collect_attributed_claims(cluster_videos)
 
         # 3. Process each cluster
         cluster_results = {}
-        summary_by_cluster = {}
+        summary = {}
 
-        for cluster_id, claims in cluster_claims.items():
+        for cid, claims in cluster_claims.items():
             if len(claims) < 2:
-                logger.info(
-                    f"CLAIM_SKIP cluster={cluster_id} "
-                    f"reason=too_few_claims count={len(claims)}"
-                )
-                # Still store what we have as unique
-                cluster_results[cluster_id] = {
+                cluster_results[cid] = {
                     "consensus": [],
                     "debated": [],
-                    "unique": [
-                        {
-                            "claim": c["claim"],
-                            "channel": c["channel"],
-                            "video_id": c["video_id"],
-                            "video_title": c["video_title"],
-                            "transcript_excerpt": c["transcript_excerpt"],
-                        }
-                        for c in claims[:max_per_type]
-                    ],
+                    "unique": [{
+                        "claim": c["claim"],
+                        "channel": c["channel"],
+                        "video_id": c["video_id"],
+                        "video_title": c["video_title"],
+                        "transcript_excerpt": c["transcript_excerpt"],
+                    } for c in claims[:max_per_type]],
                 }
                 continue
 
-            # 3a. Embed all claim texts
-            claim_texts = [c["claim"] for c in claims]
-            embeddings = self._embed_claims(claim_texts)
-
+            # Embed
+            embeddings = self._embed_claims([c["claim"] for c in claims])
             if len(embeddings) == 0:
                 continue
 
-            # 3b. Similarity matrix
-            sim_matrix = self._compute_similarity_matrix(embeddings)
-
-            # 3c. Group similar claims
+            # Similarity + group
+            sim_matrix = embeddings @ embeddings.T
             groups = self._group_similar_claims(claims, sim_matrix)
 
-            # 3d. Classify
+            # Classify + select
             classified = self._classify_groups(claims, groups)
-
-            # 3e. Select top N
             selected = self._select_top_claims(classified, max_per_type)
+            cluster_results[cid] = selected
 
-            cluster_results[cluster_id] = selected
-
-            summary_by_cluster[cluster_id] = {
+            summary[cid] = {
                 "total_claims": len(claims),
-                "groups_formed": len(groups),
-                "consensus_found": len(classified["consensus"]),
-                "debated_found": len(classified["debated"]),
-                "unique_found": len(classified["unique"]),
-                "consensus_selected": len(selected["consensus"]),
-                "debated_selected": len(selected["debated"]),
-                "unique_selected": len(selected["unique"]),
+                "groups": len(groups),
+                "consensus": len(classified["consensus"]),
+                "debated": len(classified["debated"]),
+                "unique": len(classified["unique"]),
+                "selected_c": len(selected["consensus"]),
+                "selected_d": len(selected["debated"]),
+                "selected_u": len(selected["unique"]),
             }
 
-        # 4. Patch back to Qdrant
-        total_patched = self._patch_qdrant(cluster_results, all_points)
+        # 4. Write to DynamoDB
+        written = self._write_claims_to_dynamodb(cluster_results)
 
-        summary = {
+        return {
             "clusters_processed": len(cluster_results),
-            "total_patched": total_patched,
-            "per_cluster": summary_by_cluster,
+            "total_written": written,
+            "per_cluster": summary,
         }
-
-        logger.info(
-            f"CLAIM_ANALYSIS_COMPLETE clusters={len(cluster_results)} "
-            f"patched={total_patched}"
-        )
-        return summary
