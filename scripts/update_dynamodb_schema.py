@@ -148,21 +148,6 @@ def _wait_for_gsi(client, table_name, gsi_name, timeout=300):
     raise TimeoutError(f"GSI '{gsi_name}' did not become ACTIVE within {timeout}s")
 
 
-# --- Add missing _wait_for_table implementation ---
-def _wait_for_table(client, table_name, timeout=300):
-    """Poll table until the specified table is ACTIVE."""
-    elapsed = 0
-    while elapsed < timeout:
-        desc = client.describe_table(TableName=table_name)
-        status = desc["Table"].get("TableStatus", "")
-        if status == "ACTIVE":
-            return
-        print(f"    {table_name}: {status} ({elapsed}s)")
-        time.sleep(10)
-        elapsed += 10
-    raise TimeoutError(f"Table '{table_name}' did not become ACTIVE within {timeout}s")
-
-
 # ── Step 2: Create narrative-clusters table ───────────────────────────────────
 
 
@@ -198,109 +183,131 @@ def create_narrative_clusters_table(client):
             raise
 
 
-# --- VALIDATION FUNCTION ---
-def validate_cluster_id_foreign_keys(dynamodb):
-    """
-    Validates that all non-empty cluster_id values in youtube-videos exist as primary keys in narrative-clusters.
-    Prints any orphaned cluster_id values.
-    """
-    print("Validating cluster_id foreign key relationship...")
-    videos_table = dynamodb.Table(YOUTUBE_VIDEOS_TABLE)
-    clusters_table = dynamodb.Table(NARRATIVE_CLUSTERS_TABLE)
-    # Gather all cluster_ids in narrative-clusters
-    cluster_ids = set()
-    scan_kwargs = {}
-    done = False
-    start_key = None
-    while not done:
-        if start_key:
-            scan_kwargs["ExclusiveStartKey"] = start_key
-        response = clusters_table.scan(**scan_kwargs)
-        for item in response.get("Items", []):
-            if "cluster_id" in item:
-                cluster_ids.add(item["cluster_id"])
-        start_key = response.get("LastEvaluatedKey", None)
-        done = start_key is None
-    # Check all youtube-videos for cluster_id
-    orphaned = set()
-    scan_kwargs = {}
-    done = False
-    start_key = None
-    while not done:
-        if start_key:
-            scan_kwargs["ExclusiveStartKey"] = start_key
-        response = videos_table.scan(**scan_kwargs)
-        for item in response.get("Items", []):
-            cid = item.get("cluster_id", "")
-            if cid and cid not in cluster_ids:
-                orphaned.add(cid)
-        start_key = response.get("LastEvaluatedKey", None)
-        done = start_key is None
-    if orphaned:
+def _wait_for_table(client, table_name, timeout=120):
+    """Poll until table is ACTIVE."""
+    elapsed = 0
+    while elapsed < timeout:
+        desc = client.describe_table(TableName=table_name)
+        status = desc["Table"]["TableStatus"]
+        if status == "ACTIVE":
+            return
+        print(f"    {table_name}: {status} ({elapsed}s)")
+        time.sleep(5)
+        elapsed += 5
+
+    raise TimeoutError(f"Table '{table_name}' did not become ACTIVE within {timeout}s")
+
+
+# ── Step 3: Verify ────────────────────────────────────────────────────────────
+
+
+def verify_tables(client):
+    """Print status of both tables and all GSIs."""
+    print("\n=== Verification ===\n")
+
+    # youtube-videos
+    try:
+        desc = client.describe_table(TableName=YOUTUBE_VIDEOS_TABLE)
+        table = desc["Table"]
+        print(f"Table: {YOUTUBE_VIDEOS_TABLE}")
+        print(f"  Status: {table['TableStatus']}")
+        print(f"  Items: {table.get('ItemCount', 'unknown')}")
+        print(f"  Key: {_format_key_schema(table['KeySchema'])}")
         print(
-            f"Orphaned cluster_id values in youtube-videos (no matching narrative-clusters): {orphaned}"
+            f"  Billing: {table.get('BillingModeSummary', {}).get('BillingMode', 'unknown')}"
         )
-    else:
-        raise Exception("No cluster_id values found in youtube-videos to validate.")
+
+        gsis = table.get("GlobalSecondaryIndexes", [])
+        if gsis:
+            print(f"  GSIs ({len(gsis)}):")
+            for gsi in gsis:
+                print(
+                    f"    - {gsi['IndexName']}: {_format_key_schema(gsi['KeySchema'])} [{gsi['IndexStatus']}]"
+                )
+        else:
+            print("  GSIs: none")
+
+    except ClientError as e:
+        print(f"  ERROR: {e}")
+
+    print()
+
+    # narrative-clusters
+    try:
+        desc = client.describe_table(TableName=NARRATIVE_CLUSTERS_TABLE)
+        table = desc["Table"]
+        print(f"Table: {NARRATIVE_CLUSTERS_TABLE}")
+        print(f"  Status: {table['TableStatus']}")
+        print(f"  Items: {table.get('ItemCount', 'unknown')}")
+        print(f"  Key: {_format_key_schema(table['KeySchema'])}")
+        print(
+            f"  Billing: {table.get('BillingModeSummary', {}).get('BillingMode', 'unknown')}"
+        )
+        print(f"  GSIs: none (by design — only ~12 items)")
+
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ResourceNotFoundException":
+            print(f"Table: {NARRATIVE_CLUSTERS_TABLE}")
+            print(f"  Status: DOES NOT EXIST")
+        else:
+            print(f"  ERROR: {e}")
 
 
-# --- Import Decimal for sample insert and ensure add_new_attributes_to_youtube_videos is defined ---
-from decimal import Decimal
+def _format_key_schema(key_schema):
+    parts = []
+    for key in key_schema:
+        key_type = "PK" if key["KeyType"] == "HASH" else "SK"
+        parts.append(f"{key_type}={key['AttributeName']}")
+    return ", ".join(parts)
 
 
-def add_new_attributes_to_youtube_videos(dynamodb):
-    # ...existing code...
-    pass  # Placeholder if not already defined elsewhere
+# ── Main ──────────────────────────────────────────────────────────────────────
 
 
 def main():
-    dynamodb = boto3.resource("dynamodb", region_name=REGION)
-    client = boto3.client("dynamodb", region_name=REGION)
-    # Uncomment and implement as needed:
-    # add_new_attributes_to_youtube_videos(dynamodb)
-    # create_narrative_clusters_table(client)
-    # insert_sample_narrative_cluster(dynamodb)
-    # validate_cluster_id_foreign_keys(dynamodb)
-    print("Done.")
+    parser = argparse.ArgumentParser(description="DynamoDB schema migration")
+    parser.add_argument(
+        "--skip-gsis",
+        action="store_true",
+        help="Skip GSI creation on youtube-videos",
+    )
+    parser.add_argument(
+        "--verify-only",
+        action="store_true",
+        help="Only verify table status, don't create anything",
+    )
+    args = parser.parse_args()
 
+    client, resource = get_clients()
 
-def insert_sample_narrative_cluster(dynamodb):
-    """
-    Inserts a sample item into the narrative-clusters table with all required fields and nested map structure.
-    """
-    table = dynamodb.Table(NARRATIVE_CLUSTERS_TABLE)
-    sample_item = {
-        "cluster_id": "sample-cluster-001",
-        "cluster_label": "Sample Cluster Label",
-        "video_count": Decimal("10"),
-        "channel_count": Decimal("3"),
-        "channels": ["channelA", "channelB", "channelC"],
-        "dominant_sentiment": "positive",
-        "total_views": Decimal("12345"),
-        "total_likes": Decimal("678"),
-        "total_comments": Decimal("90"),
-        "classified_claims": {
-            "consensus": ["claim1", "claim2"],
-            "debated": ["claim3"],
-            "unique": ["claim4", "claim5"],
-            "avg_clickbait_rating": Decimal("2.5"),
-            "thumbnail_tone_breakdown": {
-                "neutral": Decimal("5"),
-                "positive": Decimal("3"),
-                "negative": Decimal("2"),
-            },
-        },
-        # Example GSI fields (optional, for demonstration)
-        "SortKey": "2024-01-01T00:00:00Z",
-        "week": "2024-W01",
-        "sentiment": "positive",
-        "publishedAt": "2024-01-01T00:00:00Z",
-    }
-    try:
-        table.put_item(Item=sample_item)
-        print("Sample narrative-clusters item inserted for schema demonstration.")
-    except Exception as e:
-        print(f"Failed to insert sample narrative-clusters item: {e}")
+    if args.verify_only:
+        verify_tables(client)
+        return
+
+    print("=== DynamoDB Schema Migration ===\n")
+
+    # Step 1: GSIs on youtube-videos
+    if args.skip_gsis:
+        print("Step 1: Skipping GSI creation (--skip-gsis)\n")
+    else:
+        print(f"Step 1: Adding GSIs to {YOUTUBE_VIDEOS_TABLE}")
+        add_gsis_to_youtube_videos(client)
+
+    # Step 2: Create narrative-clusters
+    print(f"\nStep 2: Creating {NARRATIVE_CLUSTERS_TABLE}")
+    create_narrative_clusters_table(client)
+
+    # Step 3: Verify
+    verify_tables(client)
+
+    print("\n=== Migration Complete ===")
+    print("\nNext steps:")
+    print("  1. Update pipeline_service.py to write intelligence fields to DynamoDB")
+    print(
+        "  2. Update clustering_service.py to write cluster_id to DynamoDB + narrative-clusters"
+    )
+    print("  3. Update claim_analysis_service.py to write to narrative-clusters")
+    print("  4. Update trend_service.py to read from DynamoDB instead of Qdrant")
 
 
 if __name__ == "__main__":
