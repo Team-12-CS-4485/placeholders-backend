@@ -398,7 +398,7 @@ class EmbeddingService:
                 "is_breaking": False,
             }
 
-    # ── Chunk-level analysis (kept for optional deep analysis) ────────────────
+    # ── Chunk-level analysis (optional deep analysis) ────────────────────────
 
     def analyze_chunks(self, chunks: list[str]) -> list[str]:
         analyses = []

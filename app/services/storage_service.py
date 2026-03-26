@@ -223,7 +223,7 @@ class StorageService:
 
         return results
 
-    # ── Kept for backwards compatibility ─────────────────────────────────────
+    # ── Optional / legacy ─────────────────────────────────────────────────────
 
     def extract_transcripts(self, payload):
         """Legacy method — returns plain transcript strings. Use extract_videos() instead."""

@@ -1,57 +1,16 @@
 """
 pipeline.py - Pydantic Request/Response Schemas
-
-Defines all API request and response models for the pipeline endpoints:
-- PipelineRunRequest/Response : S3 transcript analysis pipeline execution
-- VectorSearchRequest/Response : Semantic search over indexed transcript chunks
-- Supporting models: TranscriptAnalysisResult, ObjectPipelineResult, AnalysisMapEntry, SearchHit
 """
 
 from typing import Optional
-
 from pydantic import BaseModel, Field
 
+
+# ── Requests ──────────────────────────────────────────────────────────────────
 
 class PipelineRunRequest(BaseModel):
     prefix: Optional[str] = None
     limit: Optional[int] = Field(default=None, ge=1, le=50)
-
-
-class TranscriptAnalysisResult(BaseModel):
-    transcript_key: str
-    transcript_index: int
-    chunk_count: int
-    final_summary: str
-    chunks_stored: int = 0
-    error: Optional[str] = None
-
-
-class ObjectPipelineResult(BaseModel):
-    key: str
-    status: str
-    error: Optional[str] = None
-    transcript_results: list[TranscriptAnalysisResult]
-
-
-class AnalysisMapEntry(BaseModel):
-    status: str
-    chunk_count: int
-    chunk_analyses: list[str]
-    final_summary: str
-    chunks_stored: int = 0
-    error: Optional[str] = None
-
-
-class PipelineRunResponse(BaseModel):
-    prefix: str
-    object_limit: int
-    objects_processed: int
-    transcripts_found: int
-    transcripts_analyzed: int
-    total_chunks_stored: int
-    chunk_map: dict[str, list[str]]
-    analysis_map: dict[str, AnalysisMapEntry]
-    results: list[ObjectPipelineResult]
 
 
 class VectorSearchRequest(BaseModel):
@@ -59,15 +18,112 @@ class VectorSearchRequest(BaseModel):
     limit: Optional[int] = Field(default=5, ge=1, le=50)
 
 
+# ── Pipeline response models ──────────────────────────────────────────────────
+
+class VideoIntelligence(BaseModel):
+    topics: list[str]
+    category: str
+    sentiment: str
+    key_claims: list[str]
+    is_breaking: bool
+
+
+class ThumbnailIntelligence(BaseModel):
+    thumbnail_visual: str
+    thumbnail_tone: str
+    thumbnail_clickbait_score: int
+    thumbnail_brand_consistent: bool
+    thumbnail_insight: str
+
+
+class VideoAnalysisResult(BaseModel):
+    transcript_key: str
+    video_id: str
+    chunk_count: int
+    chunks_stored: int
+    intelligence: Optional[VideoIntelligence] = None
+    thumbnail: Optional[ThumbnailIntelligence] = None
+    error: Optional[str] = None
+
+
+class ObjectPipelineResult(BaseModel):
+    key: str
+    status: str
+    error: Optional[str] = None
+    transcript_results: list[VideoAnalysisResult]
+
+
+class AnalysisMapEntry(BaseModel):
+    status: str
+    chunk_count: int
+    chunks_stored: int
+    intelligence: Optional[VideoIntelligence] = None
+    thumbnail: Optional[ThumbnailIntelligence] = None
+    error: Optional[str] = None
+
+
+class PipelineRunResponse(BaseModel):
+    prefix: str
+    object_limit: int
+    objects_processed: int
+    videos_found: int
+    videos_indexed: int
+    total_chunks_stored: int
+    chunk_map: dict[str, list[str]]
+    analysis_map: dict[str, AnalysisMapEntry]
+    results: list[ObjectPipelineResult]
+
+
+# ── Full pipeline response ────────────────────────────────────────────────────
+
+class IngestionSummary(BaseModel):
+    objects_processed: int
+    videos_found: int
+    videos_indexed: int
+    total_chunks_stored: int
+
+
+class ClusteringSummary(BaseModel):
+    total_videos: int
+    cluster_count: int
+    noise_videos: int
+    total_chunks_patched: int
+
+
+class ClaimAnalysisSummary(BaseModel):
+    clusters_processed: int
+    total_patched: int
+
+
+class FullPipelineResponse(BaseModel):
+    ingestion: IngestionSummary
+    clustering: ClusteringSummary
+    claim_analysis: ClaimAnalysisSummary
+
+
+# ── Search response models ────────────────────────────────────────────────────
+
 class SearchHit(BaseModel):
+    id: str
     score: float
-    semantic_score: float = 0.0
-    keyword_score: float = 0.0
-    source_key: str = ""
-    transcript_index: int = 0
-    chunk_index: int = 0
-    text: str = ""
-    word_count: int = 0
+    transcript_key: str
+    source_key: str
+    channel: str
+    title: str
+    published_at: str
+    view_count: int
+    category: str
+    sentiment: str
+    topics: list[str]
+    key_claims: list[str]
+    is_breaking: bool
+    chunk_index: int
+    text: str
+    thumbnail_visual: str
+    thumbnail_tone: str
+    thumbnail_clickbait_score: int
+    thumbnail_brand_consistent: bool
+    thumbnail_insight: str
 
 
 class VectorSearchResponse(BaseModel):

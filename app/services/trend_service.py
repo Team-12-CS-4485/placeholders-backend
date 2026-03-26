@@ -72,8 +72,6 @@ class TrendService:
         date_match = re.search(r"(\d{4}-\d{2}-\d{2})", source_key)
         if date_match:
             try:
-                from datetime import datetime
-
                 date = datetime.strptime(date_match.group(1), "%Y-%m-%d")
                 # Map to week based on ISO week number relative to earliest data
                 # For now, use iso calendar week modulo to assign
@@ -156,7 +154,7 @@ class TrendService:
 
             # ── Build week_data ──────────────────────────────────────
             week_data = []
-            for week_name in sorted(week_buckets.keys()):
+            for week_name in sorted(week_buckets.keys(), key=lambda w: int(w.replace("week", "")) if w.startswith("week") and w[4:].isdigit() else 9999):
                 week_vids = week_buckets[week_name]
                 week_channels = set(v.get("channel", "") for v in week_vids)
                 week_sentiments = Counter(
@@ -263,7 +261,7 @@ class TrendService:
             return "holding", "Holding"
 
         # Sort by week name to get chronological order
-        sorted_weeks = sorted(week_data, key=lambda w: w["week"])
+        sorted_weeks = sorted(week_data, key=lambda w: int(w["week"].replace("week", "")) if w["week"].startswith("week") and w["week"][4:].isdigit() else 9999)
         latest = sorted_weeks[-1]
         previous = sorted_weeks[-2]
 
@@ -386,7 +384,7 @@ class TrendService:
         if not week_data:
             return overall_label
 
-        sorted_weeks = sorted(week_data, key=lambda w: w["week"])
+        sorted_weeks = sorted(week_data, key=lambda w: int(w["week"].replace("week", "")) if w["week"].startswith("week") and w["week"][4:].isdigit() else 9999)
         latest = sorted_weeks[-1]
         latest_sentiment = Counter(latest.get("sentiment_breakdown", {}))
         latest_label = self._compute_sentiment_label(latest_sentiment)
@@ -455,7 +453,7 @@ class TrendService:
             week = self._extract_week(v.get("source_key", ""))
             week_totals[week] += v.get("view_count", 0)
 
-        sorted_weeks = sorted(week_totals.keys())
+        sorted_weeks = sorted(week_totals.keys(), key=lambda w: int(w.replace("week", "")) if w.startswith("week") and w[4:].isdigit() else 9999)
         if len(sorted_weeks) >= 2:
             prev_total = week_totals[sorted_weeks[-2]]
             curr_total = week_totals[sorted_weeks[-1]]
