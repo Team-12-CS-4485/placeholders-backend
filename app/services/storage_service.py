@@ -82,14 +82,11 @@ class StorageService:
             "next_cursor": next_cursor,
         }
 
-
     def get_video_by_id(self, video_id: str) -> Optional[dict]:
         """Find a single video by videoId."""
         paginator = self.s3_client.get_paginator("list_objects_v2")
 
-        for page in paginator.paginate(
-            Bucket=self.bucket, Prefix=settings.s3_prefix
-        ):
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=settings.s3_prefix):
             for obj in page.get("Contents", []):
                 key = obj.get("Key", "")
                 if not key or key.endswith("/"):
@@ -108,9 +105,7 @@ class StorageService:
 
                     fresh_stats = {}
                     if payload_channel and video_id:
-                        fresh_stats = self.get_video_metadata(
-                            payload_channel, video_id
-                        )
+                        fresh_stats = self.get_video_metadata(payload_channel, video_id)
 
                     top_comments = []
                     for comment in video.get("topComments", []):

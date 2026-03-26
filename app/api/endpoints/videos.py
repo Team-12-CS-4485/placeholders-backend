@@ -39,10 +39,5 @@ def get_video_by_id(
         scope = f"video_id='{video_id}'"
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Failed to fetch video for "
-                f"{scope}: {exc}"
-            ),
+            detail=("Failed to fetch video for " f"{scope}: {exc}"),
         ) from exc
-
-

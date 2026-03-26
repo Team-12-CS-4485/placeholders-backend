@@ -13,6 +13,7 @@ class VideoItem(BaseModel):
     like_count: int
     comment_count: int
 
+
 class VideoTopComment(BaseModel):
     author: str
     text: str
