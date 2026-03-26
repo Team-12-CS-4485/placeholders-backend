@@ -78,6 +78,7 @@ def _thumbnail_is_empty(thumb: dict) -> bool:
 
 # ── Step 1: Scan all videos from DynamoDB ─────────────────────────────────────
 
+
 def get_all_videos(table, skip_existing: bool = False) -> list[dict]:
     """
     Scan youtube-videos for all items.
@@ -98,12 +99,14 @@ def get_all_videos(table, skip_existing: bool = False) -> list[dict]:
             has_thumbnail = bool(item.get("thumbnail_visual"))
             if skip_existing and has_thumbnail:
                 continue
-            items.append({
-                "channel": channel,
-                "video_id": video_id,
-                "title": item.get("title", ""),
-                "has_thumbnail": has_thumbnail,
-            })
+            items.append(
+                {
+                    "channel": channel,
+                    "video_id": video_id,
+                    "title": item.get("title", ""),
+                    "has_thumbnail": has_thumbnail,
+                }
+            )
         if "LastEvaluatedKey" not in resp:
             break
         scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
@@ -113,7 +116,10 @@ def get_all_videos(table, skip_existing: bool = False) -> list[dict]:
 
 # ── Step 2: Write thumbnail fields to DynamoDB ────────────────────────────────
 
-def write_thumbnail_to_dynamodb(table, channel: str, video_id: str, thumb: dict) -> bool:
+
+def write_thumbnail_to_dynamodb(
+    table, channel: str, video_id: str, thumb: dict
+) -> bool:
     """
     Write 5 thumbnail fields to a single DynamoDB item.
 
@@ -168,6 +174,7 @@ def write_thumbnail_to_dynamodb(table, channel: str, video_id: str, thumb: dict)
 
 # ── Step 3: Verify coverage ───────────────────────────────────────────────────
 
+
 def verify(table):
     all_items = []
     scan_kwargs = {
@@ -183,7 +190,9 @@ def verify(table):
     total = len(all_items)
     has_visual = sum(1 for i in all_items if i.get("thumbnail_visual"))
     has_tone = sum(1 for i in all_items if i.get("thumbnail_tone"))
-    has_score = sum(1 for i in all_items if i.get("thumbnail_clickbait_score") is not None)
+    has_score = sum(
+        1 for i in all_items if i.get("thumbnail_clickbait_score") is not None
+    )
 
     print(f"\n=== Thumbnail coverage ({total} total videos) ===")
     print(f"  thumbnail_visual:           {has_visual} / {total}")
@@ -202,13 +211,20 @@ def verify(table):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Re-analyze thumbnails and write to DynamoDB"
     )
-    parser.add_argument("--dry-run", action="store_true", help="Preview without writing")
-    parser.add_argument("--verify-only", action="store_true", help="Check coverage only")
-    parser.add_argument("--limit", type=int, default=None, help="Process at most N videos")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Preview without writing"
+    )
+    parser.add_argument(
+        "--verify-only", action="store_true", help="Check coverage only"
+    )
+    parser.add_argument(
+        "--limit", type=int, default=None, help="Process at most N videos"
+    )
     parser.add_argument(
         "--skip-existing",
         action="store_true",
@@ -271,11 +287,15 @@ def main():
 
             # Guard: Gemini 503 or image unavailable — both return all-default dict
             if _thumbnail_is_empty(thumb):
-                print(f"  SKIPPED — Gemini returned empty result (503 or no image available)")
+                print(
+                    f"  SKIPPED — Gemini returned empty result (503 or no image available)"
+                )
                 skipped_503 += 1
                 continue
 
-            print(f"  tone={thumb['thumbnail_tone']}  score={thumb['thumbnail_clickbait_score']}")
+            print(
+                f"  tone={thumb['thumbnail_tone']}  score={thumb['thumbnail_clickbait_score']}"
+            )
             print(f"  visual={thumb['thumbnail_visual'][:60]}...")
 
             ok = write_thumbnail_to_dynamodb(table, channel, video_id, thumb)
@@ -299,7 +319,9 @@ def main():
     print(f"  Total:                    {len(videos)}")
 
     if skipped_503 > 0:
-        print(f"\n  Tip: re-run with --skip-existing to retry only the {skipped_503} skipped videos.")
+        print(
+            f"\n  Tip: re-run with --skip-existing to retry only the {skipped_503} skipped videos."
+        )
 
     print("\nVerifying coverage...")
     verify(table)

@@ -44,7 +44,9 @@ def main():
         for cid, info in sorted(summary["per_cluster"].items()):
             print(f"  Cluster {cid}:")
             print(f"    Raw claims: {info['total_claims']}")
-            print(f"    Selected: {info.get('selected_c',0)}c / {info.get('selected_d',0)}d / {info.get('selected_u',0)}u")
+            print(
+                f"    Selected: {info.get('selected_c',0)}c / {info.get('selected_d',0)}d / {info.get('selected_u',0)}u"
+            )
             print()
 
     # Write summary

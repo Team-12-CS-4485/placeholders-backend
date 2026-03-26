@@ -311,7 +311,9 @@ def index_videos(video_ids: list):
 
                 set_parts.append("#tbc = :tbc")
                 names["#tbc"] = "thumbnail_brand_consistent"
-                values[":tbc"] = bool(thumbnail.get("thumbnail_brand_consistent", False))
+                values[":tbc"] = bool(
+                    thumbnail.get("thumbnail_brand_consistent", False)
+                )
 
                 if thumbnail.get("thumbnail_insight"):
                     set_parts.append("#ti = :ti")
@@ -325,9 +327,13 @@ def index_videos(video_ids: list):
                         ExpressionAttributeNames=names,
                         ExpressionAttributeValues=values,
                     )
-                    print(f"  DynamoDB: thumbnail written ({thumbnail['thumbnail_tone']})")
+                    print(
+                        f"  DynamoDB: thumbnail written ({thumbnail['thumbnail_tone']})"
+                    )
             else:
-                print(f"  WARN: thumbnail empty (503 or fetch miss) — skipping thumbnail write")
+                print(
+                    f"  WARN: thumbnail empty (503 or fetch miss) — skipping thumbnail write"
+                )
 
             # Step 5: Embed chunks
             vectors = embedding_service.embed_chunks(chunks)
@@ -349,6 +355,7 @@ def index_videos(video_ids: list):
             failed += 1
 
     return indexed, failed
+
 
 def main():
     print("=== Sync Missing Videos ===\n")

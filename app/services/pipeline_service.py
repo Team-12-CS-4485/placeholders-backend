@@ -326,9 +326,11 @@ class PipelineService:
                             f"chunks={len(chunks)} "
                             f"key=#{self.embedding_service.current_key_index + 1}"
                         )
-                        intelligence = self.embedding_service.extract_video_intelligence(
-                            chunks=chunks,
-                            title=title,
+                        intelligence = (
+                            self.embedding_service.extract_video_intelligence(
+                                chunks=chunks,
+                                title=title,
+                            )
                         )
 
                         # Guard: Gemini 503 returns empty topics — skip this video
@@ -337,15 +339,17 @@ class PipelineService:
                                 f"GEMINI_INTELLIGENCE_EMPTY videoId={video_id} "
                                 f"— skipping (likely 503)"
                             )
-                            object_result["transcript_results"].append({
-                                "transcript_key": transcript_key,
-                                "video_id": video_id,
-                                "chunk_count": len(chunks),
-                                "chunks_stored": 0,
-                                "intelligence": None,
-                                "thumbnail": None,
-                                "error": "Gemini returned empty intelligence (503)",
-                            })
+                            object_result["transcript_results"].append(
+                                {
+                                    "transcript_key": transcript_key,
+                                    "video_id": video_id,
+                                    "chunk_count": len(chunks),
+                                    "chunks_stored": 0,
+                                    "intelligence": None,
+                                    "thumbnail": None,
+                                    "error": "Gemini returned empty intelligence (503)",
+                                }
+                            )
                             continue
 
                         self.logger.info(
@@ -414,15 +418,17 @@ class PipelineService:
                             "thumbnail": thumbnail,
                             "error": None,
                         }
-                        object_result["transcript_results"].append({
-                            "transcript_key": transcript_key,
-                            "video_id": video_id,
-                            "chunk_count": len(chunks),
-                            "chunks_stored": points_indexed,
-                            "intelligence": intelligence,
-                            "thumbnail": thumbnail,
-                            "error": None,
-                        })
+                        object_result["transcript_results"].append(
+                            {
+                                "transcript_key": transcript_key,
+                                "video_id": video_id,
+                                "chunk_count": len(chunks),
+                                "chunks_stored": points_indexed,
+                                "intelligence": intelligence,
+                                "thumbnail": thumbnail,
+                                "error": None,
+                            }
+                        )
                         analyzed_videos += 1
                         total_chunks_stored += points_indexed
                         self.logger.info(
@@ -440,16 +446,20 @@ class PipelineService:
                             "error": str(exc),
                         }
                         object_result["status"] = "partial_failed"
-                        object_result["transcript_results"].append({
-                            "transcript_key": transcript_key,
-                            "video_id": video_id,
-                            "chunk_count": len(chunks),
-                            "chunks_stored": 0,
-                            "intelligence": None,
-                            "thumbnail": None,
-                            "error": str(exc),
-                        })
-                        self.logger.error(f"VIDEO_FAILED videoId={video_id} error={exc}")
+                        object_result["transcript_results"].append(
+                            {
+                                "transcript_key": transcript_key,
+                                "video_id": video_id,
+                                "chunk_count": len(chunks),
+                                "chunks_stored": 0,
+                                "intelligence": None,
+                                "thumbnail": None,
+                                "error": str(exc),
+                            }
+                        )
+                        self.logger.error(
+                            f"VIDEO_FAILED videoId={video_id} error={exc}"
+                        )
 
                 object_results.append(object_result)
 

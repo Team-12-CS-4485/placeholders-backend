@@ -30,18 +30,18 @@ print(f"Found chunk counts for {len(chunk_counts)} videos in Qdrant")
 
 # Scan DynamoDB for videos missing chunk_count
 print("Scanning DynamoDB for missing chunk_count...")
-scan_kwargs = {
-    "ProjectionExpression": "PartitionKey, SortKey, chunk_count, topics"
-}
+scan_kwargs = {"ProjectionExpression": "PartitionKey, SortKey, chunk_count, topics"}
 to_fix = []
 while True:
     resp = table.scan(**scan_kwargs)
     for item in resp["Items"]:
         if item.get("topics") and not item.get("chunk_count"):
-            to_fix.append({
-                "PartitionKey": item["PartitionKey"],
-                "SortKey": item["SortKey"],
-            })
+            to_fix.append(
+                {
+                    "PartitionKey": item["PartitionKey"],
+                    "SortKey": item["SortKey"],
+                }
+            )
     if "LastEvaluatedKey" not in resp:
         break
     scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
