@@ -91,7 +91,9 @@ def get_qdrant_video_ids():
     return video_ids
 
 
-def write_intelligence_to_dynamodb(table, channel, video_id, source_key, intelligence, chunk_count):
+def write_intelligence_to_dynamodb(
+    table, channel, video_id, source_key, intelligence, chunk_count
+):
     """Write Gemini intelligence fields to DynamoDB video item."""
     week = _extract_week(source_key)
 
@@ -190,8 +192,15 @@ def index_videos(video_ids: list):
     storage_service = StorageService()
 
     CHANNELS = [
-        "ABCNews", "BBCNews", "CBSNews", "CNBC", "FoxNews",
-        "NBCNews", "NewYorkTimes", "SkyNews", "WashingtonPost",
+        "ABCNews",
+        "BBCNews",
+        "CBSNews",
+        "CNBC",
+        "FoxNews",
+        "NBCNews",
+        "NewYorkTimes",
+        "SkyNews",
+        "WashingtonPost",
         "aljazeeraenglish",
     ]
 
@@ -239,7 +248,9 @@ def index_videos(video_ids: list):
         transcript = storage_service._clean_transcript(transcript)
 
         # Look up real source_key from S3, fallback to constructed path
-        source_key = s3_map.get(video_id, f"youtube-data/unknown/{channel.lower()}.json")
+        source_key = s3_map.get(
+            video_id, f"youtube-data/unknown/{channel.lower()}.json"
+        )
         transcript_key = f"{source_key}::{video_id}"
         week = _extract_week(source_key)
         print(f"  Source: {source_key} → {week}")

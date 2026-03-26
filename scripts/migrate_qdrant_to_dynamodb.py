@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -43,6 +44,7 @@ NARRATIVE_CLUSTERS_TABLE = "narrative-clusters"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def to_decimal(obj):
     """Convert floats/ints to Decimal for DynamoDB compatibility."""
@@ -74,6 +76,7 @@ def extract_week(source_key: str) -> str:
 
 
 # ── Step 1: Read from Qdrant ──────────────────────────────────────────────────
+
 
 def read_qdrant_data():
     """Scroll all Qdrant chunks, deduplicate to video level."""
@@ -108,6 +111,7 @@ def read_qdrant_data():
 
 
 # ── Step 2: Update youtube-videos table ───────────────────────────────────────
+
 
 def update_youtube_videos(videos: dict, dry_run: bool = False):
     """
@@ -151,7 +155,7 @@ def update_youtube_videos(videos: dict, dry_run: bool = False):
 
         # Build update fields
         update_fields = {}
-        
+
         # GSI key fields — MUST always be set, never NULL
         update_fields["week"] = week if week else "unknown"
         update_fields["sentiment"] = payload.get("sentiment", "") or "neutral"
@@ -160,7 +164,7 @@ def update_youtube_videos(videos: dict, dry_run: bool = False):
         topics = payload.get("topics", [])
         if topics:
             update_fields["topics"] = topics
-        
+
         category = payload.get("category", "")
         if category:
             update_fields["category"] = category
@@ -200,7 +204,9 @@ def update_youtube_videos(videos: dict, dry_run: bool = False):
             continue
 
         if dry_run:
-            logger.info(f"[DRY RUN] Would update {video_id}: {list(update_fields.keys())}")
+            logger.info(
+                f"[DRY RUN] Would update {video_id}: {list(update_fields.keys())}"
+            )
             updated += 1
             continue
 
@@ -238,6 +244,7 @@ def update_youtube_videos(videos: dict, dry_run: bool = False):
 
 
 # ── Step 3: Populate narrative-clusters table ─────────────────────────────────
+
 
 def populate_narrative_clusters(videos: dict, dry_run: bool = False):
     """
@@ -283,11 +290,14 @@ def populate_narrative_clusters(videos: dict, dry_run: bool = False):
             total_comments += v.get("comment_count", 0)
 
         # Get classified_claims from first video (same on all chunks in cluster)
-        classified_claims = vids[0].get("classified_claims", {
-            "consensus": [],
-            "debated": [],
-            "unique": [],
-        })
+        classified_claims = vids[0].get(
+            "classified_claims",
+            {
+                "consensus": [],
+                "debated": [],
+                "unique": [],
+            },
+        )
 
         cluster_item = {
             "cluster_id": to_decimal(cluster_id),
@@ -332,6 +342,7 @@ def populate_narrative_clusters(videos: dict, dry_run: bool = False):
 
 # ── Step 4: Verify ────────────────────────────────────────────────────────────
 
+
 def verify_migration():
     """Spot-check a few items to confirm data landed correctly."""
     dynamodb = boto3.resource("dynamodb", region_name=REGION)
@@ -374,8 +385,11 @@ def verify_migration():
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Migrate Qdrant intelligence to DynamoDB")
+    parser = argparse.ArgumentParser(
+        description="Migrate Qdrant intelligence to DynamoDB"
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",

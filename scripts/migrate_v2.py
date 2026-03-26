@@ -16,6 +16,7 @@ from decimal import Decimal
 from collections import Counter, defaultdict
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -248,8 +249,12 @@ def migrate_clusters(videos):
             "channel_count": dec(len(channels)),
             "channels": sorted(channels),
             "top_topics": [t[0] for t in topics_counter.most_common(5)],
-            "dominant_category": categories.most_common(1)[0][0] if categories else "Other",
-            "dominant_sentiment": sentiments.most_common(1)[0][0] if sentiments else "neutral",
+            "dominant_category": (
+                categories.most_common(1)[0][0] if categories else "Other"
+            ),
+            "dominant_sentiment": (
+                sentiments.most_common(1)[0][0] if sentiments else "neutral"
+            ),
             "breaking_count": dec(breaking),
             "total_views": dec(views),
             "total_likes": dec(likes),
@@ -287,7 +292,7 @@ def verify():
     while True:
         resp = videos_table.scan(
             **scan_kwargs,
-            ProjectionExpression="SortKey, topics, sentiment, cluster_id, week"
+            ProjectionExpression="SortKey, topics, sentiment, cluster_id, week",
         )
         all_items.extend(resp["Items"])
         if "LastEvaluatedKey" not in resp:
@@ -337,6 +342,7 @@ def verify():
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--verify-only", action="store_true")
     args = parser.parse_args()

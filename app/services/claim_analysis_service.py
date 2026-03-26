@@ -84,14 +84,17 @@ class ClaimAnalysisService:
                 cid = item.get("cluster_id")
                 claims = item.get("key_claims", [])
                 if cid is not None and claims:
-                    cluster_videos[int(cid)].append({
-                        "video_id": item.get("SortKey", ""),
-                        "channel": item.get("channel") or item.get("PartitionKey", ""),
-                        "title": item.get("title", ""),
-                        "sentiment": item.get("sentiment", "neutral"),
-                        "key_claims": claims,
-                        "transcript": item.get("transcript", ""),
-                    })
+                    cluster_videos[int(cid)].append(
+                        {
+                            "video_id": item.get("SortKey", ""),
+                            "channel": item.get("channel")
+                            or item.get("PartitionKey", ""),
+                            "title": item.get("title", ""),
+                            "sentiment": item.get("sentiment", "neutral"),
+                            "key_claims": claims,
+                            "transcript": item.get("transcript", ""),
+                        }
+                    )
             if "LastEvaluatedKey" not in resp:
                 break
             scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
@@ -125,14 +128,16 @@ class ClaimAnalysisService:
                     seen.add(claim)
 
                     excerpt = self._extract_excerpt(transcript, claim)
-                    claims.append({
-                        "claim": claim,
-                        "channel": v["channel"],
-                        "video_id": v["video_id"],
-                        "video_title": v["title"],
-                        "sentiment": v["sentiment"],
-                        "transcript_excerpt": excerpt,
-                    })
+                    claims.append(
+                        {
+                            "claim": claim,
+                            "channel": v["channel"],
+                            "video_id": v["video_id"],
+                            "video_title": v["title"],
+                            "sentiment": v["sentiment"],
+                            "transcript_excerpt": excerpt,
+                        }
+                    )
 
             cluster_claims[cid] = claims
             logger.info(f"CLAIM_COLLECT cluster={cid} claims={len(claims)}")
@@ -150,7 +155,7 @@ class ClaimAnalysisService:
         claim_set = set(claim_words)
 
         for i in range(len(words)):
-            chunk = words[i:i + len(claim_words) + 10]
+            chunk = words[i : i + len(claim_words) + 10]
             overlap = len(claim_set & set(w.lower().strip(".,!?\"'") for w in chunk))
             if overlap > best_score:
                 best_score = overlap
@@ -174,7 +179,9 @@ class ClaimAnalysisService:
         vectors = self._chunker.embed(claim_texts, is_query=False)
         return np.array(vectors, dtype=np.float32)
 
-    def _group_similar_claims(self, claims, similarity_matrix, threshold=CLAIM_SIMILARITY_THRESHOLD):
+    def _group_similar_claims(
+        self, claims, similarity_matrix, threshold=CLAIM_SIMILARITY_THRESHOLD
+    ):
         n = len(claims)
         if n == 0:
             return []
@@ -200,7 +207,11 @@ class ClaimAnalysisService:
     # ── Step 4: Classify ─────────────────────────────────────────────────────
 
     def _compute_framing_divergence(self, group_claims):
-        excerpts = [c["transcript_excerpt"] for c in group_claims if c.get("transcript_excerpt", "").strip()]
+        excerpts = [
+            c["transcript_excerpt"]
+            for c in group_claims
+            if c.get("transcript_excerpt", "").strip()
+        ]
         if len(excerpts) < 2:
             return 0.0
         vectors = self._embed_claims(excerpts)
@@ -223,43 +234,62 @@ class ClaimAnalysisService:
             representative = group_claims[0]
 
             if len(channels) >= 3:
-                consensus.append({
-                    "claim": representative["claim"],
-                    "sources": sorted(channels),
-                    "source_count": len(channels),
-                    "video_ids": [c["video_id"] for c in group_claims],
-                    "transcript_excerpt": representative["transcript_excerpt"],
-                })
+                consensus.append(
+                    {
+                        "claim": representative["claim"],
+                        "sources": sorted(channels),
+                        "source_count": len(channels),
+                        "video_ids": [c["video_id"] for c in group_claims],
+                        "transcript_excerpt": representative["transcript_excerpt"],
+                    }
+                )
             elif len(channels) >= 2:
                 divergence = self._compute_framing_divergence(group_claims)
-                perspectives = [{
-                    "channel": c["channel"],
-                    "sentiment": c["sentiment"],
-                    "video_id": c["video_id"],
-                    "video_title": c["video_title"],
-                    "transcript_excerpt": c["transcript_excerpt"],
-                } for c in group_claims]
-                debated.append({
-                    "claim": representative["claim"],
-                    "perspectives": perspectives,
-                    "source_count": len(channels),
-                    "framing_divergence": divergence,
-                })
+                perspectives = [
+                    {
+                        "channel": c["channel"],
+                        "sentiment": c["sentiment"],
+                        "video_id": c["video_id"],
+                        "video_title": c["video_title"],
+                        "transcript_excerpt": c["transcript_excerpt"],
+                    }
+                    for c in group_claims
+                ]
+                debated.append(
+                    {
+                        "claim": representative["claim"],
+                        "perspectives": perspectives,
+                        "source_count": len(channels),
+                        "framing_divergence": divergence,
+                    }
+                )
             elif len(channels) == 1 and len(group_indices) == 1:
-                unique.append({
-                    "claim": representative["claim"],
-                    "channel": representative["channel"],
-                    "video_id": representative["video_id"],
-                    "video_title": representative["video_title"],
-                    "transcript_excerpt": representative["transcript_excerpt"],
-                })
+                unique.append(
+                    {
+                        "claim": representative["claim"],
+                        "channel": representative["channel"],
+                        "video_id": representative["video_id"],
+                        "video_title": representative["video_title"],
+                        "transcript_excerpt": representative["transcript_excerpt"],
+                    }
+                )
 
         return {"consensus": consensus, "debated": debated, "unique": unique}
 
     def _select_top_claims(self, classified, max_per_type=3):
-        consensus = sorted(classified["consensus"], key=lambda c: c["source_count"], reverse=True)[:max_per_type]
-        debated = sorted(classified["debated"], key=lambda c: c.get("framing_divergence", 0), reverse=True)[:max_per_type]
-        unique = sorted(classified["unique"], key=lambda c: len(c.get("transcript_excerpt", "")), reverse=True)[:max_per_type]
+        consensus = sorted(
+            classified["consensus"], key=lambda c: c["source_count"], reverse=True
+        )[:max_per_type]
+        debated = sorted(
+            classified["debated"],
+            key=lambda c: c.get("framing_divergence", 0),
+            reverse=True,
+        )[:max_per_type]
+        unique = sorted(
+            classified["unique"],
+            key=lambda c: len(c.get("transcript_excerpt", "")),
+            reverse=True,
+        )[:max_per_type]
         return {"consensus": consensus, "debated": debated, "unique": unique}
 
     # ── Step 5: Write to DynamoDB ────────────────────────────────────────────
@@ -288,7 +318,9 @@ class ClaimAnalysisService:
                 c = len(claims_data.get("consensus", []))
                 d = len(claims_data.get("debated", []))
                 u = len(claims_data.get("unique", []))
-                logger.info(f"CLAIM_WRITTEN cluster={cid} consensus={c} debated={d} unique={u}")
+                logger.info(
+                    f"CLAIM_WRITTEN cluster={cid} consensus={c} debated={d} unique={u}"
+                )
             except Exception as exc:
                 logger.error(f"CLAIM_WRITE_FAILED cluster={cid} error={exc}")
 
@@ -314,13 +346,16 @@ class ClaimAnalysisService:
                 cluster_results[cid] = {
                     "consensus": [],
                     "debated": [],
-                    "unique": [{
-                        "claim": c["claim"],
-                        "channel": c["channel"],
-                        "video_id": c["video_id"],
-                        "video_title": c["video_title"],
-                        "transcript_excerpt": c["transcript_excerpt"],
-                    } for c in claims[:max_per_type]],
+                    "unique": [
+                        {
+                            "claim": c["claim"],
+                            "channel": c["channel"],
+                            "video_id": c["video_id"],
+                            "video_title": c["video_title"],
+                            "transcript_excerpt": c["transcript_excerpt"],
+                        }
+                        for c in claims[:max_per_type]
+                    ],
                 }
                 continue
 

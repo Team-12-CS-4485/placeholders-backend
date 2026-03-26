@@ -43,6 +43,7 @@ def get_clients():
 
 # ── Step 1: Add GSIs to youtube-videos ────────────────────────────────────────
 
+
 def add_gsis_to_youtube_videos(client):
     """
     Add three GSIs to youtube-videos table.
@@ -89,8 +90,7 @@ def add_gsis_to_youtube_videos(client):
     try:
         desc = client.describe_table(TableName=YOUTUBE_VIDEOS_TABLE)
         existing_gsis = {
-            gsi["IndexName"]
-            for gsi in desc["Table"].get("GlobalSecondaryIndexes", [])
+            gsi["IndexName"] for gsi in desc["Table"].get("GlobalSecondaryIndexes", [])
         }
     except ClientError as e:
         print(f"ERROR: Cannot describe table {YOUTUBE_VIDEOS_TABLE}: {e}")
@@ -150,6 +150,7 @@ def _wait_for_gsi(client, table_name, gsi_name, timeout=300):
 
 # ── Step 2: Create narrative-clusters table ───────────────────────────────────
 
+
 def create_narrative_clusters_table(client):
     """
     Create the narrative-clusters table.
@@ -199,6 +200,7 @@ def _wait_for_table(client, table_name, timeout=120):
 
 # ── Step 3: Verify ────────────────────────────────────────────────────────────
 
+
 def verify_tables(client):
     """Print status of both tables and all GSIs."""
     print("\n=== Verification ===\n")
@@ -211,13 +213,17 @@ def verify_tables(client):
         print(f"  Status: {table['TableStatus']}")
         print(f"  Items: {table.get('ItemCount', 'unknown')}")
         print(f"  Key: {_format_key_schema(table['KeySchema'])}")
-        print(f"  Billing: {table.get('BillingModeSummary', {}).get('BillingMode', 'unknown')}")
+        print(
+            f"  Billing: {table.get('BillingModeSummary', {}).get('BillingMode', 'unknown')}"
+        )
 
         gsis = table.get("GlobalSecondaryIndexes", [])
         if gsis:
             print(f"  GSIs ({len(gsis)}):")
             for gsi in gsis:
-                print(f"    - {gsi['IndexName']}: {_format_key_schema(gsi['KeySchema'])} [{gsi['IndexStatus']}]")
+                print(
+                    f"    - {gsi['IndexName']}: {_format_key_schema(gsi['KeySchema'])} [{gsi['IndexStatus']}]"
+                )
         else:
             print("  GSIs: none")
 
@@ -234,7 +240,9 @@ def verify_tables(client):
         print(f"  Status: {table['TableStatus']}")
         print(f"  Items: {table.get('ItemCount', 'unknown')}")
         print(f"  Key: {_format_key_schema(table['KeySchema'])}")
-        print(f"  Billing: {table.get('BillingModeSummary', {}).get('BillingMode', 'unknown')}")
+        print(
+            f"  Billing: {table.get('BillingModeSummary', {}).get('BillingMode', 'unknown')}"
+        )
         print(f"  GSIs: none (by design — only ~12 items)")
 
     except ClientError as e:
@@ -254,6 +262,7 @@ def _format_key_schema(key_schema):
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="DynamoDB schema migration")
@@ -294,7 +303,9 @@ def main():
     print("\n=== Migration Complete ===")
     print("\nNext steps:")
     print("  1. Update pipeline_service.py to write intelligence fields to DynamoDB")
-    print("  2. Update clustering_service.py to write cluster_id to DynamoDB + narrative-clusters")
+    print(
+        "  2. Update clustering_service.py to write cluster_id to DynamoDB + narrative-clusters"
+    )
     print("  3. Update claim_analysis_service.py to write to narrative-clusters")
     print("  4. Update trend_service.py to read from DynamoDB instead of Qdrant")
 

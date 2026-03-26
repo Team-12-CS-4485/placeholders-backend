@@ -81,9 +81,11 @@ class ClusteringService:
             for point in results:
                 vid = point.payload.get("transcript_index", "")
                 if vid:
-                    video_chunks.setdefault(vid, []).append({
-                        "vector": point.vector,
-                    })
+                    video_chunks.setdefault(vid, []).append(
+                        {
+                            "vector": point.vector,
+                        }
+                    )
             if offset is None:
                 break
 
@@ -174,23 +176,35 @@ class ClusteringService:
         logger.info(f"UMAP_COMPLETE {matrix.shape[1]}d → {n_components}d")
         return reduced
 
-    def _cluster_vectors(self, matrix, min_cluster_size=3, min_samples=2,
-                         umap_components=15, umap_neighbors=15):
-        reduced = self._reduce_dimensions(matrix, n_components=umap_components,
-                                          n_neighbors=umap_neighbors)
+    def _cluster_vectors(
+        self,
+        matrix,
+        min_cluster_size=3,
+        min_samples=2,
+        umap_components=15,
+        umap_neighbors=15,
+    ):
+        reduced = self._reduce_dimensions(
+            matrix, n_components=umap_components, n_neighbors=umap_neighbors
+        )
         try:
             from sklearn.cluster import HDBSCAN as SklearnHDBSCAN
+
             clusterer = SklearnHDBSCAN(
-                min_cluster_size=min_cluster_size, min_samples=min_samples,
-                metric="euclidean", store_centers="centroid",
+                min_cluster_size=min_cluster_size,
+                min_samples=min_samples,
+                metric="euclidean",
+                store_centers="centroid",
             )
             clusterer.fit(reduced)
             labels = clusterer.labels_
             probabilities = getattr(clusterer, "probabilities_", np.ones(len(labels)))
         except ImportError:
             import hdbscan
+
             clusterer = hdbscan.HDBSCAN(
-                min_cluster_size=min_cluster_size, min_samples=min_samples,
+                min_cluster_size=min_cluster_size,
+                min_samples=min_samples,
                 metric="euclidean",
             )
             clusterer.fit(reduced)
@@ -234,9 +248,14 @@ class ClusteringService:
 
             cluster_topic_counts[cid] = tc
             cluster_stats[cid] = {
-                "vids": vids, "channels": channels, "categories": categories,
-                "sentiments": sentiments, "breaking": breaking,
-                "views": views, "likes": likes, "comments": comments,
+                "vids": vids,
+                "channels": channels,
+                "categories": categories,
+                "sentiments": sentiments,
+                "breaking": breaking,
+                "views": views,
+                "likes": likes,
+                "comments": comments,
             }
 
         # TF-IDF scoring
@@ -254,7 +273,10 @@ class ClusteringService:
             scored = []
             for topic, count in tc.items():
                 tf = count / size
-                idf = math.log((n_clusters + 1) / (topic_cluster_count.get(topic, 0) + 1)) + 1
+                idf = (
+                    math.log((n_clusters + 1) / (topic_cluster_count.get(topic, 0) + 1))
+                    + 1
+                )
                 scored.append((topic, tf * idf))
             scored.sort(key=lambda x: x[1], reverse=True)
             cluster_scored[cid] = scored
@@ -265,7 +287,9 @@ class ClusteringService:
         if -1 in cluster_members:
             cluster_labels[-1] = "Unclustered"
 
-        for cid in sorted(real_cids, key=lambda c: len(cluster_members[c]), reverse=True):
+        for cid in sorted(
+            real_cids, key=lambda c: len(cluster_members[c]), reverse=True
+        ):
             chosen = None
             for topic, _ in cluster_scored[cid]:
                 if topic not in used:
@@ -288,22 +312,33 @@ class ClusteringService:
                 "channels": sorted(stats["channels"]),
                 "channel_count": len(stats["channels"]),
                 "top_topics": [t[0] for t in top_topics],
-                "dominant_category": stats["categories"].most_common(1)[0][0] if stats["categories"] else "Other",
-                "dominant_sentiment": stats["sentiments"].most_common(1)[0][0] if stats["sentiments"] else "neutral",
+                "dominant_category": (
+                    stats["categories"].most_common(1)[0][0]
+                    if stats["categories"]
+                    else "Other"
+                ),
+                "dominant_sentiment": (
+                    stats["sentiments"].most_common(1)[0][0]
+                    if stats["sentiments"]
+                    else "neutral"
+                ),
                 "sentiment_breakdown": dict(stats["sentiments"]),
                 "breaking_count": stats["breaking"],
                 "total_views": stats["views"],
                 "total_likes": stats["likes"],
                 "total_comments": stats["comments"],
             }
-            logger.info(f"CLUSTER_LABELED id={cid} label={cluster_labels[cid]!r} videos={len(vids)}")
+            logger.info(
+                f"CLUSTER_LABELED id={cid} label={cluster_labels[cid]!r} videos={len(vids)}"
+            )
 
         return cluster_info
 
     # ── Step 6: Write to DynamoDB ────────────────────────────────────────────
 
-    def _write_clusters_to_dynamodb(self, video_ids, labels, probabilities,
-                                     cluster_info, meta_map):
+    def _write_clusters_to_dynamodb(
+        self, video_ids, labels, probabilities, cluster_info, meta_map
+    ):
         updated = 0
         for vid, label, prob in zip(video_ids, labels, probabilities):
             label_int = int(label)
@@ -318,19 +353,28 @@ class ClusteringService:
                     Key={"PartitionKey": channel, "SortKey": vid},
                     UpdateExpression="SET #clabel = :clabel, #cconf = :cconf REMOVE #cid",
                     ExpressionAttributeNames={
-                        "#cid": "cluster_id", "#clabel": "cluster_label", "#cconf": "cluster_confidence",
+                        "#cid": "cluster_id",
+                        "#clabel": "cluster_label",
+                        "#cconf": "cluster_confidence",
                     },
-                    ExpressionAttributeValues={":clabel": "Unclustered", ":cconf": _dec(0)},
+                    ExpressionAttributeValues={
+                        ":clabel": "Unclustered",
+                        ":cconf": _dec(0),
+                    },
                 )
             else:
                 self._videos_table.update_item(
                     Key={"PartitionKey": channel, "SortKey": vid},
                     UpdateExpression="SET #cid = :cid, #clabel = :clabel, #cconf = :cconf",
                     ExpressionAttributeNames={
-                        "#cid": "cluster_id", "#clabel": "cluster_label", "#cconf": "cluster_confidence",
+                        "#cid": "cluster_id",
+                        "#clabel": "cluster_label",
+                        "#cconf": "cluster_confidence",
                     },
                     ExpressionAttributeValues={
-                        ":cid": _dec(label_int), ":clabel": cluster_label, ":cconf": _dec(confidence),
+                        ":cid": _dec(label_int),
+                        ":clabel": cluster_label,
+                        ":cconf": _dec(confidence),
                     },
                 )
             updated += 1
@@ -367,8 +411,9 @@ class ClusteringService:
 
     # ── Public API ───────────────────────────────────────────────────────────
 
-    def run_clustering(self, min_cluster_size=3, min_samples=2,
-                       umap_components=15, umap_neighbors=15):
+    def run_clustering(
+        self, min_cluster_size=3, min_samples=2, umap_components=15, umap_neighbors=15
+    ):
         # 1. Vectors from Qdrant
         video_chunks = self._scroll_vectors()
         if not video_chunks:

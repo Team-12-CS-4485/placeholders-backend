@@ -68,6 +68,7 @@ def run_sync():
     print("=" * 60)
 
     from app.services.sync_missing import main as sync_main
+
     sync_main()
 
 

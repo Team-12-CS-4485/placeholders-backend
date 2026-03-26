@@ -61,7 +61,9 @@ def _dec(val):
 
 
 class PipelineService:
-    def __init__(self, storage_service=None, embedding_service=None, vector_service=None):
+    def __init__(
+        self, storage_service=None, embedding_service=None, vector_service=None
+    ):
         self.storage_service = storage_service or StorageService()
         self.embedding_service = embedding_service or EmbeddingService(
             api_keys=settings.genai_api_keys
@@ -156,9 +158,7 @@ class PipelineService:
                 f"fields={list(names.values())}"
             )
         except Exception as exc:
-            self.logger.error(
-                f"DYNAMO_INTEL_FAILED videoId={video_id} error={exc}"
-            )
+            self.logger.error(f"DYNAMO_INTEL_FAILED videoId={video_id} error={exc}")
 
     # ── Main pipeline ─────────────────────────────────────────────────────────
 
@@ -200,14 +200,14 @@ class PipelineService:
                 total_videos += len(videos)
 
                 for video in videos:
-                    video_id      = video.get("videoId", "")
-                    title         = video.get("title", "")
-                    channel       = video.get("channel", "")
-                    published_at  = video.get("published_at", "")
-                    view_count    = video.get("view_count", 0)
-                    like_count    = video.get("like_count", 0)
+                    video_id = video.get("videoId", "")
+                    title = video.get("title", "")
+                    channel = video.get("channel", "")
+                    published_at = video.get("published_at", "")
+                    view_count = video.get("view_count", 0)
+                    like_count = video.get("like_count", 0)
                     comment_count = video.get("comment_count", 0)
-                    transcript    = video.get("transcript", "")
+                    transcript = video.get("transcript", "")
 
                     transcript_key = f"{source_key}::{video_id}"
 
@@ -216,10 +216,12 @@ class PipelineService:
                         existing = self.vector_service.client.scroll(
                             collection_name=self.vector_service.collection_name,
                             scroll_filter=models.Filter(
-                                must=[models.FieldCondition(
-                                    key="transcript_index",
-                                    match=models.MatchValue(value=video_id)
-                                )]
+                                must=[
+                                    models.FieldCondition(
+                                        key="transcript_index",
+                                        match=models.MatchValue(value=video_id),
+                                    )
+                                ]
                             ),
                             limit=1,
                         )[0]
@@ -244,9 +246,11 @@ class PipelineService:
                             f"chunks={len(chunks)} "
                             f"key=#{self.embedding_service.current_key_index + 1}"
                         )
-                        intelligence = self.embedding_service.extract_video_intelligence(
-                            chunks=chunks,
-                            title=title,
+                        intelligence = (
+                            self.embedding_service.extract_video_intelligence(
+                                chunks=chunks,
+                                title=title,
+                            )
                         )
                         self.logger.info(
                             f"GEMINI_INTELLIGENCE_DONE videoId={video_id} "
@@ -286,14 +290,16 @@ class PipelineService:
                             "intelligence": intelligence,
                             "error": None,
                         }
-                        object_result["transcript_results"].append({
-                            "transcript_key": transcript_key,
-                            "video_id":       video_id,
-                            "chunk_count":    len(chunks),
-                            "chunks_stored":  points_indexed,
-                            "intelligence":   intelligence,
-                            "error":          None,
-                        })
+                        object_result["transcript_results"].append(
+                            {
+                                "transcript_key": transcript_key,
+                                "video_id": video_id,
+                                "chunk_count": len(chunks),
+                                "chunks_stored": points_indexed,
+                                "intelligence": intelligence,
+                                "error": None,
+                            }
+                        )
                         analyzed_videos += 1
                         total_chunks_stored += points_indexed
                         self.logger.info(
@@ -310,14 +316,16 @@ class PipelineService:
                             "error": str(exc),
                         }
                         object_result["status"] = "partial_failed"
-                        object_result["transcript_results"].append({
-                            "transcript_key": transcript_key,
-                            "video_id":       video_id,
-                            "chunk_count":    len(chunks),
-                            "chunks_stored":  0,
-                            "intelligence":   None,
-                            "error":          str(exc),
-                        })
+                        object_result["transcript_results"].append(
+                            {
+                                "transcript_key": transcript_key,
+                                "video_id": video_id,
+                                "chunk_count": len(chunks),
+                                "chunks_stored": 0,
+                                "intelligence": None,
+                                "error": str(exc),
+                            }
+                        )
                         self.logger.error(
                             f"VIDEO_FAILED videoId={video_id} error={exc}"
                         )
