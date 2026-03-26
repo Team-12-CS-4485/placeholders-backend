@@ -13,6 +13,7 @@ Handles all AWS S3 interactions for the pipeline:
 
 import json
 import re
+from typing import Optional
 
 import boto3
 from botocore.exceptions import ClientError
@@ -80,6 +81,69 @@ class StorageService:
             "total_returned": len(items),
             "next_cursor": next_cursor,
         }
+
+
+    def get_video_by_id(self, video_id: str) -> Optional[dict]:
+        """Find a single video by videoId."""
+        paginator = self.s3_client.get_paginator("list_objects_v2")
+
+        for page in paginator.paginate(
+            Bucket=self.bucket, Prefix=settings.s3_prefix
+        ):
+            for obj in page.get("Contents", []):
+                key = obj.get("Key", "")
+                if not key or key.endswith("/"):
+                    continue
+
+                try:
+                    payload = self.get_json_object(key)
+                except (ClientError, json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+
+                payload_channel = payload.get("channel", "")
+
+                for video in payload.get("videos", []):
+                    if video.get("videoId", "") != video_id:
+                        continue
+
+                    fresh_stats = {}
+                    if payload_channel and video_id:
+                        fresh_stats = self.get_video_metadata(
+                            payload_channel, video_id
+                        )
+
+                    top_comments = []
+                    for comment in video.get("topComments", []):
+                        if not isinstance(comment, dict):
+                            continue
+                        top_comments.append(
+                            {
+                                "author": comment.get("author", ""),
+                                "text": comment.get("text", ""),
+                                "likes": int(comment.get("likes", 0)),
+                            }
+                        )
+
+                    return {
+                        "video_id": video_id,
+                        "channel": payload_channel,
+                        "title": video.get("title", ""),
+                        "description": video.get("description", ""),
+                        "published_at": video.get("publishedAt", ""),
+                        "view_count": fresh_stats.get(
+                            "view_count", int(video.get("viewCount", 0))
+                        ),
+                        "like_count": fresh_stats.get(
+                            "like_count", int(video.get("likeCount", 0))
+                        ),
+                        "comment_count": fresh_stats.get(
+                            "comment_count", int(video.get("commentCount", 0))
+                        ),
+                        "transcript": video.get("transcript", ""),
+                        "top_comments": top_comments,
+                    }
+
+        return None
 
     def list_object_keys(self, prefix=None, limit=None):
         use_prefix = prefix if prefix is not None else settings.s3_prefix
