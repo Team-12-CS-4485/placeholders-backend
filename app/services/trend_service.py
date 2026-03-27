@@ -53,8 +53,8 @@ class TrendService:
             week_data, channel_count, total_views, sentiments
         )
         _label_map = {
-            "negative": "Leaning Critical",
-            "positive": "Leaning Favorable",
+            "negative": "Negative",
+            "positive": "Positive",
             "neutral": "Neutral",
         }
         sentiment_label = _label_map.get(dominant_sentiment, "Neutral")
@@ -98,6 +98,8 @@ class TrendService:
             "top_claims": top_claims,
             "top_topics": list(item.get("top_topics", [])),
             "claims": classified_claims,
+            "narrative_headline": item.get("narrative_headline"),
+            "narrative_summary": item.get("narrative_summary"),
         }
 
     # ── Internal cluster fetching ─────────────────────────────────────────────
@@ -198,24 +200,16 @@ class TrendService:
         if neg_pct > 0.30 and pos_pct > 0.30:
             return "Polarized"
 
-        if neg_pct >= 0.90:
-            return "Overwhelmingly Critical"
-        if neg_pct >= 0.70:
-            return "Heavily Critical"
         if neg_pct >= 0.50:
-            return "Leaning Critical"
+            return "Negative"
 
-        if pos_pct >= 0.90:
-            return "Strongly Favorable"
-        if pos_pct >= 0.70:
-            return "Mostly Favorable"
         if pos_pct >= 0.50:
-            return "Leaning Favorable"
+            return "Positive"
 
-        if neu_pct >= 0.70:
-            return "Measured"
+        if neu_pct >= 0.50:
+            return "Neutral"
 
-        return "Contested"
+        return "Polarized"
 
     def _compute_recent_sentiment_label(
         self, week_data: list[dict], overall_label: str
@@ -242,26 +236,18 @@ class TrendService:
         prev_sentiment = Counter(previous.get("sentiment_breakdown", {}))
         prev_label = self._compute_sentiment_label(prev_sentiment)
 
-        prev_is_critical = "Critical" in prev_label
-        prev_is_favorable = "Favorable" in prev_label
-        latest_is_critical = "Critical" in latest_label
-        latest_is_favorable = "Favorable" in latest_label
-
-        if (prev_is_critical and latest_is_favorable) or (
-            prev_is_favorable and latest_is_critical
+        # Reversal — flipped direction
+        if (prev_label == "Negative" and latest_label == "Positive") or (
+            prev_label == "Positive" and latest_label == "Negative"
         ):
             return f"Sentiment Reversal — {latest_label}"
 
-        if prev_label in ("Contested", "Measured", "Polarized", "Neutral"):
-            if "Overwhelmingly" in latest_label:
-                return f"Sentiment Collapse — {latest_label}"
-
-        if prev_is_critical and latest_is_critical:
-            if "Overwhelmingly" in latest_label and "Overwhelmingly" not in prev_label:
-                return f"Intensifying — {latest_label}"
-        if prev_is_favorable and latest_is_favorable:
-            if "Strongly" in latest_label and "Strongly" not in prev_label:
-                return f"Intensifying — {latest_label}"
+        # Collapse — was mixed/neutral, now strongly one direction
+        if prev_label in ("Polarized", "Neutral") and latest_label in (
+            "Negative",
+            "Positive",
+        ):
+            return f"Sentiment Shift — {latest_label}"
 
         return latest_label
 
@@ -355,6 +341,8 @@ class TrendService:
                 "recent_sentiment_label": c["recent_sentiment_label"],
                 "dominant_sentiment": c["dominant_sentiment"],
                 "top_topics": c["top_topics"],
+                "narrative_headline": c.get("narrative_headline"),
+                "narrative_summary": c.get("narrative_summary"),
             }
             for c in sorted_trends
         ]
@@ -386,6 +374,8 @@ class TrendService:
             "week_data": c["week_data"],
             "top_claims": c["top_claims"],
             "top_topics": c["top_topics"],
+            "narrative_headline": c.get("narrative_headline"),
+            "narrative_summary": c.get("narrative_summary"),
         }
 
     def get_trend_sentiment(self, cluster_id: int) -> dict:

@@ -77,6 +77,8 @@ class TrendListItem(BaseModel):
     recent_sentiment_label: str
     dominant_sentiment: str
     top_topics: list[str]
+    narrative_headline: Optional[str] = None
+    narrative_summary: Optional[str] = None
 
 
 class TrendListResponse(BaseModel):
@@ -112,6 +114,8 @@ class TrendDetail(BaseModel):
     week_data: list[WeekData]
     top_claims: list[str]
     top_topics: list[str]
+    narrative_headline: Optional[str] = None
+    narrative_summary: Optional[str] = None
 
 
 # ── GET /api/trends/{id}/sentiment ───────────────────────────────────────────
