@@ -14,6 +14,17 @@ class VideoItem(BaseModel):
     comment_count: int
 
 
+class VideoTopComment(BaseModel):
+    author: str
+    text: str
+    likes: int
+
+
+class VideoDetailItem(VideoItem):
+    transcript: str
+    top_comments: List[VideoTopComment]
+
+
 class VideoListResponse(BaseModel):
     items: List[VideoItem]
     total_returned: int
