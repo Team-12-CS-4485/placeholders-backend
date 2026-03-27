@@ -42,9 +42,13 @@ class TrendService:
         )
 
         # Use dominant_sentiment as a proxy Counter for trend classification
-        sentiments = Counter({dominant_sentiment: 1}) if dominant_sentiment else Counter()
+        sentiments = (
+            Counter({dominant_sentiment: 1}) if dominant_sentiment else Counter()
+        )
 
-        heat_score = self._compute_heat_score(channel_count, breaking_count, total_views)
+        heat_score = self._compute_heat_score(
+            channel_count, breaking_count, total_views
+        )
         trend_type, metric_badge = self._classify_trend(
             week_data, channel_count, total_views, sentiments
         )
@@ -133,7 +137,11 @@ class TrendService:
 
         sorted_weeks = sorted(
             week_data,
-            key=lambda w: int(w["week"][4:]) if w["week"].startswith("week") and w["week"][4:].isdigit() else 9999,
+            key=lambda w: (
+                int(w["week"][4:])
+                if w["week"].startswith("week") and w["week"][4:].isdigit()
+                else 9999
+            ),
         )
         latest = sorted_weeks[-1]
         previous = sorted_weeks[-2]
@@ -147,7 +155,9 @@ class TrendService:
         if latest_count == 0 and prev_count > 0:
             return "fading", "Fading"
 
-        vol_change = ((latest_count - prev_count) / prev_count * 100) if prev_count > 0 else 0
+        vol_change = (
+            ((latest_count - prev_count) / prev_count * 100) if prev_count > 0 else 0
+        )
 
         if channel_count >= 7:
             if vol_change > 20:
@@ -215,7 +225,11 @@ class TrendService:
 
         sorted_weeks = sorted(
             week_data,
-            key=lambda w: int(w["week"][4:]) if w["week"].startswith("week") and w["week"][4:].isdigit() else 9999,
+            key=lambda w: (
+                int(w["week"][4:])
+                if w["week"].startswith("week") and w["week"][4:].isdigit()
+                else 9999
+            ),
         )
         latest = sorted_weeks[-1]
         latest_sentiment = Counter(latest.get("sentiment_breakdown", {}))
@@ -445,7 +459,11 @@ class TrendService:
         weeks = []
         for _, data in sorted(
             week_summary.items(),
-            key=lambda kv: int(kv[0][4:]) if kv[0].startswith("week") and kv[0][4:].isdigit() else 9999,
+            key=lambda kv: (
+                int(kv[0][4:])
+                if kv[0].startswith("week") and kv[0][4:].isdigit()
+                else 9999
+            ),
         ):
             sentiments = data.pop("_sentiments")
             data["dominant_sentiment"] = self._compute_sentiment_label(sentiments)

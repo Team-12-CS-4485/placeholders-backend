@@ -5,8 +5,8 @@ pipeline.py - Pydantic Request/Response Schemas
 from typing import Optional
 from pydantic import BaseModel, Field
 
-
 # ── Requests ──────────────────────────────────────────────────────────────────
+
 
 class PipelineRunRequest(BaseModel):
     prefix: Optional[str] = None
@@ -19,6 +19,7 @@ class VectorSearchRequest(BaseModel):
 
 
 # ── Pipeline response models ──────────────────────────────────────────────────
+
 
 class VideoIntelligence(BaseModel):
     topics: list[str]
@@ -76,6 +77,7 @@ class PipelineRunResponse(BaseModel):
 
 # ── Full pipeline response ────────────────────────────────────────────────────
 
+
 class IngestionSummary(BaseModel):
     objects_processed: int
     videos_found: int
@@ -102,6 +104,7 @@ class FullPipelineResponse(BaseModel):
 
 
 # ── Search response models ────────────────────────────────────────────────────
+
 
 class SearchHit(BaseModel):
     id: str

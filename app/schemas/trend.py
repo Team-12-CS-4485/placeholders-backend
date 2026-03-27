@@ -7,8 +7,8 @@ from __future__ import annotations
 from typing import Optional
 from pydantic import BaseModel
 
-
 # ── Week-level data ───────────────────────────────────────────────────────────
+
 
 class WeekData(BaseModel):
     week: str
@@ -20,6 +20,7 @@ class WeekData(BaseModel):
 
 
 # ── Claims schemas ────────────────────────────────────────────────────────────
+
 
 class ConsensusClaim(BaseModel):
     claim: str
@@ -60,6 +61,7 @@ class ClassifiedClaims(BaseModel):
 
 # ── GET /api/trends — lean list ───────────────────────────────────────────────
 
+
 class TrendListItem(BaseModel):
     cluster_id: int
     label: str
@@ -83,6 +85,7 @@ class TrendListResponse(BaseModel):
 
 
 # ── GET /api/trends/{id} — full detail ───────────────────────────────────────
+
 
 class TrendDetail(BaseModel):
     cluster_id: int
@@ -113,6 +116,7 @@ class TrendDetail(BaseModel):
 
 # ── GET /api/trends/{id}/sentiment ───────────────────────────────────────────
 
+
 class WeekSentiment(BaseModel):
     week: str
     sentiment_breakdown: dict[str, int]
@@ -130,12 +134,14 @@ class TrendSentiment(BaseModel):
 
 # ── GET /api/trends/{id}/claims ──────────────────────────────────────────────
 
+
 class TrendClaims(BaseModel):
     cluster_id: int
     claims: ClassifiedClaims
 
 
 # ── GET /api/weeks ────────────────────────────────────────────────────────────
+
 
 class WeekSummary(BaseModel):
     week: str

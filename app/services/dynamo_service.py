@@ -94,24 +94,24 @@ class DynamoService:
         items = []
         for raw in response.get("Items", []):
             item = self._deserialize(raw)
-            items.append({
-                "video_id": item.get("SortKey", ""),
-                "channel": item.get("channel") or item.get("PartitionKey", ""),
-                "title": item.get("title", ""),
-                "description": item.get("description", ""),
-                "published_at": item.get("publishedAt", ""),
-                "view_count": int(item.get("viewCount") or 0),
-                "like_count": int(item.get("likeCount") or 0),
-                "comment_count": int(item.get("commentCount") or 0),
-            })
+            items.append(
+                {
+                    "video_id": item.get("SortKey", ""),
+                    "channel": item.get("channel") or item.get("PartitionKey", ""),
+                    "title": item.get("title", ""),
+                    "description": item.get("description", ""),
+                    "published_at": item.get("publishedAt", ""),
+                    "view_count": int(item.get("viewCount") or 0),
+                    "like_count": int(item.get("likeCount") or 0),
+                    "comment_count": int(item.get("commentCount") or 0),
+                }
+            )
 
         next_cursor = None
         last_key = response.get("LastEvaluatedKey")
         if last_key:
             clean_key = self._deserialize(last_key)
-            next_cursor = base64.b64encode(
-                json.dumps(clean_key).encode()
-            ).decode()
+            next_cursor = base64.b64encode(json.dumps(clean_key).encode()).decode()
 
         logger.info(f"DYNAMO_SCAN_VIDEOS returned={len(items)} week={week}")
         return {
@@ -158,7 +158,9 @@ class DynamoService:
                 Key={"cluster_id": Decimal(str(cluster_id))}
             )
         except ClientError as exc:
-            logger.error(f"DYNAMO_GET_CLUSTER_ERROR cluster_id={cluster_id} error={exc}")
+            logger.error(
+                f"DYNAMO_GET_CLUSTER_ERROR cluster_id={cluster_id} error={exc}"
+            )
             raise KeyError(cluster_id)
 
         item = response.get("Item")

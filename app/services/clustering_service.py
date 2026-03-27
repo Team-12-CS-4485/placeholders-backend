@@ -271,21 +271,25 @@ class ClusteringService:
             week_data = []
             for week_name in sorted(
                 week_buckets,
-                key=lambda w: int(w[4:]) if w.startswith("week") and w[4:].isdigit() else 9999,
+                key=lambda w: (
+                    int(w[4:]) if w.startswith("week") and w[4:].isdigit() else 9999
+                ),
             ):
                 wvids = week_buckets[week_name]
                 week_channels = {v.get("channel", "") for v in wvids}
                 week_sentiments = Counter(v.get("sentiment", "neutral") for v in wvids)
                 week_breaking = sum(1 for v in wvids if v.get("is_breaking"))
                 week_views = sum(v.get("view_count", 0) for v in wvids)
-                week_data.append({
-                    "week": week_name,
-                    "video_count": len(wvids),
-                    "channel_count": len(week_channels),
-                    "view_count": week_views,
-                    "breaking_count": week_breaking,
-                    "sentiment_breakdown": dict(week_sentiments),
-                })
+                week_data.append(
+                    {
+                        "week": week_name,
+                        "video_count": len(wvids),
+                        "channel_count": len(week_channels),
+                        "view_count": week_views,
+                        "breaking_count": week_breaking,
+                        "sentiment_breakdown": dict(week_sentiments),
+                    }
+                )
 
             cluster_topic_counts[cid] = tc
             cluster_stats[cid] = {

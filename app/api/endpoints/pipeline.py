@@ -55,7 +55,9 @@ def run_full_pipeline(request: PipelineRunRequest):
                 "total_videos": clustering_result.get("total_videos", 0),
                 "cluster_count": clustering_result.get("cluster_count", 0),
                 "noise_videos": clustering_result.get("noise_videos", 0),
-                "total_chunks_patched": clustering_result.get("total_chunks_patched", 0),
+                "total_chunks_patched": clustering_result.get(
+                    "total_chunks_patched", 0
+                ),
             },
             "claim_analysis": {
                 "clusters_processed": claim_result.get("clusters_processed", 0),
@@ -71,8 +73,12 @@ def run_full_pipeline(request: PipelineRunRequest):
 def search_similar_chunks(request: VectorSearchRequest):
     try:
         limit = request.limit or 5
-        query_vector = EmbeddingService(api_keys=settings.genai_api_keys).embed_query(request.query)
-        hits = VectorService().search_similar_chunks(query_vector=query_vector, limit=limit)
+        query_vector = EmbeddingService(api_keys=settings.genai_api_keys).embed_query(
+            request.query
+        )
+        hits = VectorService().search_similar_chunks(
+            query_vector=query_vector, limit=limit
+        )
         return {"query": request.query, "limit": limit, "hits": hits}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Search failed: {exc}") from exc
