@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.schemas.video import VideoListResponse
 from app.services.dynamo_service import DynamoService
+from app.services.storage_service import StorageService
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
 
