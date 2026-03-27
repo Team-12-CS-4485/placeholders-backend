@@ -26,8 +26,8 @@ def main():
     parser.add_argument(
         "--min-cluster-size",
         type=int,
-        default=3,
-        help="Minimum videos to form a cluster (default: 3)",
+        default=7,
+        help="Minimum videos to form a cluster (default: 7)",
     )
     parser.add_argument(
         "--min-samples",
@@ -47,9 +47,16 @@ def main():
         default=15,
         help="UMAP neighborhood size — higher = more global structure (default: 15)",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Compute clusters but skip all DynamoDB writes",
+    )
     args = parser.parse_args()
 
     print("=== Narrative Clustering ===\n")
+    if args.dry_run:
+        print("*** DRY RUN — no DynamoDB writes will occur ***\n")
 
     service = ClusteringService()
     summary = service.run_clustering(
@@ -57,6 +64,7 @@ def main():
         min_samples=args.min_samples,
         umap_components=args.umap_components,
         umap_neighbors=args.umap_neighbors,
+        dry_run=args.dry_run,
     )
 
     print(f"\nTotal videos:     {summary['total_videos']}")
@@ -76,6 +84,8 @@ def main():
             print(f"    Sentiment: {info['dominant_sentiment']}")
             print(f"    Breaking: {info['breaking_count']}")
             print(f"    Total views: {info['total_views']:,}")
+            print(f"    Top claims: {info['top_claims']}")
+            print(f"    Weeks: {[w['week'] for w in info['week_data']]}")
             print()
 
     # Write summary to file

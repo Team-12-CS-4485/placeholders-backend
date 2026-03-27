@@ -1,10 +1,5 @@
 """
 trend.py - Pydantic schemas for Trend API responses
-
-Shapes match the Figma Trends Archive views:
-- TrendListResponse  → list view (screenshot 1) + grid view (screenshot 2)
-- TrendHeaderStats   → header bar (active narratives, total volume, new signals)
-- TrendItem          → individual trend card/row
 """
 
 from __future__ import annotations
@@ -12,34 +7,30 @@ from __future__ import annotations
 from typing import Optional
 from pydantic import BaseModel
 
+# ── Week-level data ───────────────────────────────────────────────────────────
+
 
 class WeekData(BaseModel):
-    """Per-week metrics for a single trend (powers sparklines + bar charts)."""
-
-    week: str  # "week1", "week2", ...
-    video_count: int  # unique videos this week
-    channel_count: int  # distinct channels covering it
-    view_count: int  # total views this week
-    breaking_count: int  # is_breaking videos
-    sentiment_breakdown: dict[str, int]  # {"positive": 2, "negative": 5, "neutral": 1}
+    week: str
+    video_count: int
+    channel_count: int
+    view_count: int
+    breaking_count: int
+    sentiment_breakdown: dict[str, int]
 
 
-# ── Classified Claims schemas ────────────────────────────────────────────
+# ── Claims schemas ────────────────────────────────────────────────────────────
 
 
 class ConsensusClaim(BaseModel):
-    """Claim reported by 3+ channels — high confidence factual statement."""
-
     claim: str
-    sources: list[str]  # channel names
+    sources: list[str]
     source_count: int
     video_ids: list[str]
     transcript_excerpt: str
 
 
 class DebatedClaimPerspective(BaseModel):
-    """One channel's framing of a debated claim."""
-
     channel: str
     sentiment: str
     video_id: str
@@ -48,17 +39,13 @@ class DebatedClaimPerspective(BaseModel):
 
 
 class DebatedClaim(BaseModel):
-    """Claim reported by 2 channels with different framing."""
-
     claim: str
     perspectives: list[DebatedClaimPerspective]
     source_count: int
-    framing_divergence: float  # 0.0 = identical framing, 1.0 = completely different
+    framing_divergence: float
 
 
 class UniqueClaim(BaseModel):
-    """Claim reported by only one channel — exclusive angle or scoop."""
-
     claim: str
     channel: str
     video_id: str
@@ -67,73 +54,104 @@ class UniqueClaim(BaseModel):
 
 
 class ClassifiedClaims(BaseModel):
-    """Three types of claims per narrative cluster."""
-
     consensus: list[ConsensusClaim]
     debated: list[DebatedClaim]
     unique: list[UniqueClaim]
 
 
-class TrendItem(BaseModel):
-    """
-    Single trend/narrative — powers both list rows and grid cards.
+# ── GET /api/trends — lean list ───────────────────────────────────────────────
 
-    List view uses: label, description, category, metric_badge, trend_type
-    Grid view adds: week_data, sentiment_breakdown, channels
-    """
 
+class TrendListItem(BaseModel):
     cluster_id: int
-    label: str  # cluster_label — e.g. "Maritime Security"
-    description: str  # top key_claim or summary snippet
-    category: str  # dominant_category — e.g. "Middle East Conflict"
-    trend_type: str  # "surging" | "emerging" | "dominant" | "fading" | "holding"
-    metric_badge: str  # display string — "+40% Vol", "High Impact", "Fading"
-
-    # Volume & engagement
-    video_count: int  # total videos across all weeks
-    channel_count: int  # total distinct channels
-    view_count_total: int  # total views across all weeks
-    total_likes: int  # total YouTube likes across all videos
-    total_comments: int  # total YouTube comments across all videos
-    engagement_index: float  # (likes + comments) / views × 10000 — reaction intensity
-    breaking_count: int  # total is_breaking videos
-    heat_score: float  # composite ranking score
-
-    # Sentiment
-    sentiment_breakdown: dict[str, int]
-    sentiment_label: str  # e.g. "Overwhelmingly Critical", "Polarized", "Measured"
-    recent_sentiment_label: (
-        str  # latest week — may include shift prefix like "Sentiment Reversal —"
-    )
+    label: str
+    category: str
+    trend_type: str
+    metric_badge: str
+    heat_score: float
+    video_count: int
+    channel_count: int
+    view_count_total: int
+    breaking_count: int
+    sentiment_label: str
+    recent_sentiment_label: str
     dominant_sentiment: str
-
-    # Channels covering this trend
-    channels: list[str]
-
-    # Week-over-week data (powers sparklines, bar charts)
-    week_data: list[WeekData]
-
-    # Top claims from this cluster (flat list — legacy, kept for backwards compat)
-    top_claims: list[str]
-
-    # Classified claims — consensus, debated, unique (from claim analysis service)
-    claims: ClassifiedClaims
-
-    # Top topics within the cluster
     top_topics: list[str]
 
 
-class TrendHeaderStats(BaseModel):
-    """Header bar stats — top of the Trends Archive page."""
-
-    active_narratives: int  # number of clusters (excluding noise)
-    total_volume: int  # sum of all view_counts
-    new_signals_pct: float  # week-over-week total volume % change
-
-
 class TrendListResponse(BaseModel):
-    """Full response for GET /api/trends/list."""
+    trends: list[TrendListItem]
+    total: int
 
-    header: TrendHeaderStats
-    trends: list[TrendItem]
-    generated_at: str  # ISO timestamp
+
+# ── GET /api/trends/{id} — full detail ───────────────────────────────────────
+
+
+class TrendDetail(BaseModel):
+    cluster_id: int
+    label: str
+    category: str
+    trend_type: str
+    metric_badge: str
+    heat_score: float
+
+    video_count: int
+    channel_count: int
+    view_count_total: int
+    total_likes: int
+    total_comments: int
+    engagement_index: float
+    breaking_count: int
+
+    sentiment_breakdown: dict[str, int]
+    sentiment_label: str
+    recent_sentiment_label: str
+    dominant_sentiment: str
+
+    channels: list[str]
+    week_data: list[WeekData]
+    top_claims: list[str]
+    top_topics: list[str]
+
+
+# ── GET /api/trends/{id}/sentiment ───────────────────────────────────────────
+
+
+class WeekSentiment(BaseModel):
+    week: str
+    sentiment_breakdown: dict[str, int]
+    dominant_sentiment: str
+
+
+class TrendSentiment(BaseModel):
+    cluster_id: int
+    sentiment_breakdown: dict[str, int]
+    sentiment_label: str
+    recent_sentiment_label: str
+    dominant_sentiment: str
+    by_week: list[WeekSentiment]
+
+
+# ── GET /api/trends/{id}/claims ──────────────────────────────────────────────
+
+
+class TrendClaims(BaseModel):
+    cluster_id: int
+    claims: ClassifiedClaims
+
+
+# ── GET /api/weeks ────────────────────────────────────────────────────────────
+
+
+class WeekSummary(BaseModel):
+    week: str
+    total_videos: int
+    total_views: int
+    active_clusters: int
+    breaking_count: int
+    dominant_sentiment: str
+
+
+class WeeksResponse(BaseModel):
+    weeks: list[WeekSummary]
+    total: int

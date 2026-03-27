@@ -48,7 +48,6 @@ class Settings:
         self.qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
         self.qdrant_api_key = os.getenv("QDRANT_API_KEY", "")
         self.qdrant_collection = os.getenv("QDRANT_COLLECTION", "transcript_chunks")
-        self.dynamodb_table = os.getenv("DYNAMODB_TABLE", "youtube-videos")
 
 
 settings = Settings()
