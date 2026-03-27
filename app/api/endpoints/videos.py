@@ -2,7 +2,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.schemas.video import VideoListResponse
+from app.schemas.video import VideoListResponse, VideoDetailItem
 from app.services.dynamo_service import DynamoService
 from app.services.storage_service import StorageService
 
