@@ -29,7 +29,10 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
-
+from google import genai
+from google.genai import types
+import json
+import time
 import numpy as np
 import boto3
 
@@ -74,6 +77,24 @@ class ClusteringService:
         self._dynamodb = boto3.resource("dynamodb", region_name=REGION)
         self._videos_table = self._dynamodb.Table(settings.dynamodb_table)
         self._clusters_table = self._dynamodb.Table("narrative-clusters")
+        self._genai_api_keys = settings.genai_api_keys
+        self._genai_key_index = 0
+        self._genai_client = genai.Client(api_key=self._genai_api_keys[0])
+
+    def _rotate_key(self) -> bool:
+        """Rotate to the next API key. Returns True if a new key is available."""
+        next_index = self._genai_key_index + 1
+        if next_index >= len(self._genai_api_keys):
+            logger.error("API_KEY_EXHAUSTED all keys have hit quota")
+            return False
+        self._genai_key_index = next_index
+        self._genai_client = genai.Client(
+            api_key=self._genai_api_keys[self._genai_key_index]
+        )
+        logger.warning(
+            f"API_KEY_ROTATED key_index={self._genai_key_index}/{len(self._genai_api_keys)-1}"
+        )
+        return True
 
     # ── Step 1: Pull vectors from Qdrant ─────────────────────────────────────
 
@@ -231,8 +252,6 @@ class ClusteringService:
         logger.info(f"HDBSCAN_COMPLETE clusters={n_clusters} noise={n_noise}")
         return labels, probabilities
 
-    # ── Step 5: Label clusters (TF-IDF) ──────────────────────────────────────
-
     def _label_clusters(self, video_ids, labels, meta_map):
         cluster_members: dict[int, list[str]] = {}
         for vid, label in zip(video_ids, labels):
@@ -240,6 +259,8 @@ class ClusteringService:
 
         cluster_topic_counts: dict[int, Counter] = {}
         cluster_stats: dict[int, dict] = {}
+        cluster_claims: dict[int, list[str]] = {}
+        cluster_titles: dict[int, list[str]] = {}
 
         for cid, vids in cluster_members.items():
             tc = Counter()
@@ -247,8 +268,8 @@ class ClusteringService:
             categories = Counter()
             sentiments = Counter()
             breaking = views = likes = comments = 0
-            week_buckets: dict[str, list[dict]] = defaultdict(list)
-            claim_counts: Counter = Counter()
+            claims = []
+            titles = []
 
             for vid in vids:
                 m = meta_map.get(vid, {})
@@ -262,36 +283,13 @@ class ClusteringService:
                 views += m.get("view_count", 0)
                 likes += m.get("like_count", 0)
                 comments += m.get("comment_count", 0)
-                week_buckets[m.get("week", "unknown")].append(m)
-                for claim in m.get("key_claims", []):
-                    if claim:
-                        claim_counts[claim] += 1
-
-            # Build week_data list sorted chronologically
-            week_data = []
-            for week_name in sorted(
-                week_buckets,
-                key=lambda w: (
-                    int(w[4:]) if w.startswith("week") and w[4:].isdigit() else 9999
-                ),
-            ):
-                wvids = week_buckets[week_name]
-                week_channels = {v.get("channel", "") for v in wvids}
-                week_sentiments = Counter(v.get("sentiment", "neutral") for v in wvids)
-                week_breaking = sum(1 for v in wvids if v.get("is_breaking"))
-                week_views = sum(v.get("view_count", 0) for v in wvids)
-                week_data.append(
-                    {
-                        "week": week_name,
-                        "video_count": len(wvids),
-                        "channel_count": len(week_channels),
-                        "view_count": week_views,
-                        "breaking_count": week_breaking,
-                        "sentiment_breakdown": dict(week_sentiments),
-                    }
-                )
+                claims.extend(m.get("key_claims", []))
+                if m.get("title"):
+                    titles.append(m["title"])
 
             cluster_topic_counts[cid] = tc
+            cluster_claims[cid] = list(dict.fromkeys(claims))[:5]  # dedupe, top 5
+            cluster_titles[cid] = titles[:5]
             cluster_stats[cid] = {
                 "vids": vids,
                 "channels": channels,
@@ -301,11 +299,9 @@ class ClusteringService:
                 "views": views,
                 "likes": likes,
                 "comments": comments,
-                "week_data": week_data,
-                "top_claims": [claim for claim, _ in claim_counts.most_common(5)],
             }
 
-        # TF-IDF scoring
+        # ── TF-IDF scoring (kept as fallback) ──
         real_cids = [c for c in cluster_members if c != -1]
         n_clusters = max(len(real_cids), 1)
         topic_cluster_count: Counter = Counter()
@@ -328,11 +324,11 @@ class ClusteringService:
             scored.sort(key=lambda x: x[1], reverse=True)
             cluster_scored[cid] = scored
 
-        # Unique labels
+        # TF-IDF fallback labels
         used = set()
-        cluster_labels: dict[int, str] = {}
+        tfidf_labels: dict[int, str] = {}
         if -1 in cluster_members:
-            cluster_labels[-1] = "Unclustered"
+            tfidf_labels[-1] = "Unclustered"
 
         for cid in sorted(
             real_cids, key=lambda c: len(cluster_members[c]), reverse=True
@@ -345,15 +341,104 @@ class ClusteringService:
             if not chosen:
                 top_two = [t[0] for t in cluster_scored[cid][:2]]
                 chosen = " & ".join(top_two) if len(top_two) == 2 else f"Cluster {cid}"
-            cluster_labels[cid] = chosen
+            tfidf_labels[cid] = chosen
             used.add(chosen)
 
+        # ── Gemini enrichment per cluster ──
+        cluster_labels: dict[int, str] = dict(tfidf_labels)
+        cluster_narratives: dict[int, dict] = {}
+
+        for cid in real_cids:
+            top_topics = [t[0] for t in cluster_topic_counts[cid].most_common(5)]
+            claims = cluster_claims.get(cid, [])
+            titles = cluster_titles.get(cid, [])
+            dominant_sentiment = (
+                cluster_stats[cid]["sentiments"].most_common(1)[0][0]
+                if cluster_stats[cid]["sentiments"]
+                else "neutral"
+            )
+
+            prompt = f"""You are a news editor writing narrative labels for topic clusters.
+    Given these topics, claims, and video titles from a cluster of YouTube videos, generate:
+
+    1. label: A 3-6 word desk label in Title Case. NOT a headline or sentence — no verbs, no articles like "The". Think of it as a category tag on a news desk.
+    TOO BROAD: "Oil Markets", "Middle East Conflict"
+    TOO SPECIFIC: "Starmer Warned Over Mandelson Ties", "The Collapse Of Olaplex"
+    GOOD: "US-Iran Military Escalation", "UK Epstein Political Scandal", "England Squad Overhaul", "Olaplex Market Value Crisis", "Aviation Safety Funding Crisis"
+    If topics seem unrelated, focus on the dominant theme.
+    2. headline: A full newspaper headline, 8-14 words
+    3. summary: One sentence, include a specific stat or data point if available from the claims
+
+    Topics: {top_topics}
+    Claims: {claims}
+    Video titles: {titles}
+    Dominant sentiment: {dominant_sentiment}
+
+    Return ONLY valid JSON, no markdown: {{"label": "...", "headline": "...", "summary": "..."}}"""
+
+            for attempt in range(len(self._genai_api_keys) + 1):
+                try:
+                    response = self._genai_client.models.generate_content(
+                        model=settings.gemini_model_id,
+                        contents=[prompt],
+                        config=types.GenerateContentConfig(
+                            thinking_config=types.ThinkingConfig(
+                                thinking_level="low",
+                            )
+                        ),
+                    )
+                    raw = getattr(response, "text", "") or str(response)
+                    raw = raw.strip()
+                    # strip markdown fences if present
+                    if raw.startswith("```"):
+                        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+                        raw = re.sub(r"\s*```$", "", raw)
+
+                    parsed = json.loads(raw)
+                    cluster_labels[cid] = parsed.get("label", tfidf_labels[cid])
+                    cluster_narratives[cid] = {
+                        "headline": parsed.get("headline"),
+                        "summary": parsed.get("summary"),
+                    }
+                    logger.info(
+                        f"GEMINI_LABEL cluster={cid} label={cluster_labels[cid]!r}"
+                    )
+                    break
+                except Exception as exc:
+                    is_rate_limit = (
+                        "429" in str(exc) or getattr(exc, "code", None) == 429
+                    )
+                    if is_rate_limit and self._rotate_key():
+                        logger.warning(
+                            f"GEMINI_KEY_ROTATED cluster={cid} attempt={attempt+1} retrying"
+                        )
+                        continue
+                    if is_rate_limit:
+                        logger.warning(
+                            "ALL_KEYS_EXHAUSTED resetting to key 0 and waiting 60s"
+                        )
+                        self._genai_key_index = 0
+                        self._genai_client = genai.Client(
+                            api_key=self._genai_api_keys[0]
+                        )
+                        time.sleep(60)
+                        continue
+                    logger.warning(
+                        f"GEMINI_LABEL_FAILED cluster={cid} error={exc} "
+                        f"falling_back_to={tfidf_labels[cid]!r}"
+                    )
+                    break
+
+        # ── Build cluster_info ──
         cluster_info = {}
         for cid, vids in cluster_members.items():
             stats = cluster_stats[cid]
             top_topics = cluster_topic_counts[cid].most_common(5)
+            narr = cluster_narratives.get(cid, {})
             cluster_info[cid] = {
                 "label": cluster_labels[cid],
+                "narrative_headline": narr.get("headline"),
+                "narrative_summary": narr.get("summary"),
                 "video_count": len(vids),
                 "video_ids": vids,
                 "channels": sorted(stats["channels"]),
@@ -374,8 +459,8 @@ class ClusteringService:
                 "total_views": stats["views"],
                 "total_likes": stats["likes"],
                 "total_comments": stats["comments"],
-                "week_data": stats["week_data"],
-                "top_claims": stats["top_claims"],  # ranked by cross-video frequency
+                "week_data": [],  # populated later or by a separate step
+                "top_claims": cluster_claims.get(cid, []),
             }
             logger.info(
                 f"CLUSTER_LABELED id={cid} label={cluster_labels[cid]!r} videos={len(vids)}"
@@ -450,6 +535,8 @@ class ClusteringService:
                 "total_views": _dec(info["total_views"]),
                 "total_likes": _dec(info["total_likes"]),
                 "total_comments": _dec(info["total_comments"]),
+                "narrative_headline": info.get("narrative_headline"),
+                "narrative_summary": info.get("narrative_summary"),
                 "week_data": _clean_for_dynamo(info["week_data"]),
                 "top_claims": info["top_claims"],
                 "created_at": datetime.now(timezone.utc).isoformat(),
