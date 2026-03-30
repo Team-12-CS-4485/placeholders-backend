@@ -64,9 +64,14 @@ class DynamoService:
         """
         Paginated scan of youtube-videos table.
 
-        cursor     — base64-encoded JSON of DynamoDB LastEvaluatedKey dict.
-        week       — optional filter (e.g. "week1") on the `week` attribute.
-        cluster_id — optional filter on the `cluster_id` attribute.
+        When filters (week, cluster_id) are active, DynamoDB's Limit applies
+        before FilterExpression — so a Limit=20 scan may return 0 results even
+        when matching items exist. To fix this, filtered scans exhaust all
+        DynamoDB pages first, then paginate in Python. The cursor for filtered
+        scans is a base64-encoded integer offset.
+
+        Unfiltered scans use native DynamoDB key-based pagination (cursor is a
+        base64-encoded LastEvaluatedKey JSON).
 
         Returns:
             {items: [VideoItem...], total_returned: int, next_cursor: str|None}
@@ -75,6 +80,72 @@ class DynamoService:
         if week and week.isdigit():
             week = f"week{week}"
 
+        # Build filter expression
+        filter_expr = None
+        if week:
+            filter_expr = Attr("week").eq(week)
+        if cluster_id is not None:
+            cluster_filter = Attr("cluster_id").eq(cluster_id)
+            filter_expr = filter_expr & cluster_filter if filter_expr else cluster_filter
+
+        if filter_expr is not None:
+            return self._scan_videos_filtered(limit, cursor, filter_expr, week, cluster_id)
+        return self._scan_videos_unfiltered(limit, cursor)
+
+    def _scan_videos_filtered(
+        self,
+        limit: int,
+        cursor: str,
+        filter_expr,
+        week,
+        cluster_id,
+    ) -> dict:
+        """
+        Filtered scan: exhaust all DynamoDB pages, then slice in Python.
+        Cursor is a base64-encoded integer offset into the full result set.
+        """
+        offset = 0
+        if cursor:
+            try:
+                offset = int(base64.b64decode(cursor.encode()).decode())
+            except Exception:
+                logger.warning(f"DYNAMO_SCAN_BAD_CURSOR cursor={cursor!r}")
+
+        all_items = []
+        scan_kwargs: dict = {"FilterExpression": filter_expr}
+
+        try:
+            while True:
+                response = self._videos_table.scan(**scan_kwargs)
+                for raw in response.get("Items", []):
+                    all_items.append(self.map_video_item(self._deserialize(raw)))
+                last_key = response.get("LastEvaluatedKey")
+                if not last_key:
+                    break
+                scan_kwargs["ExclusiveStartKey"] = last_key
+        except ClientError as exc:
+            logger.error(f"DYNAMO_SCAN_VIDEOS_ERROR error={exc}")
+            return {"items": [], "total_returned": 0, "next_cursor": None}
+
+        page = all_items[offset: offset + limit]
+        next_offset = offset + limit
+        next_cursor = (
+            base64.b64encode(str(next_offset).encode()).decode()
+            if next_offset < len(all_items)
+            else None
+        )
+
+        logger.info(
+            f"DYNAMO_SCAN_VIDEOS_FILTERED total={len(all_items)} "
+            f"offset={offset} returned={len(page)} week={week} cluster_id={cluster_id}"
+        )
+        return {"items": page, "total_returned": len(page), "next_cursor": next_cursor}
+
+    def _scan_videos_unfiltered(self, limit: int, cursor: str) -> dict:
+        """
+        Unfiltered scan: native DynamoDB key-based pagination.
+        Cursor is a base64-encoded LastEvaluatedKey JSON dict.
+        """
         scan_kwargs: dict = {"Limit": limit}
 
         if cursor:
@@ -84,25 +155,16 @@ class DynamoService:
             except Exception:
                 logger.warning(f"DYNAMO_SCAN_BAD_CURSOR cursor={cursor!r}")
 
-        filter_expr = None
-        if week:
-            filter_expr = Attr("week").eq(week)
-        if cluster_id is not None:
-            cluster_filter = Attr("cluster_id").eq(cluster_id)
-            filter_expr = filter_expr & cluster_filter if filter_expr else cluster_filter
-        if filter_expr is not None:
-            scan_kwargs["FilterExpression"] = filter_expr
-
         try:
             response = self._videos_table.scan(**scan_kwargs)
         except ClientError as exc:
             logger.error(f"DYNAMO_SCAN_VIDEOS_ERROR error={exc}")
             return {"items": [], "total_returned": 0, "next_cursor": None}
 
-        items = []
-        for raw in response.get("Items", []):
-            item = self._deserialize(raw)
-            items.append(self.map_video_item(item))
+        items = [
+            self.map_video_item(self._deserialize(raw))
+            for raw in response.get("Items", [])
+        ]
 
         next_cursor = None
         last_key = response.get("LastEvaluatedKey")
@@ -110,12 +172,8 @@ class DynamoService:
             clean_key = self._deserialize(last_key)
             next_cursor = base64.b64encode(json.dumps(clean_key).encode()).decode()
 
-        logger.info(f"DYNAMO_SCAN_VIDEOS returned={len(items)} week={week} cluster_id={cluster_id}")
-        return {
-            "items": items,
-            "total_returned": len(items),
-            "next_cursor": next_cursor,
-        }
+        logger.info(f"DYNAMO_SCAN_VIDEOS returned={len(items)}")
+        return {"items": items, "total_returned": len(items), "next_cursor": next_cursor}
 
     def map_video_item(self, item: dict) -> dict:
         """Map a deserialized youtube-videos DynamoDB item to an API-ready dict."""
@@ -133,6 +191,8 @@ class DynamoService:
             "sentiment": item.get("sentiment") or None,
             "key_claims": item.get("key_claims") or None,
             "is_breaking": item.get("is_breaking"),
+            "cluster_id": item.get("cluster_id"),
+            "cluster_label": item.get("cluster_label") or None,
             "thumbnail_tone": item.get("thumbnail_tone") or None,
             "thumbnail_clickbait_score": item.get("thumbnail_clickbait_score"),
             "thumbnail_insight": item.get("thumbnail_insight") or None,

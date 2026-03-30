@@ -31,9 +31,13 @@ def get_narratives(
         default=None,
         description="Filter to a specific week (e.g. week1, week2).",
     ),
+    sort_by: str = Query(
+        default="video_count",
+        description="Sort field: video_count (default), label",
+    ),
 ):
     service = TrendService()
-    return service.get_narratives(week=week)
+    return service.get_narratives(week=week, sort_by=sort_by)
 
 
 @router.get("/{cluster_id}/claims", response_model=NarrativeClaims)

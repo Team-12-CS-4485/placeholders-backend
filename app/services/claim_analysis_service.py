@@ -328,11 +328,26 @@ class ClaimAnalysisService:
 
     # ── Public API ───────────────────────────────────────────────────────────
 
-    def run_claim_analysis(self, max_per_type: int = 3) -> dict:
+    def run_claim_analysis(self, max_per_type: int = 3, dry_run: bool = False) -> dict:
         # 1. Read from DynamoDB
         cluster_videos = self._get_clustered_videos()
         if not cluster_videos:
-            return {"clusters_processed": 0, "total_written": 0}
+            return {"clusters_processed": 0, "total_written": 0, "dry_run": dry_run}
+
+        if dry_run:
+            total_claims = sum(
+                sum(len(v.get("key_claims") or []) for v in videos)
+                for videos in cluster_videos.values()
+            )
+            logger.info(
+                f"CLAIM_ANALYSIS_DRY_RUN clusters={len(cluster_videos)} "
+                f"total_claims={total_claims}"
+            )
+            return {
+                "clusters_processed": len(cluster_videos),
+                "total_written": 0,
+                "dry_run": True,
+            }
 
         # 2. Collect attributed claims
         cluster_claims = self._collect_attributed_claims(cluster_videos)
@@ -391,4 +406,5 @@ class ClaimAnalysisService:
             "clusters_processed": len(cluster_results),
             "total_written": written,
             "per_cluster": summary,
+            "dry_run": False,
         }

@@ -247,10 +247,32 @@ class PipelineService:
 
     # ── Main pipeline ─────────────────────────────────────────────────────────
 
-    def run_s3_transcript_analysis(self, prefix=None, limit=None):
+    def run_s3_transcript_analysis(self, prefix=None, limit=None, dry_run=False):
         use_prefix = prefix if prefix is not None else settings.s3_prefix
         use_limit = limit if limit is not None else settings.s3_object_limit
-        self.logger.info(f"PIPELINE_START prefix={use_prefix} limit={use_limit}")
+        self.logger.info(
+            f"PIPELINE_START prefix={use_prefix} limit={use_limit} dry_run={dry_run}"
+        )
+
+        if dry_run:
+            source_objects = self.storage_service.load_videos_from_prefix(
+                prefix=use_prefix,
+                limit=use_limit,
+            )
+            total_videos = sum(len(s.get("videos", [])) for s in source_objects)
+            self.logger.info(
+                f"PIPELINE_DRY_RUN objects={len(source_objects)} videos={total_videos}"
+            )
+            return {
+                "prefix": use_prefix,
+                "object_limit": use_limit,
+                "objects_processed": len(source_objects),
+                "videos_found": total_videos,
+                "videos_indexed": 0,
+                "total_chunks_stored": 0,
+                "results": [],
+                "dry_run": True,
+            }
 
         try:
             source_objects = self.storage_service.load_videos_from_prefix(

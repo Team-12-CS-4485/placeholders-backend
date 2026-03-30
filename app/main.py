@@ -18,6 +18,8 @@ from app.api.endpoints.trends import router as trends_router, weeks_router
 from app.api.endpoints.pipeline import router as pipeline_router
 from app.api.endpoints.videos import router as videos_router
 from app.api.endpoints.narratives import router as narratives_router
+from app.api.endpoints.search import router as search_router
+from app.api.endpoints.stats import router as stats_router
 from app.core.logging import get_logger
 
 app = FastAPI(title="Placeholders Backend API")
@@ -36,6 +38,8 @@ app.include_router(videos_router)
 app.include_router(trends_router)
 app.include_router(weeks_router)
 app.include_router(narratives_router)
+app.include_router(search_router)
+app.include_router(stats_router)
 
 
 @app.middleware("http")

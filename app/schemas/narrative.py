@@ -11,7 +11,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from app.schemas.trend import ClassifiedClaims
+from app.schemas.trend import ClassifiedClaims, WeekData
 from app.schemas.video import VideoItem
 
 
@@ -44,11 +44,15 @@ class NarrativeDetail(BaseModel):
     narrative_headline: Optional[str] = None
     narrative_summary: Optional[str] = None
     top_topics: list[str]
+    top_claims: list[str]
     video_count: int
     channel_count: int
     breaking_count: int
     dominant_sentiment: str
     channels: list[str]
+    week_data: list[WeekData]
+    avg_clickbait_rating: Optional[float] = None
+    thumbnail_tone_breakdown: dict[str, int] = {}
 
 
 # ── GET /api/narratives/{id}/claims ──────────────────────────────────────────

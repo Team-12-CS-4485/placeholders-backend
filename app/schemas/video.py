@@ -18,6 +18,9 @@ class VideoItem(BaseModel):
     sentiment: Optional[str] = None
     key_claims: Optional[List[str]] = None
     is_breaking: Optional[bool] = None
+    # Cluster assignment (written by clustering pipeline)
+    cluster_id: Optional[int] = None
+    cluster_label: Optional[str] = None
     # Thumbnail analysis fields
     thumbnail_tone: Optional[str] = None
     thumbnail_clickbait_score: Optional[int] = None

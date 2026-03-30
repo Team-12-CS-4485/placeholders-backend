@@ -4,6 +4,8 @@ trend.py - Pydantic schemas for Trend API responses
 
 from __future__ import annotations
 
+from typing import Optional
+
 from pydantic import BaseModel
 
 # ── Week-level data ───────────────────────────────────────────────────────────
@@ -111,6 +113,8 @@ class TrendDetail(BaseModel):
     week_data: list[WeekData]
     top_claims: list[str]
     top_topics: list[str]
+    avg_clickbait_rating: Optional[float] = None
+    thumbnail_tone_breakdown: dict[str, int] = {}
 
 
 # ── GET /api/trends/{id}/sentiment ───────────────────────────────────────────
