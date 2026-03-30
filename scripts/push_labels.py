@@ -160,6 +160,50 @@ Return ONLY valid JSON, no markdown: {{"headline": "...", "summary": "..."}}"""
     print(f"\nUpdated {updated}/{len(clusters)} cluster narratives in DynamoDB")
 
 
+def push_week_data():
+    with open("cluster_summary.json") as f:
+        data = json.load(f)
+
+    dynamodb = boto3.resource("dynamodb", region_name=REGION)
+    table = dynamodb.Table("narrative-clusters")
+
+    from decimal import Decimal
+
+    def _clean(obj):
+        if isinstance(obj, bool):
+            return obj
+        if isinstance(obj, float):
+            return Decimal(str(round(obj, 4)))
+        if isinstance(obj, int):
+            return Decimal(str(obj))
+        if isinstance(obj, dict):
+            return {k: _clean(v) for k, v in obj.items() if v is not None}
+        if isinstance(obj, list):
+            return [_clean(i) for i in obj if i is not None]
+        return obj
+
+    clusters = data.get("clusters", {})
+    updated = 0
+
+    for cid, info in clusters.items():
+        week_data = info.get("week_data", [])
+        if not week_data:
+            logger.warning(f"SKIPPED cluster={cid} no week_data")
+            continue
+        try:
+            table.update_item(
+                Key={"cluster_id": int(cid)},
+                UpdateExpression="SET week_data = :wd",
+                ExpressionAttributeValues={":wd": _clean(week_data)},
+            )
+            logger.info(f"UPDATED cluster={cid} weeks={len(week_data)}")
+            updated += 1
+        except Exception as exc:
+            logger.error(f"FAILED cluster={cid} error={exc}")
+
+    print(f"\nUpdated {updated}/{len(clusters)} clusters with week_data in DynamoDB")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Push cluster data to DynamoDB")
     group = parser.add_mutually_exclusive_group(required=True)
@@ -171,12 +215,19 @@ def main():
         action="store_true",
         help="Generate and push headline + summary via Gemini",
     )
+    group.add_argument(
+        "--week-data",
+        action="store_true",
+        help="Push week_data only from cluster_summary.json (no Gemini)",
+    )
     args = parser.parse_args()
 
     if args.labels_only:
         push_labels()
     elif args.narratives:
         push_narratives()
+    elif args.week_data:
+        push_week_data()
 
 
 if __name__ == "__main__":

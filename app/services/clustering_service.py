@@ -270,6 +270,7 @@ class ClusteringService:
             breaking = views = likes = comments = 0
             claims = []
             titles = []
+            week_buckets: dict[str, list[dict]] = defaultdict(list)
 
             for vid in vids:
                 m = meta_map.get(vid, {})
@@ -286,6 +287,31 @@ class ClusteringService:
                 claims.extend(m.get("key_claims", []))
                 if m.get("title"):
                     titles.append(m["title"])
+                week_buckets[m.get("week", "unknown")].append(m)
+
+            # Build week_data from buckets
+            week_data = []
+            for week_name in sorted(
+                week_buckets,
+                key=lambda w: (
+                    int(w[4:]) if w.startswith("week") and w[4:].isdigit() else 9999
+                ),
+            ):
+                wvids = week_buckets[week_name]
+                week_channels = {v.get("channel", "") for v in wvids}
+                week_sentiments = Counter(v.get("sentiment", "neutral") for v in wvids)
+                week_breaking = sum(1 for v in wvids if v.get("is_breaking"))
+                week_views = sum(v.get("view_count", 0) for v in wvids)
+                week_data.append(
+                    {
+                        "week": week_name,
+                        "video_count": len(wvids),
+                        "channel_count": len(week_channels),
+                        "view_count": week_views,
+                        "breaking_count": week_breaking,
+                        "sentiment_breakdown": dict(week_sentiments),
+                    }
+                )
 
             cluster_topic_counts[cid] = tc
             cluster_claims[cid] = list(dict.fromkeys(claims))[:5]  # dedupe, top 5
@@ -299,6 +325,7 @@ class ClusteringService:
                 "views": views,
                 "likes": likes,
                 "comments": comments,
+                "week_data": week_data,
             }
 
         # ── TF-IDF scoring (kept as fallback) ──
@@ -459,7 +486,7 @@ class ClusteringService:
                 "total_views": stats["views"],
                 "total_likes": stats["likes"],
                 "total_comments": stats["comments"],
-                "week_data": [],  # populated later or by a separate step
+                "week_data": stats["week_data"],
                 "top_claims": cluster_claims.get(cid, []),
             }
             logger.info(
