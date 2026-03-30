@@ -118,6 +118,7 @@ class TrendService:
             int(item["cluster_id"]): self._build_cluster_from_dynamo(item)
             for item in items
             if item.get("cluster_id") is not None
+            and item.get("status", "active") != "inactive"
         }
 
     def _find_cluster(self, cluster_id: int) -> dict:
