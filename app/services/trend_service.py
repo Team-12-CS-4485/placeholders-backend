@@ -89,7 +89,7 @@ class TrendService:
             "total_comments": total_comments,
             "engagement_index": engagement_index,
             "breaking_count": breaking_count,
-            "sentiment_breakdown": {},
+            "sentiment_breakdown": dict(item.get("sentiment_breakdown") or {}),
             "sentiment_label": sentiment_label,
             "recent_sentiment_label": recent_sentiment_label,
             "dominant_sentiment": item.get("dominant_sentiment", "neutral"),
@@ -100,6 +100,14 @@ class TrendService:
             "claims": classified_claims,
             "narrative_headline": item.get("narrative_headline"),
             "narrative_summary": item.get("narrative_summary"),
+            "avg_clickbait_rating": (
+                float(item["avg_clickbait_rating"])
+                if item.get("avg_clickbait_rating") is not None
+                else None
+            ),
+            "thumbnail_tone_breakdown": dict(
+                item.get("thumbnail_tone_breakdown") or {}
+            ),
         }
 
     # ── Internal cluster fetching ─────────────────────────────────────────────
@@ -341,8 +349,6 @@ class TrendService:
                 "recent_sentiment_label": c["recent_sentiment_label"],
                 "dominant_sentiment": c["dominant_sentiment"],
                 "top_topics": c["top_topics"],
-                "narrative_headline": c.get("narrative_headline"),
-                "narrative_summary": c.get("narrative_summary"),
             }
             for c in sorted_trends
         ]
@@ -374,8 +380,8 @@ class TrendService:
             "week_data": c["week_data"],
             "top_claims": c["top_claims"],
             "top_topics": c["top_topics"],
-            "narrative_headline": c.get("narrative_headline"),
-            "narrative_summary": c.get("narrative_summary"),
+            "avg_clickbait_rating": c.get("avg_clickbait_rating"),
+            "thumbnail_tone_breakdown": c.get("thumbnail_tone_breakdown", {}),
         }
 
     def get_trend_sentiment(self, cluster_id: int) -> dict:
@@ -413,6 +419,107 @@ class TrendService:
                 "claims",
                 {"consensus": [], "debated": [], "unique": []},
             ),
+        }
+
+    # ── Narrative API ─────────────────────────────────────────────────────────
+
+    def get_narratives(self, week: str = None, sort_by: str = "video_count") -> dict:
+        """
+        Lean narrative list — editorial fields only, no metrics.
+        Optional week filter returns only clusters active in that week.
+        sort_by: video_count (default), label
+        """
+        if week and week.isdigit():
+            week = f"week{week}"
+
+        valid_sort_fields = {"video_count", "label"}
+        if sort_by not in valid_sort_fields:
+            sort_by = "video_count"
+
+        clusters = self._get_all_clusters()
+
+        result = []
+        for c in clusters.values():
+            if week:
+                week_slice = next(
+                    (w for w in c["week_data"] if w["week"] == week), None
+                )
+                if not week_slice:
+                    continue
+
+            result.append(
+                {
+                    "cluster_id": c["cluster_id"],
+                    "label": c["label"],
+                    "category": c["category"],
+                    "narrative_headline": c.get("narrative_headline"),
+                    "narrative_summary": c.get("narrative_summary"),
+                    "top_topics": c["top_topics"],
+                    "video_count": c["video_count"],
+                    "dominant_sentiment": c["dominant_sentiment"],
+                }
+            )
+
+        reverse = sort_by != "label"
+        result.sort(key=lambda x: x.get(sort_by, 0), reverse=reverse)
+
+        return {"narratives": result, "total": len(result)}
+
+    def get_narrative_detail(self, cluster_id: int) -> dict:
+        """Full narrative detail — story fields + channels + week presence, no metrics."""
+        c = self._find_cluster(cluster_id)
+        return {
+            "cluster_id": c["cluster_id"],
+            "label": c["label"],
+            "category": c["category"],
+            "narrative_headline": c.get("narrative_headline"),
+            "narrative_summary": c.get("narrative_summary"),
+            "top_topics": c["top_topics"],
+            "top_claims": c["top_claims"],
+            "video_count": c["video_count"],
+            "channel_count": c["channel_count"],
+            "breaking_count": c["breaking_count"],
+            "dominant_sentiment": c["dominant_sentiment"],
+            "channels": c["channels"],
+            "week_data": c["week_data"],
+            "avg_clickbait_rating": c.get("avg_clickbait_rating"),
+            "thumbnail_tone_breakdown": c.get("thumbnail_tone_breakdown", {}),
+        }
+
+    def get_narrative_claims(self, cluster_id: int) -> dict:
+        """Classified claims for a narrative cluster."""
+        c = self._find_cluster(cluster_id)
+        return {
+            "cluster_id": cluster_id,
+            "claims": c.get(
+                "claims",
+                {"consensus": [], "debated": [], "unique": []},
+            ),
+        }
+
+    def get_stats(self) -> dict:
+        """
+        Top-level aggregate stats across all clusters.
+        Fully derived from narrative-clusters — no extra DynamoDB reads.
+        """
+        all_clusters = self.dynamo_service.get_all_clusters()
+
+        total_videos = 0
+        total_breaking = 0
+        all_weeks: set[str] = set()
+
+        for item in all_clusters:
+            total_videos += int(item.get("video_count", 0))
+            total_breaking += int(item.get("breaking_count", 0))
+            for wd in item.get("week_data", []):
+                if wd.get("week"):
+                    all_weeks.add(wd["week"])
+
+        return {
+            "total_videos": total_videos,
+            "total_clusters": len(all_clusters),
+            "total_weeks": len(all_weeks),
+            "breaking_count": total_breaking,
         }
 
     def get_weeks(self) -> dict:
