@@ -83,61 +83,101 @@ class StorageService:
         }
 
     def get_video_by_id(self, video_id: str) -> Optional[dict]:
-        """Find a single video by videoId."""
-        paginator = self.s3_client.get_paginator("list_objects_v2")
+        """
+        Fetch a single video detail by videoId.
 
+        Looks up the video in DynamoDB first (gets all intelligence fields + source_key),
+        then fetches only the matching S3 file for transcript, description, and top_comments.
+        Falls back to a full S3 scan if source_key is missing from DynamoDB.
+        """
+        from app.services.dynamo_service import DynamoService
+
+        dynamo = DynamoService(dynamodb_resource=self.dynamodb)
+        dynamo_item = dynamo.get_video_by_id(video_id)
+
+        # Try to fetch only the known S3 file; fall back to full scan if unavailable
+        source_key = dynamo_item.get("source_key") if dynamo_item else None
+
+        s3_video = self._find_video_in_s3(video_id, source_key)
+        if s3_video is None and source_key:
+            # source_key may be stale; retry with full scan
+            s3_video = self._find_video_in_s3(video_id, source_key=None)
+
+        if s3_video is None and dynamo_item is None:
+            return None
+
+        top_comments = []
+        for comment in (s3_video or {}).get("topComments", []):
+            if not isinstance(comment, dict):
+                continue
+            top_comments.append(
+                {
+                    "author": comment.get("author", ""),
+                    "text": comment.get("text", ""),
+                    "likes": int(comment.get("likes", 0)),
+                }
+            )
+
+        # Base fields — prefer DynamoDB values (fresher stats), fall back to S3
+        base = dynamo.map_video_item(dynamo_item) if dynamo_item else {}
+        s3 = s3_video or {}
+
+        return {
+            "video_id": video_id,
+            "channel": base.get("channel") or s3.get("channel", ""),
+            "title": base.get("title") or s3.get("title", ""),
+            "published_at": base.get("published_at") or s3.get("publishedAt", ""),
+            "view_count": base.get("view_count") or int(s3.get("viewCount", 0)),
+            "like_count": base.get("like_count") or int(s3.get("likeCount", 0)),
+            "comment_count": base.get("comment_count") or int(s3.get("commentCount", 0)),
+            "week": base.get("week"),
+            "topics": base.get("topics"),
+            "category": base.get("category"),
+            "sentiment": base.get("sentiment"),
+            "key_claims": base.get("key_claims"),
+            "is_breaking": base.get("is_breaking"),
+            "thumbnail_tone": base.get("thumbnail_tone"),
+            "thumbnail_clickbait_score": base.get("thumbnail_clickbait_score"),
+            "thumbnail_insight": base.get("thumbnail_insight"),
+            "thumbnail_brand_consistent": base.get("thumbnail_brand_consistent"),
+            # S3-only fields
+            "description": s3.get("description", ""),
+            "transcript": self._clean_transcript(s3.get("transcript", "")),
+            "top_comments": top_comments,
+        }
+
+    def _find_video_in_s3(self, video_id: str, source_key: Optional[str]) -> Optional[dict]:
+        """
+        Find a video dict from S3.
+        If source_key is provided, fetch only that file.
+        Otherwise fall back to scanning all files under the prefix.
+        """
+        if source_key:
+            try:
+                payload = self.get_json_object(source_key)
+                for video in payload.get("videos", []):
+                    if video.get("videoId", "") == video_id:
+                        video["channel"] = payload.get("channel", "")
+                        return video
+            except (ClientError, json.JSONDecodeError, UnicodeDecodeError):
+                pass
+            return None
+
+        # Full scan fallback
+        paginator = self.s3_client.get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=self.bucket, Prefix=settings.s3_prefix):
             for obj in page.get("Contents", []):
                 key = obj.get("Key", "")
                 if not key or key.endswith("/"):
                     continue
-
                 try:
                     payload = self.get_json_object(key)
                 except (ClientError, json.JSONDecodeError, UnicodeDecodeError):
                     continue
-
-                payload_channel = payload.get("channel", "")
-
                 for video in payload.get("videos", []):
-                    if video.get("videoId", "") != video_id:
-                        continue
-
-                    fresh_stats = {}
-                    if payload_channel and video_id:
-                        fresh_stats = self.get_video_metadata(payload_channel, video_id)
-
-                    top_comments = []
-                    for comment in video.get("topComments", []):
-                        if not isinstance(comment, dict):
-                            continue
-                        top_comments.append(
-                            {
-                                "author": comment.get("author", ""),
-                                "text": comment.get("text", ""),
-                                "likes": int(comment.get("likes", 0)),
-                            }
-                        )
-
-                    return {
-                        "video_id": video_id,
-                        "channel": payload_channel,
-                        "title": video.get("title", ""),
-                        "description": video.get("description", ""),
-                        "published_at": video.get("publishedAt", ""),
-                        "view_count": fresh_stats.get(
-                            "view_count", int(video.get("viewCount", 0))
-                        ),
-                        "like_count": fresh_stats.get(
-                            "like_count", int(video.get("likeCount", 0))
-                        ),
-                        "comment_count": fresh_stats.get(
-                            "comment_count", int(video.get("commentCount", 0))
-                        ),
-                        "transcript": video.get("transcript", ""),
-                        "top_comments": top_comments,
-                    }
-
+                    if video.get("videoId", "") == video_id:
+                        video["channel"] = payload.get("channel", "")
+                        return video
         return None
 
     def list_object_keys(self, prefix=None, limit=None):

@@ -89,7 +89,7 @@ class TrendService:
             "total_comments": total_comments,
             "engagement_index": engagement_index,
             "breaking_count": breaking_count,
-            "sentiment_breakdown": {},
+            "sentiment_breakdown": dict(item.get("sentiment_breakdown") or {}),
             "sentiment_label": sentiment_label,
             "recent_sentiment_label": recent_sentiment_label,
             "dominant_sentiment": item.get("dominant_sentiment", "neutral"),
@@ -341,8 +341,6 @@ class TrendService:
                 "recent_sentiment_label": c["recent_sentiment_label"],
                 "dominant_sentiment": c["dominant_sentiment"],
                 "top_topics": c["top_topics"],
-                "narrative_headline": c.get("narrative_headline"),
-                "narrative_summary": c.get("narrative_summary"),
             }
             for c in sorted_trends
         ]
@@ -374,8 +372,6 @@ class TrendService:
             "week_data": c["week_data"],
             "top_claims": c["top_claims"],
             "top_topics": c["top_topics"],
-            "narrative_headline": c.get("narrative_headline"),
-            "narrative_summary": c.get("narrative_summary"),
         }
 
     def get_trend_sentiment(self, cluster_id: int) -> dict:
@@ -406,6 +402,68 @@ class TrendService:
 
     def get_trend_claims(self, cluster_id: int) -> dict:
         """Classified claims (consensus / debated / unique) for a single cluster."""
+        c = self._find_cluster(cluster_id)
+        return {
+            "cluster_id": cluster_id,
+            "claims": c.get(
+                "claims",
+                {"consensus": [], "debated": [], "unique": []},
+            ),
+        }
+
+    # ── Narrative API ─────────────────────────────────────────────────────────
+
+    def get_narratives(self, week: str = None) -> dict:
+        """
+        Lean narrative list — editorial fields only, no metrics.
+        Optional week filter returns only clusters active in that week.
+        """
+        if week and week.isdigit():
+            week = f"week{week}"
+
+        clusters = self._get_all_clusters()
+
+        result = []
+        for c in clusters.values():
+            if week:
+                week_slice = next(
+                    (w for w in c["week_data"] if w["week"] == week), None
+                )
+                if not week_slice:
+                    continue
+
+            result.append({
+                "cluster_id": c["cluster_id"],
+                "label": c["label"],
+                "category": c["category"],
+                "narrative_headline": c.get("narrative_headline"),
+                "narrative_summary": c.get("narrative_summary"),
+                "top_topics": c["top_topics"],
+                "video_count": c["video_count"],
+                "dominant_sentiment": c["dominant_sentiment"],
+            })
+
+        return {"narratives": result, "total": len(result)}
+
+    def get_narrative_detail(self, cluster_id: int) -> dict:
+        """Full narrative detail — story fields + channels, no metrics."""
+        c = self._find_cluster(cluster_id)
+        return {
+            "cluster_id": c["cluster_id"],
+            "label": c["label"],
+            "category": c["category"],
+            "narrative_headline": c.get("narrative_headline"),
+            "narrative_summary": c.get("narrative_summary"),
+            "top_topics": c["top_topics"],
+            "video_count": c["video_count"],
+            "channel_count": c["channel_count"],
+            "breaking_count": c["breaking_count"],
+            "dominant_sentiment": c["dominant_sentiment"],
+            "channels": c["channels"],
+        }
+
+    def get_narrative_claims(self, cluster_id: int) -> dict:
+        """Classified claims for a narrative cluster."""
         c = self._find_cluster(cluster_id)
         return {
             "cluster_id": cluster_id,

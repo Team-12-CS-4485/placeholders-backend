@@ -59,12 +59,14 @@ class DynamoService:
         limit: int = 20,
         cursor: str = None,
         week: str = None,
+        cluster_id: int = None,
     ) -> dict:
         """
         Paginated scan of youtube-videos table.
 
-        cursor  — base64-encoded JSON of DynamoDB LastEvaluatedKey dict.
-        week    — optional filter (e.g. "week1") on the `week` attribute.
+        cursor     — base64-encoded JSON of DynamoDB LastEvaluatedKey dict.
+        week       — optional filter (e.g. "week1") on the `week` attribute.
+        cluster_id — optional filter on the `cluster_id` attribute.
 
         Returns:
             {items: [VideoItem...], total_returned: int, next_cursor: str|None}
@@ -82,8 +84,14 @@ class DynamoService:
             except Exception:
                 logger.warning(f"DYNAMO_SCAN_BAD_CURSOR cursor={cursor!r}")
 
+        filter_expr = None
         if week:
-            scan_kwargs["FilterExpression"] = Attr("week").eq(week)
+            filter_expr = Attr("week").eq(week)
+        if cluster_id is not None:
+            cluster_filter = Attr("cluster_id").eq(cluster_id)
+            filter_expr = filter_expr & cluster_filter if filter_expr else cluster_filter
+        if filter_expr is not None:
+            scan_kwargs["FilterExpression"] = filter_expr
 
         try:
             response = self._videos_table.scan(**scan_kwargs)
@@ -94,18 +102,7 @@ class DynamoService:
         items = []
         for raw in response.get("Items", []):
             item = self._deserialize(raw)
-            items.append(
-                {
-                    "video_id": item.get("SortKey", ""),
-                    "channel": item.get("channel") or item.get("PartitionKey", ""),
-                    "title": item.get("title", ""),
-                    "description": item.get("description", ""),
-                    "published_at": item.get("publishedAt", ""),
-                    "view_count": int(item.get("viewCount") or 0),
-                    "like_count": int(item.get("likeCount") or 0),
-                    "comment_count": int(item.get("commentCount") or 0),
-                }
-            )
+            items.append(self.map_video_item(item))
 
         next_cursor = None
         last_key = response.get("LastEvaluatedKey")
@@ -113,12 +110,53 @@ class DynamoService:
             clean_key = self._deserialize(last_key)
             next_cursor = base64.b64encode(json.dumps(clean_key).encode()).decode()
 
-        logger.info(f"DYNAMO_SCAN_VIDEOS returned={len(items)} week={week}")
+        logger.info(f"DYNAMO_SCAN_VIDEOS returned={len(items)} week={week} cluster_id={cluster_id}")
         return {
             "items": items,
             "total_returned": len(items),
             "next_cursor": next_cursor,
         }
+
+    def map_video_item(self, item: dict) -> dict:
+        """Map a deserialized youtube-videos DynamoDB item to an API-ready dict."""
+        return {
+            "video_id": item.get("SortKey", ""),
+            "channel": item.get("channel") or item.get("PartitionKey", ""),
+            "title": item.get("title", ""),
+            "published_at": item.get("publishedAt", ""),
+            "view_count": int(item.get("viewCount") or 0),
+            "like_count": int(item.get("likeCount") or 0),
+            "comment_count": int(item.get("commentCount") or 0),
+            "week": item.get("week"),
+            "topics": item.get("topics") or None,
+            "category": item.get("category") or None,
+            "sentiment": item.get("sentiment") or None,
+            "key_claims": item.get("key_claims") or None,
+            "is_breaking": item.get("is_breaking"),
+            "thumbnail_tone": item.get("thumbnail_tone") or None,
+            "thumbnail_clickbait_score": item.get("thumbnail_clickbait_score"),
+            "thumbnail_insight": item.get("thumbnail_insight") or None,
+            "thumbnail_brand_consistent": item.get("thumbnail_brand_consistent"),
+        }
+
+    def get_video_by_id(self, video_id: str) -> Optional[dict]:
+        """
+        Scan youtube-videos for a single video by SortKey (videoId).
+        Returns the full deserialized item dict, or None if not found.
+        """
+        try:
+            response = self._videos_table.scan(
+                FilterExpression=Attr("SortKey").eq(video_id),
+                Limit=1,
+            )
+        except ClientError as exc:
+            logger.error(f"DYNAMO_GET_VIDEO_ERROR video_id={video_id} error={exc}")
+            return None
+
+        items = response.get("Items", [])
+        if not items:
+            return None
+        return self._deserialize(items[0])
 
     # ── Clusters ─────────────────────────────────────────────────────────────
 
