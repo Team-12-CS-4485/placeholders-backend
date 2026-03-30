@@ -129,7 +129,8 @@ class StorageService:
             "published_at": base.get("published_at") or s3.get("publishedAt", ""),
             "view_count": base.get("view_count") or int(s3.get("viewCount", 0)),
             "like_count": base.get("like_count") or int(s3.get("likeCount", 0)),
-            "comment_count": base.get("comment_count") or int(s3.get("commentCount", 0)),
+            "comment_count": base.get("comment_count")
+            or int(s3.get("commentCount", 0)),
             "week": base.get("week"),
             "topics": base.get("topics"),
             "category": base.get("category"),
@@ -146,7 +147,9 @@ class StorageService:
             "top_comments": top_comments,
         }
 
-    def _find_video_in_s3(self, video_id: str, source_key: Optional[str]) -> Optional[dict]:
+    def _find_video_in_s3(
+        self, video_id: str, source_key: Optional[str]
+    ) -> Optional[dict]:
         """
         Find a video dict from S3.
         If source_key is provided, fetch only that file.

@@ -114,7 +114,9 @@ def run_cluster(request: DryRunRequest):
             "dry_run": result.get("dry_run", False),
         }
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Clustering failed: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Clustering failed: {exc}"
+        ) from exc
 
 
 @router.post("/claims", response_model=ClaimAnalysisSummary)
@@ -128,7 +130,9 @@ def run_claims(request: DryRunRequest):
             "dry_run": result.get("dry_run", False),
         }
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Claim analysis failed: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Claim analysis failed: {exc}"
+        ) from exc
 
 
 @router.post("/search", response_model=VectorSearchResponse)

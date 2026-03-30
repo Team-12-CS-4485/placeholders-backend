@@ -45,7 +45,9 @@ def search(
             limit=limit * 4,
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Vector search failed: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Vector search failed: {exc}"
+        ) from exc
 
     # Deduplicate by video_id — keep the highest-scoring chunk per video
     seen: dict[str, dict] = {}
@@ -68,11 +70,13 @@ def search(
             logger.warning(f"SEARCH_DYNAMO_MISS video_id={video_id}")
             continue
         mapped = dynamo.map_video_item(item)
-        results.append({
-            **mapped,
-            "score": round(hit["score"], 4),
-            "excerpt": hit.get("text", ""),
-        })
+        results.append(
+            {
+                **mapped,
+                "score": round(hit["score"], 4),
+                "excerpt": hit.get("text", ""),
+            }
+        )
 
     return {
         "query": q,

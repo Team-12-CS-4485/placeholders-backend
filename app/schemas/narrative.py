@@ -14,7 +14,6 @@ from pydantic import BaseModel
 from app.schemas.trend import ClassifiedClaims, WeekData
 from app.schemas.video import VideoItem
 
-
 # ── GET /api/narratives — lean list ──────────────────────────────────────────
 
 

@@ -86,10 +86,14 @@ class DynamoService:
             filter_expr = Attr("week").eq(week)
         if cluster_id is not None:
             cluster_filter = Attr("cluster_id").eq(cluster_id)
-            filter_expr = filter_expr & cluster_filter if filter_expr else cluster_filter
+            filter_expr = (
+                filter_expr & cluster_filter if filter_expr else cluster_filter
+            )
 
         if filter_expr is not None:
-            return self._scan_videos_filtered(limit, cursor, filter_expr, week, cluster_id)
+            return self._scan_videos_filtered(
+                limit, cursor, filter_expr, week, cluster_id
+            )
         return self._scan_videos_unfiltered(limit, cursor)
 
     def _scan_videos_filtered(
@@ -127,7 +131,7 @@ class DynamoService:
             logger.error(f"DYNAMO_SCAN_VIDEOS_ERROR error={exc}")
             return {"items": [], "total_returned": 0, "next_cursor": None}
 
-        page = all_items[offset: offset + limit]
+        page = all_items[offset : offset + limit]
         next_offset = offset + limit
         next_cursor = (
             base64.b64encode(str(next_offset).encode()).decode()
@@ -173,7 +177,11 @@ class DynamoService:
             next_cursor = base64.b64encode(json.dumps(clean_key).encode()).decode()
 
         logger.info(f"DYNAMO_SCAN_VIDEOS returned={len(items)}")
-        return {"items": items, "total_returned": len(items), "next_cursor": next_cursor}
+        return {
+            "items": items,
+            "total_returned": len(items),
+            "next_cursor": next_cursor,
+        }
 
     def map_video_item(self, item: dict) -> dict:
         """Map a deserialized youtube-videos DynamoDB item to an API-ready dict."""

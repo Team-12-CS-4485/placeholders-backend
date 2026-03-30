@@ -100,8 +100,14 @@ class TrendService:
             "claims": classified_claims,
             "narrative_headline": item.get("narrative_headline"),
             "narrative_summary": item.get("narrative_summary"),
-            "avg_clickbait_rating": float(item["avg_clickbait_rating"]) if item.get("avg_clickbait_rating") is not None else None,
-            "thumbnail_tone_breakdown": dict(item.get("thumbnail_tone_breakdown") or {}),
+            "avg_clickbait_rating": (
+                float(item["avg_clickbait_rating"])
+                if item.get("avg_clickbait_rating") is not None
+                else None
+            ),
+            "thumbnail_tone_breakdown": dict(
+                item.get("thumbnail_tone_breakdown") or {}
+            ),
         }
 
     # ── Internal cluster fetching ─────────────────────────────────────────────
@@ -441,16 +447,18 @@ class TrendService:
                 if not week_slice:
                     continue
 
-            result.append({
-                "cluster_id": c["cluster_id"],
-                "label": c["label"],
-                "category": c["category"],
-                "narrative_headline": c.get("narrative_headline"),
-                "narrative_summary": c.get("narrative_summary"),
-                "top_topics": c["top_topics"],
-                "video_count": c["video_count"],
-                "dominant_sentiment": c["dominant_sentiment"],
-            })
+            result.append(
+                {
+                    "cluster_id": c["cluster_id"],
+                    "label": c["label"],
+                    "category": c["category"],
+                    "narrative_headline": c.get("narrative_headline"),
+                    "narrative_summary": c.get("narrative_summary"),
+                    "top_topics": c["top_topics"],
+                    "video_count": c["video_count"],
+                    "dominant_sentiment": c["dominant_sentiment"],
+                }
+            )
 
         reverse = sort_by != "label"
         result.sort(key=lambda x: x.get(sort_by, 0), reverse=reverse)
