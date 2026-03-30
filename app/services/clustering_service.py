@@ -644,7 +644,8 @@ class ClusteringService:
 
         # Existing clusters that weren't matched → declining
         active_old = {
-            cid for cid, info in existing_clusters.items()
+            cid
+            for cid, info in existing_clusters.items()
             if info.get("status") != "inactive"
         }
         declined_ids = sorted(active_old - used_old)
