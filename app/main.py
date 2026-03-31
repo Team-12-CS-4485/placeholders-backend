@@ -5,6 +5,9 @@ Sets up the Newsify backend API server with:
 - CORS middleware (all origins allowed for development)
 - HTTP request/response logging middleware
 - Pipeline router for transcript analysis and search endpoints
+- Trends router for cluster trend data
+- Videos router for video listing and detail
+- Articles router for generated news articles
 - Health check endpoint at GET /health
 
 Run with: uvicorn app.main:app --reload
@@ -17,6 +20,7 @@ from fastapi.responses import RedirectResponse
 from app.api.endpoints.trends import router as trends_router, weeks_router
 from app.api.endpoints.pipeline import router as pipeline_router
 from app.api.endpoints.videos import router as videos_router
+from app.api.endpoints.articles import router as articles_router
 from app.core.logging import get_logger
 
 app = FastAPI(title="Placeholders Backend API")
@@ -34,6 +38,7 @@ app.include_router(pipeline_router)
 app.include_router(videos_router)
 app.include_router(trends_router)
 app.include_router(weeks_router)
+app.include_router(articles_router)
 
 
 @app.middleware("http")

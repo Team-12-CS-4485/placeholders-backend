@@ -1,7 +1,7 @@
 """
 pipeline.py - Pipeline API Endpoints
 
-POST /api/pipeline/run    : Runs the full pipeline — ingest → cluster → claim analysis
+POST /api/pipeline/run    : Runs the full pipeline — ingest → cluster → claim analysis → articles
 POST /api/pipeline/search : Semantic search over indexed transcript chunks
 """
 
@@ -16,6 +16,7 @@ from app.schemas.pipeline import (
 from app.services.pipeline_service import PipelineService
 from app.services.clustering_service import ClusteringService
 from app.services.claim_analysis_service import ClaimAnalysisService
+from app.services.article_service import ArticleService
 from app.services.embedding_service import EmbeddingService
 from app.services.vector_service import VectorService
 from app.core.config import settings
@@ -27,9 +28,10 @@ router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
 def run_full_pipeline(request: PipelineRunRequest):
     """
     Runs the full pipeline in sequence:
-    1. Ingest — S3 → chunk → Gemini → embed → Qdrant
-    2. Cluster — UMAP/HDBSCAN → patches cluster_id/label back to Qdrant
-    3. Claim analysis — classifies consensus/debated/unique → patches back to Qdrant
+    1. Ingest    — S3 → chunk → Gemini → embed → Qdrant
+    2. Cluster   — UMAP/HDBSCAN → patches cluster_id/label back to Qdrant
+    3. Claims    — classifies consensus/debated/unique → patches back to Qdrant
+    4. Articles  — generates Gemini news articles → DynamoDB articles table
     """
     try:
         # Step 1: Ingest
@@ -43,6 +45,22 @@ def run_full_pipeline(request: PipelineRunRequest):
 
         # Step 3: Claim analysis
         claim_result = ClaimAnalysisService().run_claim_analysis()
+
+        # Step 4: Article generation (non-fatal — pipeline succeeds even if this fails)
+        try:
+            article_result = ArticleService().run_article_generation()
+        except Exception as article_exc:
+            # Log but don't fail the whole pipeline
+            import logging
+            logging.getLogger(__name__).error(
+                f"ARTICLE_GENERATION_FAILED (non-fatal) error={article_exc}"
+            )
+            article_result = {
+                "articles_generated": 0,
+                "articles_skipped": 0,
+                "articles_failed": 0,
+                "weeks_processed": [],
+            }
 
         return {
             "ingestion": {
@@ -62,6 +80,12 @@ def run_full_pipeline(request: PipelineRunRequest):
             "claim_analysis": {
                 "clusters_processed": claim_result.get("clusters_processed", 0),
                 "total_patched": claim_result.get("total_patched", 0),
+            },
+            "articles": {
+                "articles_generated": article_result.get("articles_generated", 0),
+                "articles_skipped": article_result.get("articles_skipped", 0),
+                "articles_failed": article_result.get("articles_failed", 0),
+                "weeks_processed": article_result.get("weeks_processed", []),
             },
         }
 
