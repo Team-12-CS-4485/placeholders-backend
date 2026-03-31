@@ -129,6 +129,18 @@ def write_intelligence_to_dynamodb(
     names["#breaking"] = "is_breaking"
     values[":breaking"] = bool(intelligence.get("is_breaking", False))
 
+    public_sentiment = intelligence.get("public_sentiment") or ""
+    if public_sentiment:
+        set_parts.append("#psent = :psent")
+        names["#psent"] = "public_sentiment"
+        values[":psent"] = public_sentiment
+
+    public_sentiment_score = intelligence.get("public_sentiment_score")
+    if public_sentiment_score is not None:
+        set_parts.append("#pscore = :pscore")
+        names["#pscore"] = "public_sentiment_score"
+        values[":pscore"] = _dec(public_sentiment_score)
+
     if source_key:
         set_parts.append("#src = :src")
         names["#src"] = "source_key"
@@ -241,6 +253,16 @@ def index_videos(video_ids: list):
 
         transcript = storage_service._clean_transcript(transcript)
 
+        # Extract top comments for public sentiment
+        top_comments = []
+        for comment in item.get("topComments", [])[:5]:
+            if isinstance(comment, dict):
+                text = comment.get("text", "")
+                if text.strip():
+                    top_comments.append(text)
+            elif isinstance(comment, str) and comment.strip():
+                top_comments.append(comment)
+
         source_key = s3_map.get(
             video_id, f"youtube-data/unknown/{channel.lower()}.json"
         )
@@ -253,9 +275,9 @@ def index_videos(video_ids: list):
             chunks = embedding_service.chunk_text(transcript)
             print(f"  Chunks: {len(chunks)}")
 
-            # Step 2: Gemini intelligence
+            # Step 2: Gemini intelligence (includes public sentiment from comments)
             intelligence = embedding_service.extract_video_intelligence(
-                chunks=chunks, title=title
+                chunks=chunks, title=title, top_comments=top_comments
             )
 
             if not intelligence.get("topics"):

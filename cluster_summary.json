@@ -3,11 +3,14 @@
   "videos_updated": 191,
   "cluster_count": 10,
   "clusters_written": 10,
+  "new_clusters": 0,
+  "matched_clusters": 10,
+  "declined_clusters": 0,
   "noise_videos": 25,
   "dry_run": false,
   "clusters": {
     "0": {
-      "label": "Artificial Intelligence",
+      "label": "Olaplex Post-IPO Market Collapse",
       "video_count": 9,
       "channel_count": 3,
       "channels": [
@@ -36,6 +39,10 @@
           "sentiment_breakdown": {
             "negative": 1,
             "neutral": 1
+          },
+          "public_sentiment_breakdown": {
+            "negative": 1,
+            "mixed": 1
           }
         },
         {
@@ -46,6 +53,10 @@
           "breaking_count": 1,
           "sentiment_breakdown": {
             "neutral": 1,
+            "negative": 1
+          },
+          "public_sentiment_breakdown": {
+            "mixed": 1,
             "negative": 1
           }
         },
@@ -58,6 +69,10 @@
           "sentiment_breakdown": {
             "neutral": 2,
             "positive": 1
+          },
+          "public_sentiment_breakdown": {
+            "negative": 2,
+            "mixed": 1
           }
         },
         {
@@ -68,6 +83,10 @@
           "breaking_count": 1,
           "sentiment_breakdown": {
             "positive": 2
+          },
+          "public_sentiment_breakdown": {
+            "positive": 1,
+            "negative": 1
           }
         }
       ],
@@ -77,10 +96,11 @@
         "Regulatory scrutiny and the banning of an ingredient in the European Union contributed to the brand's decline.",
         "Former Supergoop CEO Amanda Baldwin was hired to lead a turnaround strategy for the company.",
         "A lawsuit alleging the products caused hair loss was dismissed in 2023, but the stock failed to recover."
-      ]
+      ],
+      "is_new": false
     },
     "1": {
-      "label": "War Powers",
+      "label": "US-Iran War Powers Conflict",
       "video_count": 8,
       "channel_count": 6,
       "channels": [
@@ -113,6 +133,10 @@
             "negative": 3,
             "neutral": 4,
             "positive": 1
+          },
+          "public_sentiment_breakdown": {
+            "negative": 7,
+            "mixed": 1
           }
         }
       ],
@@ -122,10 +146,11 @@
         "Senator Kaine noted that over $8 trillion has been spent on wars in Iraq and Afghanistan over the last 25 years.",
         "Six American service members recently died in uniform during the escalating conflict.",
         "Secretary Pete Hegseth reportedly stated that military actions are accelerating and that the administration is just getting started."
-      ]
+      ],
+      "is_new": false
     },
     "2": {
-      "label": "Missing Persons",
+      "label": "Missing American Student Investigation",
       "video_count": 12,
       "channel_count": 6,
       "channels": [
@@ -157,6 +182,10 @@
           "sentiment_breakdown": {
             "negative": 5,
             "positive": 1
+          },
+          "public_sentiment_breakdown": {
+            "negative": 3,
+            "positive": 3
           }
         },
         {
@@ -167,6 +196,11 @@
           "breaking_count": 4,
           "sentiment_breakdown": {
             "negative": 4
+          },
+          "public_sentiment_breakdown": {
+            "positive": 1,
+            "mixed": 1,
+            "negative": 2
           }
         },
         {
@@ -178,6 +212,10 @@
           "sentiment_breakdown": {
             "negative": 1,
             "positive": 1
+          },
+          "public_sentiment_breakdown": {
+            "mixed": 1,
+            "negative": 1
           }
         }
       ],
@@ -187,10 +225,11 @@
         "Police reported there is currently no evidence indicating the death was criminal in nature.",
         "The victim's father traveled to Barcelona to assist with the search and investigation.",
         "The official cause of death is pending the results of a full forensic examination."
-      ]
+      ],
+      "is_new": false
     },
     "3": {
-      "label": "Republican Party",
+      "label": "England Squad World Cup Overhaul",
       "video_count": 8,
       "channel_count": 6,
       "channels": [
@@ -222,6 +261,10 @@
           "sentiment_breakdown": {
             "positive": 2,
             "neutral": 2
+          },
+          "public_sentiment_breakdown": {
+            "negative": 3,
+            "mixed": 1
           }
         },
         {
@@ -233,6 +276,10 @@
           "sentiment_breakdown": {
             "neutral": 2,
             "negative": 1
+          },
+          "public_sentiment_breakdown": {
+            "mixed": 2,
+            "negative": 1
           }
         },
         {
@@ -243,6 +290,9 @@
           "breaking_count": 0,
           "sentiment_breakdown": {
             "positive": 1
+          },
+          "public_sentiment_breakdown": {
+            "mixed": 1
           }
         }
       ],
@@ -252,10 +302,11 @@
         "Manchester United's Harry Maguire and Kobbie Mainoo have received their first call-ups under Tuchel's tenure.",
         "Trent Alexander-Arnold and Ollie Watkins were omitted from the squad as the manager chooses to evaluate other tactical profiles and players.",
         "Jude Bellingham will join the camp for training integration following a muscle injury, with a potential appearance scheduled for the match against Japan."
-      ]
+      ],
+      "is_new": false
     },
     "4": {
-      "label": "Department of Homeland Security",
+      "label": "US Election Integrity Conflict",
       "video_count": 8,
       "channel_count": 6,
       "channels": [
@@ -286,6 +337,9 @@
           "breaking_count": 0,
           "sentiment_breakdown": {
             "negative": 1
+          },
+          "public_sentiment_breakdown": {
+            "negative": 1
           }
         },
         {
@@ -297,6 +351,9 @@
           "sentiment_breakdown": {
             "neutral": 2,
             "negative": 2
+          },
+          "public_sentiment_breakdown": {
+            "negative": 4
           }
         },
         {
@@ -306,6 +363,9 @@
           "view_count": 25895,
           "breaking_count": 0,
           "sentiment_breakdown": {
+            "negative": 2
+          },
+          "public_sentiment_breakdown": {
             "negative": 2
           }
         },
@@ -317,6 +377,9 @@
           "breaking_count": 0,
           "sentiment_breakdown": {
             "negative": 1
+          },
+          "public_sentiment_breakdown": {
+            "mixed": 1
           }
         }
       ],
@@ -326,10 +389,11 @@
         "Rep. Goldman accuses the witness of wanting to create an excuse to terrorize polling places.",
         "A 17-page proposed executive order reportedly exists that would allow the president to seize voting machines and ban mail-in ballots.",
         "The witness claims the Department of Homeland Security's role is limited to identifying election infrastructure vulnerabilities and making recommendations to states."
-      ]
+      ],
+      "is_new": false
     },
     "5": {
-      "label": "Jeffrey Epstein Investigation",
+      "label": "UK Epstein Political Controversy",
       "video_count": 14,
       "channel_count": 7,
       "channels": [
@@ -362,6 +426,9 @@
           "sentiment_breakdown": {
             "negative": 5,
             "neutral": 1
+          },
+          "public_sentiment_breakdown": {
+            "negative": 6
           }
         },
         {
@@ -372,6 +439,9 @@
           "breaking_count": 1,
           "sentiment_breakdown": {
             "negative": 3
+          },
+          "public_sentiment_breakdown": {
+            "negative": 3
           }
         },
         {
@@ -381,6 +451,9 @@
           "view_count": 8690,
           "breaking_count": 1,
           "sentiment_breakdown": {
+            "negative": 1
+          },
+          "public_sentiment_breakdown": {
             "negative": 1
           }
         },
@@ -393,6 +466,9 @@
           "sentiment_breakdown": {
             "neutral": 1,
             "negative": 3
+          },
+          "public_sentiment_breakdown": {
+            "negative": 4
           }
         }
       ],
@@ -402,10 +478,11 @@
         "Documents reveal Mandelson stayed in Jeffrey Epstein's home in 2009 while Epstein was serving a jail sentence.",
         "Prime Minister Keir Starmer was reportedly given a checklist highlighting Mandelson's personal and professional relationship with Epstein during the vetting process.",
         "The opposition Conservative Party is using the revelations to criticize Starmer's judgment and weaken his position as leader of the Labor Party."
-      ]
+      ],
+      "is_new": false
     },
     "6": {
-      "label": "Government Shutdown",
+      "label": "US Aviation Safety Funding Crisis",
       "video_count": 19,
       "channel_count": 5,
       "channels": [
@@ -437,6 +514,10 @@
             "positive": 2,
             "neutral": 1,
             "negative": 1
+          },
+          "public_sentiment_breakdown": {
+            "negative": 1,
+            "positive": 3
           }
         },
         {
@@ -449,6 +530,11 @@
             "negative": 2,
             "positive": 2,
             "neutral": 1
+          },
+          "public_sentiment_breakdown": {
+            "positive": 2,
+            "mixed": 1,
+            "negative": 2
           }
         },
         {
@@ -461,6 +547,11 @@
             "negative": 7,
             "positive": 2,
             "neutral": 1
+          },
+          "public_sentiment_breakdown": {
+            "negative": 5,
+            "mixed": 4,
+            "positive": 1
           }
         }
       ],
@@ -470,10 +561,11 @@
         "The NTSB is investigating why only two air traffic controllers were on duty at the time of the accident.",
         "A potential deal between the White House and Congress seeks to fund the TSA and Department of Homeland Security to end long airport security lines.",
         "Delta Airlines suspended special perks for members of Congress at Reagan National Airport to increase pressure to end the partial government shutdown."
-      ]
+      ],
+      "is_new": false
     },
     "7": {
-      "label": "Oil Markets",
+      "label": "Global Energy Security Crisis",
       "video_count": 20,
       "channel_count": 8,
       "channels": [
@@ -507,6 +599,10 @@
           "sentiment_breakdown": {
             "negative": 3,
             "positive": 1
+          },
+          "public_sentiment_breakdown": {
+            "negative": 3,
+            "mixed": 1
           }
         },
         {
@@ -517,6 +613,10 @@
           "breaking_count": 2,
           "sentiment_breakdown": {
             "negative": 4
+          },
+          "public_sentiment_breakdown": {
+            "negative": 3,
+            "mixed": 1
           }
         },
         {
@@ -527,6 +627,11 @@
           "breaking_count": 5,
           "sentiment_breakdown": {
             "negative": 8,
+            "positive": 1
+          },
+          "public_sentiment_breakdown": {
+            "negative": 7,
+            "mixed": 1,
             "positive": 1
           }
         },
@@ -539,6 +644,9 @@
           "sentiment_breakdown": {
             "positive": 1,
             "negative": 2
+          },
+          "public_sentiment_breakdown": {
+            "negative": 3
           }
         }
       ],
@@ -548,10 +656,11 @@
         "Treasury Secretary Bessant indicated the US might release 140 million barrels of sanctioned Iranian oil into the market to stabilize prices.",
         "The Pentagon is reportedly planning to request up to $200 billion from Congress for ongoing military operations and munitions replenishment.",
         "Energy analysts suggest that a US military footprint on the ground in Iran may be required to successfully secure the Strait of Hormuz."
-      ]
+      ],
+      "is_new": false
     },
     "8": {
-      "label": "US Foreign Policy",
+      "label": "Iran Leadership Succession Crisis",
       "video_count": 31,
       "channel_count": 9,
       "channels": [
@@ -586,6 +695,10 @@
           "sentiment_breakdown": {
             "negative": 3,
             "neutral": 7
+          },
+          "public_sentiment_breakdown": {
+            "negative": 9,
+            "mixed": 1
           }
         },
         {
@@ -597,6 +710,11 @@
           "sentiment_breakdown": {
             "negative": 4,
             "neutral": 1
+          },
+          "public_sentiment_breakdown": {
+            "mixed": 1,
+            "positive": 1,
+            "negative": 3
           }
         },
         {
@@ -608,6 +726,9 @@
           "sentiment_breakdown": {
             "negative": 2,
             "neutral": 2
+          },
+          "public_sentiment_breakdown": {
+            "negative": 4
           }
         },
         {
@@ -619,6 +740,10 @@
           "sentiment_breakdown": {
             "negative": 9,
             "neutral": 3
+          },
+          "public_sentiment_breakdown": {
+            "negative": 11,
+            "positive": 1
           }
         }
       ],
@@ -628,10 +753,11 @@
         "The IRGC controls approximately 30% of the Iranian economy and the Supreme Leader controls assets estimated at $100 billion.",
         "There is significant internal competition and fighting within the committees tasked with choosing the next leader.",
         "Rumors suggest Iranian state media may have prematurely announced Mojtaba as the leader to make him a target for Israeli attacks."
-      ]
+      ],
+      "is_new": false
     },
     "9": {
-      "label": "Middle East Conflict",
+      "label": "Iran-Israel Energy Security Crisis",
       "video_count": 37,
       "channel_count": 7,
       "channels": [
@@ -664,6 +790,11 @@
           "sentiment_breakdown": {
             "negative": 13,
             "neutral": 3
+          },
+          "public_sentiment_breakdown": {
+            "negative": 12,
+            "positive": 2,
+            "mixed": 2
           }
         },
         {
@@ -674,6 +805,10 @@
           "breaking_count": 7,
           "sentiment_breakdown": {
             "negative": 8
+          },
+          "public_sentiment_breakdown": {
+            "positive": 1,
+            "negative": 7
           }
         },
         {
@@ -683,6 +818,9 @@
           "view_count": 913364,
           "breaking_count": 4,
           "sentiment_breakdown": {
+            "negative": 6
+          },
+          "public_sentiment_breakdown": {
             "negative": 6
           }
         },
@@ -695,6 +833,10 @@
           "sentiment_breakdown": {
             "negative": 5,
             "neutral": 2
+          },
+          "public_sentiment_breakdown": {
+            "negative": 6,
+            "mixed": 1
           }
         }
       ],
@@ -704,7 +846,8 @@
         "US and Israeli forces have launched large-scale strikes against Iranian infrastructure and Hezbollah targets in Beirut.",
         "The conflict has resulted in over 1,245 deaths within the first 12 days of hostilities.",
         "Rising energy costs are driving up global inflation and impacting the mortgage market in the UK."
-      ]
+      ],
+      "is_new": false
     }
   }
 }

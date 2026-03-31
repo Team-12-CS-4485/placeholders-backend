@@ -271,6 +271,12 @@ class StorageService:
             if channel and video_id:
                 fresh_stats = self.get_video_metadata(channel, video_id)
 
+            # Extract top comments (up to 5)
+            top_comments = []
+            for comment in video.get("topComments", [])[:5]:
+                if isinstance(comment, dict):
+                    top_comments.append(comment.get("text", ""))
+
             videos.append(
                 {
                     "videoId": video_id,
@@ -287,6 +293,7 @@ class StorageService:
                         "comment_count", int(video.get("commentCount", 0))
                     ),
                     "transcript": transcript,
+                    "top_comments": top_comments,
                 }
             )
 

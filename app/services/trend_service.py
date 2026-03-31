@@ -93,6 +93,18 @@ class TrendService:
             "sentiment_label": sentiment_label,
             "recent_sentiment_label": recent_sentiment_label,
             "dominant_sentiment": item.get("dominant_sentiment", "neutral"),
+            "public_sentiment_breakdown": dict(
+                item.get("public_sentiment_breakdown") or {}
+            ),
+            "dominant_public_sentiment": item.get(
+                "dominant_public_sentiment", "neutral"
+            ),
+            "avg_public_sentiment_score": (
+                float(item["avg_public_sentiment_score"])
+                if item.get("avg_public_sentiment_score") is not None
+                else 0.0
+            ),
+            "sentiment_divergence": bool(item.get("sentiment_divergence", False)),
             "channels": list(item.get("channels", [])),
             "week_data": week_data,
             "top_claims": top_claims,
@@ -118,6 +130,7 @@ class TrendService:
             int(item["cluster_id"]): self._build_cluster_from_dynamo(item)
             for item in items
             if item.get("cluster_id") is not None
+            and item.get("status", "active") != "inactive"
         }
 
     def _find_cluster(self, cluster_id: int) -> dict:
@@ -348,6 +361,8 @@ class TrendService:
                 "sentiment_label": c["sentiment_label"],
                 "recent_sentiment_label": c["recent_sentiment_label"],
                 "dominant_sentiment": c["dominant_sentiment"],
+                "dominant_public_sentiment": c["dominant_public_sentiment"],
+                "sentiment_divergence": c["sentiment_divergence"],
                 "top_topics": c["top_topics"],
             }
             for c in sorted_trends
@@ -376,6 +391,10 @@ class TrendService:
             "sentiment_label": c["sentiment_label"],
             "recent_sentiment_label": c["recent_sentiment_label"],
             "dominant_sentiment": c["dominant_sentiment"],
+            "public_sentiment_breakdown": c["public_sentiment_breakdown"],
+            "dominant_public_sentiment": c["dominant_public_sentiment"],
+            "avg_public_sentiment_score": c["avg_public_sentiment_score"],
+            "sentiment_divergence": c["sentiment_divergence"],
             "channels": c["channels"],
             "week_data": c["week_data"],
             "top_claims": c["top_claims"],
