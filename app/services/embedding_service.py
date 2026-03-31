@@ -124,6 +124,34 @@ class EmbeddingService:
         )
         return True
 
+    @staticmethod
+    def _is_retryable(exc) -> tuple[bool, str]:
+        """Check if a Gemini exception is retryable. Returns (retryable, type)."""
+        exc_str = str(exc)
+        status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+
+        if (
+            "429" in exc_str
+            or "RESOURCE_EXHAUSTED" in exc_str
+            or "rate" in exc_str.lower()
+            or "quota" in exc_str.lower()
+            or "too many" in exc_str.lower()
+            or status == 429
+        ):
+            return True, "rate_limit"
+
+        if (
+            "503" in exc_str
+            or "500" in exc_str
+            or "UNAVAILABLE" in exc_str
+            or "INTERNAL" in exc_str
+            or "overloaded" in exc_str.lower()
+            or status in (500, 503)
+        ):
+            return True, "server_error"
+
+        return False, "unknown"
+
     def _gemini(self, prompt: Union[str, list], max_retries: int = 6) -> str:
         contents = prompt if isinstance(prompt, list) else [prompt]
         last_exc = None
@@ -139,26 +167,21 @@ class EmbeddingService:
                         )
                     ),
                 )
+                time.sleep(0.5)  # pace RPM across keys
                 return self._get_text(response)
             except Exception as exc:
                 last_exc = exc
-                exc_str = str(exc)
-                is_rate_limit = (
-                    "429" in exc_str
-                    or "RESOURCE_EXHAUSTED" in exc_str
-                    or "rate" in exc_str.lower()
-                    or "quota" in exc_str.lower()
-                    or "too many" in exc_str.lower()
-                    or getattr(exc, "status_code", None) == 429
-                    or getattr(exc, "code", None) == 429
-                )
-                if is_rate_limit:
+                retryable, err_type = self._is_retryable(exc)
+
+                if not retryable:
+                    raise
+
+                if err_type == "rate_limit":
                     if self._rotate_key():
                         logger.warning(
                             f"GEMINI_KEY_ROTATED attempt={attempt+1} retrying immediately"
                         )
                         continue
-                    # all keys exhausted — reset and wait
                     logger.warning(
                         "ALL_KEYS_EXHAUSTED resetting to key 0 and waiting 60s"
                     )
@@ -166,8 +189,14 @@ class EmbeddingService:
                     self.client = genai.Client(api_key=self.api_keys[0])
                     time.sleep(60)
                     continue
-                else:
-                    raise
+
+                if err_type == "server_error":
+                    wait = min(5 * (attempt + 1), 30)
+                    logger.warning(
+                        f"GEMINI_503 attempt={attempt+1} waiting {wait}s before retry"
+                    )
+                    time.sleep(wait)
+                    continue
         raise last_exc
 
     def _gemini_vision(self, prompt: Union[str, list], max_retries: int = 6) -> str:
@@ -182,20 +211,16 @@ class EmbeddingService:
                         thinking_config=types.ThinkingConfig(thinking_level="low")
                     ),
                 )
+                time.sleep(0.5)  # pace RPM across keys
                 return self._get_text(response)
             except Exception as exc:
                 last_exc = exc
-                exc_str = str(exc)
-                is_rate_limit = (
-                    "429" in exc_str
-                    or "RESOURCE_EXHAUSTED" in exc_str
-                    or "rate" in exc_str.lower()
-                    or "quota" in exc_str.lower()
-                    or "too many" in exc_str.lower()
-                    or getattr(exc, "status_code", None) == 429
-                    or getattr(exc, "code", None) == 429
-                )
-                if is_rate_limit:
+                retryable, err_type = self._is_retryable(exc)
+
+                if not retryable:
+                    raise
+
+                if err_type == "rate_limit":
                     if self._rotate_key():
                         logger.warning(
                             f"GEMINI_KEY_ROTATED (vision) attempt={attempt+1} retrying immediately"
@@ -208,8 +233,14 @@ class EmbeddingService:
                     self.client = genai.Client(api_key=self.api_keys[0])
                     time.sleep(60)
                     continue
-                else:
-                    raise
+
+                if err_type == "server_error":
+                    wait = min(5 * (attempt + 1), 30)
+                    logger.warning(
+                        f"GEMINI_VISION_503 attempt={attempt+1} waiting {wait}s before retry"
+                    )
+                    time.sleep(wait)
+                    continue
         raise last_exc
 
     # ── Thumbnail helpers ─────────────────────────────────────────────────────
@@ -324,7 +355,9 @@ class EmbeddingService:
 
     # ── Video intelligence — ONE call per video ───────────────────────────────
 
-    def extract_video_intelligence(self, chunks: list[str], title: str = "") -> dict:
+    def extract_video_intelligence(
+        self, chunks: list[str], title: str = "", top_comments: list[str] = None
+    ) -> dict:
         """
         Single Gemini call per video. Concatenates all chunks and extracts:
         - topics (list of 3-5 short topic strings)
@@ -332,31 +365,47 @@ class EmbeddingService:
         - sentiment (positive / negative / neutral)
         - key_claims (list of up to 5 one-sentence claims)
         - is_breaking (bool — urgent/developing story language detected)
+        - public_sentiment (positive / negative / neutral / mixed)
+        - public_sentiment_score (-1.0 to 1.0)
 
         Returns a dict with those keys. Falls back to safe defaults on parse error.
         """
         full_text = "\n\n".join(chunks)
         title_line = f'Video title: "{title}"\n\n' if title else ""
 
+        comments_block = ""
+        if top_comments:
+            comments_text = "\n".join(f"- {c}" for c in top_comments if c.strip())
+            if comments_text:
+                comments_block = f"\n\nTop viewer comments:\n{comments_text}\n"
+
         prompt = (
             f"{title_line}"
             f"Below is a news video transcript split into chunks.\n\n"
-            f"{full_text}\n\n"
+            f"{full_text}"
+            f"{comments_block}\n\n"
             "Return ONLY a valid JSON object with exactly these keys:\n"
             "{\n"
             '  "topics": ["topic1", "topic2"],\n'
             '  "category": "<category>",\n'
             '  "sentiment": "<positive|negative|neutral>",\n'
             '  "key_claims": ["claim1", "claim2"],\n'
-            '  "is_breaking": <true|false>\n'
+            '  "is_breaking": <true|false>,\n'
+            '  "public_sentiment": "<positive|negative|neutral|mixed>",\n'
+            '  "public_sentiment_score": <float between -1.0 and 1.0>\n'
             "}\n\n"
             "Rules:\n"
             "- topics: 3 to 5 broad reusable tags like 'Iran Conflict', 'Oil Markets', 'Drone Warfare'. "
             "NOT headline-specific phrases. Should apply across multiple videos on the same story.\n"
             f"- category: must be exactly one of these options: {CATEGORY_OPTIONS_STR}\n"
-            "- sentiment: overall tone of the coverage\n"
+            "- sentiment: overall tone of the coverage (the creator/video perspective)\n"
             "- key_claims: up to 5 specific factual claims made in the video, one sentence each\n"
             "- is_breaking: true if the transcript uses urgent/developing/breaking language\n"
+            "- public_sentiment: audience reaction based on the viewer comments. "
+            "positive = supportive/agreeing, negative = critical/angry, neutral = informational, "
+            "mixed = divided opinions. If no comments provided, default to neutral.\n"
+            "- public_sentiment_score: -1.0 (very negative) to 1.0 (very positive), 0.0 = neutral. "
+            "Based on viewer comments. If no comments, use 0.0.\n"
             "Return raw JSON only, no markdown, no explanation."
         )
 
@@ -372,6 +421,18 @@ class EmbeddingService:
             )
             data = json.loads(clean)
 
+            public_sentiment = data.get("public_sentiment", "neutral")
+            if public_sentiment not in ("positive", "negative", "neutral", "mixed"):
+                public_sentiment = "neutral"
+
+            public_sentiment_score = data.get("public_sentiment_score", 0.0)
+            try:
+                public_sentiment_score = max(
+                    -1.0, min(1.0, float(public_sentiment_score))
+                )
+            except (ValueError, TypeError):
+                public_sentiment_score = 0.0
+
             return {
                 "topics": data.get("topics", [])[:5],
                 "category": (
@@ -386,6 +447,8 @@ class EmbeddingService:
                 ),
                 "key_claims": data.get("key_claims", [])[:5],
                 "is_breaking": bool(data.get("is_breaking", False)),
+                "public_sentiment": public_sentiment,
+                "public_sentiment_score": public_sentiment_score,
             }
 
         except (json.JSONDecodeError, Exception) as exc:
@@ -396,6 +459,8 @@ class EmbeddingService:
                 "sentiment": "neutral",
                 "key_claims": [],
                 "is_breaking": False,
+                "public_sentiment": "neutral",
+                "public_sentiment_score": 0.0,
             }
 
     # ── Chunk-level analysis (optional deep analysis) ────────────────────────

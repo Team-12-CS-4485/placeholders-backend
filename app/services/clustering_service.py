@@ -139,7 +139,8 @@ class ClusteringService:
         scan_kwargs = {
             "ProjectionExpression": "PartitionKey, SortKey, channel, topics, category, "
             "sentiment, is_breaking, viewCount, likeCount, commentCount, "
-            "title, publishedAt, #wk, source_key, key_claims",
+            "title, publishedAt, #wk, source_key, key_claims, "
+            "public_sentiment, public_sentiment_score",
             "ExpressionAttributeNames": {"#wk": "week"},
         }
 
@@ -161,6 +162,10 @@ class ClusteringService:
                         "week": item.get("week", "unknown"),
                         "source_key": item.get("source_key", ""),
                         "key_claims": item.get("key_claims", []),
+                        "public_sentiment": item.get("public_sentiment", "neutral"),
+                        "public_sentiment_score": float(
+                            item.get("public_sentiment_score") or 0
+                        ),
                     }
             if "LastEvaluatedKey" not in resp:
                 break
@@ -267,6 +272,8 @@ class ClusteringService:
             channels = set()
             categories = Counter()
             sentiments = Counter()
+            public_sentiments = Counter()
+            public_sentiment_scores = []
             breaking = views = likes = comments = 0
             claims = []
             titles = []
@@ -279,6 +286,8 @@ class ClusteringService:
                 channels.add(m.get("channel", ""))
                 categories[m.get("category", "Other")] += 1
                 sentiments[m.get("sentiment", "neutral")] += 1
+                public_sentiments[m.get("public_sentiment", "neutral")] += 1
+                public_sentiment_scores.append(m.get("public_sentiment_score", 0.0))
                 if m.get("is_breaking"):
                     breaking += 1
                 views += m.get("view_count", 0)
@@ -302,6 +311,9 @@ class ClusteringService:
                 week_sentiments = Counter(v.get("sentiment", "neutral") for v in wvids)
                 week_breaking = sum(1 for v in wvids if v.get("is_breaking"))
                 week_views = sum(v.get("view_count", 0) for v in wvids)
+                week_pub_sentiments = Counter(
+                    v.get("public_sentiment", "neutral") for v in wvids
+                )
                 week_data.append(
                     {
                         "week": week_name,
@@ -310,8 +322,27 @@ class ClusteringService:
                         "view_count": week_views,
                         "breaking_count": week_breaking,
                         "sentiment_breakdown": dict(week_sentiments),
+                        "public_sentiment_breakdown": dict(week_pub_sentiments),
                     }
                 )
+
+            # Compute average public sentiment score for the cluster
+            avg_public_score = (
+                round(sum(public_sentiment_scores) / len(public_sentiment_scores), 3)
+                if public_sentiment_scores
+                else 0.0
+            )
+
+            # Detect creator vs audience divergence
+            dominant_creator = (
+                sentiments.most_common(1)[0][0] if sentiments else "neutral"
+            )
+            dominant_public = (
+                public_sentiments.most_common(1)[0][0]
+                if public_sentiments
+                else "neutral"
+            )
+            sentiment_divergence = dominant_creator != dominant_public
 
             cluster_topic_counts[cid] = tc
             cluster_claims[cid] = list(dict.fromkeys(claims))[:5]  # dedupe, top 5
@@ -321,6 +352,9 @@ class ClusteringService:
                 "channels": channels,
                 "categories": categories,
                 "sentiments": sentiments,
+                "public_sentiments": public_sentiments,
+                "avg_public_sentiment_score": avg_public_score,
+                "sentiment_divergence": sentiment_divergence,
                 "breaking": breaking,
                 "views": views,
                 "likes": likes,
@@ -414,6 +448,7 @@ class ClusteringService:
                             )
                         ),
                     )
+                    time.sleep(0.5)  # pace RPM across keys
                     raw = getattr(response, "text", "") or str(response)
                     raw = raw.strip()
                     # strip markdown fences if present
@@ -482,6 +517,14 @@ class ClusteringService:
                     else "neutral"
                 ),
                 "sentiment_breakdown": dict(stats["sentiments"]),
+                "public_sentiment_breakdown": dict(stats["public_sentiments"]),
+                "avg_public_sentiment_score": stats["avg_public_sentiment_score"],
+                "dominant_public_sentiment": (
+                    stats["public_sentiments"].most_common(1)[0][0]
+                    if stats["public_sentiments"]
+                    else "neutral"
+                ),
+                "sentiment_divergence": stats["sentiment_divergence"],
                 "breaking_count": stats["breaking"],
                 "total_views": stats["views"],
                 "total_likes": stats["likes"],
@@ -717,6 +760,16 @@ class ClusteringService:
                 "dominant_category": info["dominant_category"],
                 "dominant_sentiment": info["dominant_sentiment"],
                 "sentiment_breakdown": _clean_for_dynamo(info["sentiment_breakdown"]),
+                "public_sentiment_breakdown": _clean_for_dynamo(
+                    info.get("public_sentiment_breakdown", {})
+                ),
+                "avg_public_sentiment_score": _dec(
+                    info.get("avg_public_sentiment_score", 0.0)
+                ),
+                "dominant_public_sentiment": info.get(
+                    "dominant_public_sentiment", "neutral"
+                ),
+                "sentiment_divergence": info.get("sentiment_divergence", False),
                 "breaking_count": _dec(info["breaking_count"]),
                 "total_views": _dec(info["total_views"]),
                 "total_likes": _dec(info["total_likes"]),

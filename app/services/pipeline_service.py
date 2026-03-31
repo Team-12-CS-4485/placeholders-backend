@@ -141,6 +141,18 @@ class PipelineService:
         names["#breaking"] = "is_breaking"
         values[":breaking"] = bool(intelligence.get("is_breaking", False))
 
+        public_sentiment = intelligence.get("public_sentiment") or ""
+        if public_sentiment:
+            set_parts.append("#psent = :psent")
+            names["#psent"] = "public_sentiment"
+            values[":psent"] = public_sentiment
+
+        public_sentiment_score = intelligence.get("public_sentiment_score")
+        if public_sentiment_score is not None:
+            set_parts.append("#pscore = :pscore")
+            names["#pscore"] = "public_sentiment_score"
+            values[":pscore"] = _dec(public_sentiment_score)
+
         if source_key:
             set_parts.append("#src = :src")
             names["#src"] = "source_key"
@@ -310,6 +322,7 @@ class PipelineService:
                     title = video.get("title", "")
                     channel = video.get("channel", "")
                     transcript = video.get("transcript", "")
+                    top_comments = video.get("top_comments", [])
 
                     transcript_key = f"{source_key}::{video_id}"
 
@@ -352,6 +365,7 @@ class PipelineService:
                             self.embedding_service.extract_video_intelligence(
                                 chunks=chunks,
                                 title=title,
+                                top_comments=top_comments,
                             )
                         )
 
@@ -380,7 +394,7 @@ class PipelineService:
                             f"sentiment={intelligence['sentiment']} "
                             f"topics={intelligence['topics']}"
                         )
-                        time.sleep(5)
+                        time.sleep(1)
 
                         # Step 3: Write intelligence to DynamoDB
                         self._write_intelligence_to_dynamodb(
@@ -417,7 +431,7 @@ class PipelineService:
                                 thumbnail=thumbnail,
                             )
 
-                        time.sleep(5)
+                        time.sleep(1)
 
                         # Step 6: Embed chunks locally
                         vectors = self.embedding_service.embed_chunks(chunks)
