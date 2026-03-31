@@ -87,11 +87,16 @@ def main():
         with open(report_path, "w") as f:
             f.write(f"Claim Analysis Report\n")
             f.write(f"Generated: {datetime.now(timezone.utc).isoformat()}\n")
-            f.write(f"Clusters: {result['clusters_processed']}  Written: {result['total_written']}\n")
+            f.write(
+                f"Clusters: {result['clusters_processed']}  Written: {result['total_written']}\n"
+            )
             f.write("=" * 80 + "\n\n")
 
             for cid, claims_data in sorted(cluster_results.items()):
-                total = sum(len(claims_data.get(t, [])) for t in ["consensus", "debated", "unique"])
+                total = sum(
+                    len(claims_data.get(t, []))
+                    for t in ["consensus", "debated", "unique"]
+                )
                 f.write(f"=== Cluster {cid} ({total} selected claims) ===\n\n")
 
                 for claim_type in ["consensus", "debated", "unique"]:
@@ -100,15 +105,23 @@ def main():
                         continue
                     f.write(f"  [{claim_type.upper()}]\n")
                     for c in claims:
-                        f.write(f"    risk={c.get('risk_score', '?')}  channel={c.get('channel', '?')}\n")
+                        f.write(
+                            f"    risk={c.get('risk_score', '?')}  channel={c.get('channel', '?')}\n"
+                        )
                         f.write(f"    claim: {c.get('claim', '')}\n")
                         if c.get("sources"):
-                            f.write(f"    sources: {', '.join(c['sources'])} ({c.get('source_count', 0)})\n")
+                            f.write(
+                                f"    sources: {', '.join(c['sources'])} ({c.get('source_count', 0)})\n"
+                            )
                         if c.get("framing_divergence"):
-                            f.write(f"    framing_divergence: {c['framing_divergence']}\n")
+                            f.write(
+                                f"    framing_divergence: {c['framing_divergence']}\n"
+                            )
                         if c.get("perspectives"):
                             for p in c["perspectives"]:
-                                f.write(f"      - {p['channel']} ({p['sentiment']}): {p.get('video_title', '')}\n")
+                                f.write(
+                                    f"      - {p['channel']} ({p['sentiment']}): {p.get('video_title', '')}\n"
+                                )
                         if c.get("video_title"):
                             f.write(f"    video: {c['video_title']}\n")
                         f.write("\n")
