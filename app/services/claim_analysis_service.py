@@ -75,7 +75,8 @@ class ClaimAnalysisService:
 
         scan_kwargs = {
             "ProjectionExpression": "SortKey, PartitionKey, channel, title, sentiment, "
-            "key_claims, cluster_id, transcript",
+            "key_claims, cluster_id, transcript, thumbnail_clickbait_score, "
+            "public_sentiment, public_sentiment_score",
         }
 
         while True:
@@ -93,6 +94,15 @@ class ClaimAnalysisService:
                             "sentiment": item.get("sentiment", "neutral"),
                             "key_claims": claims,
                             "transcript": item.get("transcript", ""),
+                            "clickbait_score": int(
+                                item.get("thumbnail_clickbait_score") or 0
+                            ),
+                            "public_sentiment": item.get(
+                                "public_sentiment", "neutral"
+                            ),
+                            "public_sentiment_score": float(
+                                item.get("public_sentiment_score") or 0
+                            ),
                         }
                     )
             if "LastEvaluatedKey" not in resp:
@@ -136,6 +146,9 @@ class ClaimAnalysisService:
                             "video_title": v["title"],
                             "sentiment": v["sentiment"],
                             "transcript_excerpt": excerpt,
+                            "clickbait_score": v.get("clickbait_score", 0),
+                            "public_sentiment": v.get("public_sentiment", "neutral"),
+                            "public_sentiment_score": v.get("public_sentiment_score", 0.0),
                         }
                     )
 
@@ -223,6 +236,48 @@ class ClaimAnalysisService:
         pairs = n * (n - 1) / 2
         return round(1.0 - (total / pairs if pairs else 0), 3)
 
+    @staticmethod
+    def _compute_risk_score(
+        claim_type: str,
+        sentiment: str = "neutral",
+        framing_divergence: float = 0.0,
+        source_count: int = 1,
+        clickbait_score: int = 0,
+        public_sentiment: str = "neutral",
+        public_sentiment_score: float = 0.0,
+    ) -> float:
+        """
+        Formula-based claim risk score (0–1).
+        Base scores:
+        - unique (single source): 0.7
+        - debated (2 sources, different framing): 0.4 + divergence boost
+        - consensus (3+ sources agree): decreases with more sources
+        Modifiers:
+        - +0.1 if negative creator sentiment
+        - +0.05 if clickbait_score >= 7 (sensationalized thumbnail)
+        - +0.05 if public sentiment is negative (audience agrees it's bad)
+        - -0.05 if public sentiment is positive (audience trust signal)
+        """
+        if claim_type == "unique":
+            score = 0.7
+        elif claim_type == "debated":
+            score = 0.4 + (framing_divergence * 0.3)
+        else:  # consensus
+            score = max(0.05, 0.2 - (source_count * 0.02))
+
+        if sentiment == "negative":
+            score += 0.1
+
+        if clickbait_score >= 7:
+            score += 0.05
+
+        if public_sentiment == "negative":
+            score += 0.05
+        elif public_sentiment == "positive":
+            score -= 0.05
+
+        return round(min(1.0, max(0.0, score)), 2)
+
     def _classify_groups(self, claims, groups):
         consensus = []
         debated = []
@@ -234,17 +289,35 @@ class ClaimAnalysisService:
             representative = group_claims[0]
 
             if len(channels) >= 3:
+                risk_score = self._compute_risk_score(
+                    "consensus",
+                    sentiment=representative["sentiment"],
+                    source_count=len(channels),
+                    clickbait_score=representative.get("clickbait_score", 0),
+                    public_sentiment=representative.get("public_sentiment", "neutral"),
+                    public_sentiment_score=representative.get("public_sentiment_score", 0.0),
+                )
                 consensus.append(
                     {
                         "claim": representative["claim"],
+                        "channel": representative["channel"],
                         "sources": sorted(channels),
                         "source_count": len(channels),
                         "video_ids": [c["video_id"] for c in group_claims],
                         "transcript_excerpt": representative["transcript_excerpt"],
+                        "risk_score": risk_score,
                     }
                 )
             elif len(channels) >= 2:
                 divergence = self._compute_framing_divergence(group_claims)
+                risk_score = self._compute_risk_score(
+                    "debated",
+                    sentiment=representative["sentiment"],
+                    framing_divergence=divergence,
+                    clickbait_score=representative.get("clickbait_score", 0),
+                    public_sentiment=representative.get("public_sentiment", "neutral"),
+                    public_sentiment_score=representative.get("public_sentiment_score", 0.0),
+                )
                 perspectives = [
                     {
                         "channel": c["channel"],
@@ -258,12 +331,21 @@ class ClaimAnalysisService:
                 debated.append(
                     {
                         "claim": representative["claim"],
+                        "channel": representative["channel"],
                         "perspectives": perspectives,
                         "source_count": len(channels),
                         "framing_divergence": divergence,
+                        "risk_score": risk_score,
                     }
                 )
             elif len(channels) == 1 and len(group_indices) == 1:
+                risk_score = self._compute_risk_score(
+                    "unique",
+                    sentiment=representative["sentiment"],
+                    clickbait_score=representative.get("clickbait_score", 0),
+                    public_sentiment=representative.get("public_sentiment", "neutral"),
+                    public_sentiment_score=representative.get("public_sentiment_score", 0.0),
+                )
                 unique.append(
                     {
                         "claim": representative["claim"],
@@ -271,6 +353,7 @@ class ClaimAnalysisService:
                         "video_id": representative["video_id"],
                         "video_title": representative["video_title"],
                         "transcript_excerpt": representative["transcript_excerpt"],
+                        "risk_score": risk_score,
                     }
                 )
 
@@ -334,21 +417,6 @@ class ClaimAnalysisService:
         if not cluster_videos:
             return {"clusters_processed": 0, "total_written": 0, "dry_run": dry_run}
 
-        if dry_run:
-            total_claims = sum(
-                sum(len(v.get("key_claims") or []) for v in videos)
-                for videos in cluster_videos.values()
-            )
-            logger.info(
-                f"CLAIM_ANALYSIS_DRY_RUN clusters={len(cluster_videos)} "
-                f"total_claims={total_claims}"
-            )
-            return {
-                "clusters_processed": len(cluster_videos),
-                "total_written": 0,
-                "dry_run": True,
-            }
-
         # 2. Collect attributed claims
         cluster_claims = self._collect_attributed_claims(cluster_videos)
 
@@ -368,6 +436,13 @@ class ClaimAnalysisService:
                             "video_id": c["video_id"],
                             "video_title": c["video_title"],
                             "transcript_excerpt": c["transcript_excerpt"],
+                            "risk_score": self._compute_risk_score(
+                                "unique",
+                                sentiment=c["sentiment"],
+                                clickbait_score=c.get("clickbait_score", 0),
+                                public_sentiment=c.get("public_sentiment", "neutral"),
+                                public_sentiment_score=c.get("public_sentiment_score", 0.0),
+                            ),
                         }
                         for c in claims[:max_per_type]
                     ],
@@ -399,12 +474,17 @@ class ClaimAnalysisService:
                 "selected_u": len(selected["unique"]),
             }
 
-        # 4. Write to DynamoDB
-        written = self._write_claims_to_dynamodb(cluster_results)
+        # 4. Write to DynamoDB (skip on dry run)
+        written = 0
+        if not dry_run:
+            written = self._write_claims_to_dynamodb(cluster_results)
+        else:
+            logger.info(f"CLAIM_ANALYSIS_DRY_RUN — skipping DynamoDB write")
 
         return {
             "clusters_processed": len(cluster_results),
             "total_written": written,
             "per_cluster": summary,
-            "dry_run": False,
+            "cluster_results": cluster_results,
+            "dry_run": dry_run,
         }

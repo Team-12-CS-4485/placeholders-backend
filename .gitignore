@@ -6,8 +6,10 @@ __pycache__/
 venv/
 .venv/
 .DS_Store
-transcript_analysis*
-GEMINI.md
-GEMINI.md
 .claude/
 
+# Generated output files
+transcript_analysis*
+claim_analysis_*
+cluster_summary*
+*.log
