@@ -125,6 +125,17 @@ def main():
                         if c.get("video_title"):
                             f.write(f"    video: {c['video_title']}\n")
                         f.write("\n")
+                # Creator risk summary
+                creator_risk = service._compute_creator_risk(claims_data)
+                if creator_risk:
+                    f.write("  [CREATOR RISK]\n")
+                    for cr in creator_risk:
+                        f.write(
+                            f"    {cr['name']}: {cr['riskScore']} ({cr['riskLevel']}) "
+                            f"— {cr['claimCount']} claims\n"
+                        )
+                    f.write("\n")
+
                 f.write("-" * 80 + "\n\n")
 
         print(f"Readable report written to {report_path}")

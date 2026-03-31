@@ -375,25 +375,66 @@ class ClaimAnalysisService:
         )[:max_per_type]
         return {"consensus": consensus, "debated": debated, "unique": unique}
 
-    # ── Step 5: Write to DynamoDB ────────────────────────────────────────────
+    # ── Step 5: Compute creator risk per cluster ──────────────────────────────
+
+    @staticmethod
+    def _compute_creator_risk(claims_data: dict) -> list[dict]:
+        """
+        Aggregate claim risk scores per channel within a cluster.
+        Returns sorted list: [{name, riskScore, riskLevel, claimCount}]
+        """
+        channel_scores: dict[str, list[float]] = defaultdict(list)
+
+        for claim_type in ("consensus", "debated", "unique"):
+            for c in claims_data.get(claim_type, []):
+                channel = c.get("channel")
+                score = c.get("risk_score")
+                if channel and score is not None:
+                    channel_scores[channel].append(score)
+
+        creator_risk = []
+        for channel, scores in channel_scores.items():
+            avg = sum(scores) / len(scores)
+            if avg >= 0.7:
+                level = "high"
+            elif avg >= 0.4:
+                level = "medium"
+            else:
+                level = "low"
+            creator_risk.append(
+                {
+                    "name": channel,
+                    "riskScore": round(avg, 2),
+                    "riskLevel": level,
+                    "claimCount": len(scores),
+                }
+            )
+
+        return sorted(creator_risk, key=lambda x: x["riskScore"], reverse=True)
+
+    # ── Step 6: Write to DynamoDB ────────────────────────────────────────────
 
     def _write_claims_to_dynamodb(self, cluster_results: dict[int, dict]) -> int:
-        """Update narrative-clusters items with classified_claims."""
+        """Update narrative-clusters items with classified_claims + creator_risk."""
         written = 0
 
         for cid, claims_data in cluster_results.items():
             clean_claims = _clean_for_dynamo(claims_data)
+            creator_risk = self._compute_creator_risk(claims_data)
+            clean_risk = _clean_for_dynamo(creator_risk)
 
             try:
                 self._clusters_table.update_item(
                     Key={"cluster_id": _dec(cid)},
-                    UpdateExpression="SET #claims = :claims, #updated = :updated",
+                    UpdateExpression="SET #claims = :claims, #risk = :risk, #updated = :updated",
                     ExpressionAttributeNames={
                         "#claims": "classified_claims",
+                        "#risk": "creator_risk",
                         "#updated": "updated_at",
                     },
                     ExpressionAttributeValues={
                         ":claims": clean_claims,
+                        ":risk": clean_risk,
                         ":updated": datetime.now(timezone.utc).isoformat(),
                     },
                 )
@@ -402,7 +443,8 @@ class ClaimAnalysisService:
                 d = len(claims_data.get("debated", []))
                 u = len(claims_data.get("unique", []))
                 logger.info(
-                    f"CLAIM_WRITTEN cluster={cid} consensus={c} debated={d} unique={u}"
+                    f"CLAIM_WRITTEN cluster={cid} consensus={c} debated={d} unique={u} "
+                    f"creators={len(creator_risk)}"
                 )
             except Exception as exc:
                 logger.error(f"CLAIM_WRITE_FAILED cluster={cid} error={exc}")
