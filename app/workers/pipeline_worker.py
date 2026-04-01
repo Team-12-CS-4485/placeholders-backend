@@ -6,11 +6,14 @@ Runs the complete analysis pipeline end-to-end in one command:
 2. Sync missing videos (DynamoDB videos not yet in Qdrant)
 3. Narrative clustering (UMAP + HDBSCAN → stable matching → DynamoDB)
 4. Claim analysis (consensus/debated/unique → DynamoDB)
+5. Article generation (Gemini news articles → DynamoDB articles table)
 
 Usage:
-    python -m app.workers.pipeline_worker
-    python -m app.workers.pipeline_worker --skip-clustering    # ingest only
-    python -m app.workers.pipeline_worker --clustering-only    # skip ingest, just recluster
+    python -m app.workers.embedding_worker
+    python -m app.workers.embedding_worker --skip-clustering    # ingest only
+    python -m app.workers.embedding_worker --clustering-only    # skip ingest, just recluster
+    python -m app.workers.embedding_worker --articles-only        # generate articles only
+    python -m app.workers.embedding_worker --week week2           # articles for a specific week
 """
 
 import argparse
@@ -133,17 +136,82 @@ def run_claim_analysis():
     return summary
 
 
+def run_article_generation(
+    week: str = None, force: bool = False, cluster_id: int = None
+):
+    """Step 5: Generate Gemini news articles → DynamoDB articles table."""
+    print("\n" + "=" * 60)
+    print("Step 5: Generating news articles")
+    if week:
+        print(f"         (week: {week})")
+    print("=" * 60)
+
+    from app.services.article_service import ArticleService
+
+    service = ArticleService()
+    summary = service.run_article_generation(
+        week=week,
+        force=force,
+        cluster_id=cluster_id,
+    )
+
+    print(f"\n  Articles generated: {summary.get('articles_generated', 0)}")
+    print(f"  Articles skipped:   {summary.get('articles_skipped', 0)}")
+    print(f"  Articles failed:    {summary.get('articles_failed', 0)}")
+    print(f"  Weeks processed:    {', '.join(summary.get('weeks_processed', []))}")
+
+    per_cluster = summary.get("per_cluster", {})
+    if per_cluster:
+        print("\n  Per cluster:")
+        for key, info in sorted(per_cluster.items()):
+            status = info.get("status", "?")
+            wk = info.get("week", "?")
+            if status == "generated":
+                aid = info.get("article_id", "")
+                headline = info.get("headline", "")[:60]
+                print(f"    {key} [{wk}]: ✓ {aid} — {headline}...")
+            elif status == "skipped":
+                print(f"    {key} [{wk}]: — skipped")
+            else:
+                err = info.get("error", "")[:80]
+                print(f"    {key} [{wk}]: ✗ {err}")
+
+    return summary
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Full pipeline worker")
     parser.add_argument(
         "--skip-clustering",
         action="store_true",
-        help="Only run ingestion + sync, skip clustering and claim analysis",
+        help="Only run ingestion + sync, skip clustering, claims, and articles",
     )
     parser.add_argument(
         "--clustering-only",
         action="store_true",
-        help="Skip ingestion, only run clustering + claim analysis",
+        help="Skip ingestion, only run clustering + claim analysis + articles",
+    )
+    parser.add_argument(
+        "--articles-only",
+        action="store_true",
+        help="Skip everything, only run article generation",
+    )
+    parser.add_argument(
+        "--week",
+        type=str,
+        default=None,
+        help="Limit article generation to a specific week (e.g. 'week1' or '1')",
+    )
+    parser.add_argument(
+        "--force-articles",
+        action="store_true",
+        help="Overwrite existing articles when generating",
+    )
+    parser.add_argument(
+        "--cluster-id",
+        type=int,
+        default=None,
+        help="Limit article generation to a single cluster ID",
     )
     parser.add_argument(
         "--prefix",
@@ -159,16 +227,35 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    # ── Articles-only mode ────────────────────────────────────────────────────
+    if args.articles_only:
+        print("=" * 60)
+        print("Pipeline Worker — Articles Only")
+        print("=" * 60)
+        run_article_generation(
+            week=args.week,
+            force=args.force_articles,
+            cluster_id=args.cluster_id,
+        )
+        print("\n=== Done ===")
+        sys.exit(0)
+
+    # ── Clustering-only mode ──────────────────────────────────────────────────
     if args.clustering_only:
         print("=" * 60)
         print("Pipeline Worker — Clustering Only")
         print("=" * 60)
         run_clustering()
         run_claim_analysis()
+        run_article_generation(
+            week=args.week,
+            force=args.force_articles,
+            cluster_id=args.cluster_id,
+        )
         print("\n=== Done ===")
         sys.exit(0)
 
-    # Full pipeline
+    # ── Full pipeline ─────────────────────────────────────────────────────────
     print("=" * 60)
     print("Pipeline Worker — Full Run")
     print("=" * 60)
@@ -182,7 +269,7 @@ if __name__ == "__main__":
     run_sync()
 
     if args.skip_clustering:
-        print("\n=== Done (clustering skipped) ===")
+        print("\n=== Done (clustering + articles skipped) ===")
         sys.exit(0)
 
     # Step 3: Clustering
@@ -190,6 +277,13 @@ if __name__ == "__main__":
 
     # Step 4: Claim analysis
     run_claim_analysis()
+
+    # Step 5: Article generation
+    run_article_generation(
+        week=args.week,
+        force=args.force_articles,
+        cluster_id=args.cluster_id,
+    )
 
     print("\n" + "=" * 60)
     print("=== Pipeline Complete ===")

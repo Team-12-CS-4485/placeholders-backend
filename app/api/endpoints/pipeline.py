@@ -1,10 +1,11 @@
 """
 pipeline.py - Pipeline API Endpoints
 
-POST /api/pipeline/run    : Runs the full pipeline — ingest → cluster → claim analysis
+POST /api/pipeline/run    : Runs the full pipeline — ingest → cluster → claim analysis → articles
 POST /api/pipeline/ingest : Ingest only — S3 → Gemini → DynamoDB → Qdrant
 POST /api/pipeline/cluster: Cluster only — UMAP/HDBSCAN → DynamoDB
 POST /api/pipeline/claims : Claim analysis only — classify → DynamoDB
+
 POST /api/pipeline/search : Semantic search over indexed transcript chunks
 
 All write endpoints accept dry_run=true to preview without writing.
@@ -25,6 +26,7 @@ from app.schemas.pipeline import (
 from app.services.pipeline_service import PipelineService
 from app.services.clustering_service import ClusteringService
 from app.services.claim_analysis_service import ClaimAnalysisService
+from app.services.article_service import ArticleService
 from app.services.embedding_service import EmbeddingService
 from app.services.vector_service import VectorService
 from app.core.config import settings
@@ -55,6 +57,23 @@ def run_full_pipeline(request: PipelineRunRequest):
             dry_run=request.dry_run,
         )
 
+        # Step 4: Article generation (non-fatal — pipeline succeeds even if this fails)
+        try:
+            article_result = ArticleService().run_article_generation()
+        except Exception as article_exc:
+            # Log but don't fail the whole pipeline
+            import logging
+
+            logging.getLogger(__name__).error(
+                f"ARTICLE_GENERATION_FAILED (non-fatal) error={article_exc}"
+            )
+            article_result = {
+                "articles_generated": 0,
+                "articles_skipped": 0,
+                "articles_failed": 0,
+                "weeks_processed": [],
+            }
+
         return {
             "ingestion": {
                 "objects_processed": ingestion_result["objects_processed"],
@@ -74,6 +93,12 @@ def run_full_pipeline(request: PipelineRunRequest):
                 "clusters_processed": claim_result.get("clusters_processed", 0),
                 "total_patched": claim_result.get("total_written", 0),
                 "dry_run": claim_result.get("dry_run", False),
+            },
+            "articles": {
+                "articles_generated": article_result.get("articles_generated", 0),
+                "articles_skipped": article_result.get("articles_skipped", 0),
+                "articles_failed": article_result.get("articles_failed", 0),
+                "weeks_processed": article_result.get("weeks_processed", []),
             },
         }
 
