@@ -136,7 +136,9 @@ def run_claim_analysis():
     return summary
 
 
-def run_article_generation(week: str = None, force: bool = False, cluster_id: int = None):
+def run_article_generation(
+    week: str = None, force: bool = False, cluster_id: int = None
+):
     """Step 5: Generate Gemini news articles → DynamoDB articles table."""
     print("\n" + "=" * 60)
     print("Step 5: Generating news articles")

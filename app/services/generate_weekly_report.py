@@ -31,6 +31,7 @@ load_dotenv()
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def _deserialize(obj):
     if isinstance(obj, Decimal):
         return int(obj) if obj % 1 == 0 else float(obj)
@@ -40,7 +41,9 @@ def _deserialize(obj):
         return [_deserialize(i) for i in obj]
     return obj
 
+
 # ── DynamoDB ─────────────────────────────────────────────────────────────────
+
 
 def article_exists(region, cluster_id, week_key):
     """
@@ -84,7 +87,7 @@ def save_article_to_dynamodb(region, cluster_id, week_key, title, overview, body
         "body": body,
         "weekNumber": week_num,
         "createdAt": now,
-        "updatedAt": now
+        "updatedAt": now,
     }
 
     try:
@@ -94,7 +97,9 @@ def save_article_to_dynamodb(region, cluster_id, week_key, title, overview, body
         logger.error(f"DynamoDB save failed: {e}")
         return None
 
+
 # ── Data Fetching ────────────────────────────────────────────────────────────
+
 
 def load_all_clusters(region):
     """Load all clusters once and extract unique weeks dynamically."""
@@ -125,7 +130,9 @@ def extract_weeks(clusters):
 def filter_clusters_by_week(clusters, week_key):
     active = []
     for c in clusters:
-        week_slice = next((w for w in c.get("week_data", []) if w.get("week") == week_key), None)
+        week_slice = next(
+            (w for w in c.get("week_data", []) if w.get("week") == week_key), None
+        )
         if week_slice and week_slice.get("video_count", 0) > 0:
             active.append({**c, "_week_slice": week_slice})
 
@@ -151,6 +158,7 @@ def fetch_cluster_videos(region, cluster_id, table_name):
         query_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
 
     return [v for v in items if v.get("transcript")]
+
 
 # ── Parsing ──────────────────────────────────────────────────────────────────
 def parse_output(content: str):
@@ -180,7 +188,9 @@ def parse_output(content: str):
 
     return headline, overview, body
 
+
 # ── Prompt ───────────────────────────────────────────────────────────────────
+
 
 def build_prompt(cluster, videos, week_key):
     transcripts = ""
@@ -213,17 +223,21 @@ RULES:
 - Be objective and neutral
 """
 
+
 # ── Generation ───────────────────────────────────────────────────────────────
+
 
 def generate_article(client, model_id, prompt):
     res = client.models.generate_content(
         model=model_id,
         contents=prompt,
-        config=types.GenerateContentConfig(temperature=0.7)
+        config=types.GenerateContentConfig(temperature=0.7),
     )
     return res.text
 
+
 # ── Pipeline ─────────────────────────────────────────────────────────────────
+
 
 def process_week(week_key, clusters, args, client, model_id):
     logger.info(f"Processing {week_key}")
@@ -241,7 +255,7 @@ def process_week(week_key, clusters, args, client, model_id):
             continue
 
         videos = fetch_cluster_videos(args.region, cid, args.videos_table)
-        
+
         if not videos:
             continue
 
@@ -263,7 +277,9 @@ def process_week(week_key, clusters, args, client, model_id):
         except Exception as e:
             logger.error(f"Error cluster {cid}: {e}")
 
+
 # ── Main ─────────────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -284,6 +300,7 @@ def main():
 
     for week in weeks:
         process_week(week, clusters, args, client, model_id)
+
 
 if __name__ == "__main__":
     main()

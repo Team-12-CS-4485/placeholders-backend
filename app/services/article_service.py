@@ -142,9 +142,7 @@ class ArticleService:
                     # all keys exhausted — reset and back off
                     logger.warning("ARTICLE_ALL_KEYS_EXHAUSTED sleeping 60s")
                     self._key_index = 0
-                    self._client = genai.Client(
-                        api_key=self._genai_api_keys[0]
-                    )
+                    self._client = genai.Client(api_key=self._genai_api_keys[0])
                     time.sleep(60)
                     continue
                 raise
@@ -178,9 +176,7 @@ class ArticleService:
                 Limit=limit,
             )
             return [
-                item["title"]
-                for item in resp.get("Items", [])
-                if item.get("title")
+                item["title"] for item in resp.get("Items", []) if item.get("title")
             ]
         except Exception as exc:
             logger.warning(
@@ -259,18 +255,18 @@ class ArticleService:
             debated_lines.append(f"• {claim}\n  Perspectives: {persp_str}")
 
         # Format sentiment breakdown
-        sentiment_parts = [
-            f"{k}: {v}" for k, v in sorted(week_sentiment.items())
-        ]
-        sentiment_str = ", ".join(sentiment_parts) if sentiment_parts else dominant_sentiment
+        sentiment_parts = [f"{k}: {v}" for k, v in sorted(week_sentiment.items())]
+        sentiment_str = (
+            ", ".join(sentiment_parts) if sentiment_parts else dominant_sentiment
+        )
 
         # Format view count
         view_str = (
             f"{view_count / 1_000_000:.1f}M"
             if view_count >= 1_000_000
-            else f"{view_count / 1_000:.0f}K"
-            if view_count >= 1_000
-            else str(view_count)
+            else (
+                f"{view_count / 1_000:.0f}K" if view_count >= 1_000 else str(view_count)
+            )
         )
 
         prompt = f"""You are a senior journalist writing analytical news articles for a digital media platform.
@@ -388,9 +384,7 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                 ProjectionExpression="article_id",
             )
             for item in resp.get("Items", []):
-                self._articles_table.delete_item(
-                    Key={"article_id": item["article_id"]}
-                )
+                self._articles_table.delete_item(Key={"article_id": item["article_id"]})
         except Exception as exc:
             logger.warning(f"ARTICLE_DELETE_WARN cluster={cluster_id} error={exc}")
 
@@ -416,7 +410,9 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
         clusters = self._get_all_clusters()
 
         if cluster_id is not None:
-            clusters = [c for c in clusters if int(c.get("cluster_id", -1)) == cluster_id]
+            clusters = [
+                c for c in clusters if int(c.get("cluster_id", -1)) == cluster_id
+            ]
 
         # Collect (cluster, week_slice, week_str) jobs
         jobs: list[tuple[dict, dict, str]] = []
@@ -504,9 +500,7 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                     "week": wk,
                     "error": str(exc),
                 }
-                logger.error(
-                    f"ARTICLE_FAILED cluster={cid} week={wk} error={exc}"
-                )
+                logger.error(f"ARTICLE_FAILED cluster={cid} week={wk} error={exc}")
 
         weeks_processed = sorted(weeks_seen, key=_week_number)
         logger.info(
@@ -592,9 +586,7 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
         Returns None if not found.
         """
         try:
-            resp = self._articles_table.get_item(
-                Key={"article_id": article_id}
-            )
+            resp = self._articles_table.get_item(Key={"article_id": article_id})
         except ClientError as exc:
             logger.error(f"ARTICLE_GET_ERROR id={article_id} error={exc}")
             return None

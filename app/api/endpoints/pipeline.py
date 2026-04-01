@@ -63,6 +63,7 @@ def run_full_pipeline(request: PipelineRunRequest):
         except Exception as article_exc:
             # Log but don't fail the whole pipeline
             import logging
+
             logging.getLogger(__name__).error(
                 f"ARTICLE_GENERATION_FAILED (non-fatal) error={article_exc}"
             )
