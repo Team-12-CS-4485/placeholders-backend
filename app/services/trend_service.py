@@ -400,6 +400,7 @@ class TrendService:
             "week_data": c["week_data"],
             "top_claims": c["top_claims"],
             "top_topics": c["top_topics"],
+            "creator_risk": c.get("creator_risk", []),
             "avg_clickbait_rating": c.get("avg_clickbait_rating"),
             "thumbnail_tone_breakdown": c.get("thumbnail_tone_breakdown", {}),
         }
@@ -502,6 +503,7 @@ class TrendService:
             "dominant_sentiment": c["dominant_sentiment"],
             "channels": c["channels"],
             "week_data": c["week_data"],
+            "creator_risk": c.get("creator_risk", []),
             "avg_clickbait_rating": c.get("avg_clickbait_rating"),
             "thumbnail_tone_breakdown": c.get("thumbnail_tone_breakdown", {}),
         }

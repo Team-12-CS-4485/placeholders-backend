@@ -25,10 +25,12 @@ class WeekData(BaseModel):
 
 class ConsensusClaim(BaseModel):
     claim: str
+    channel: str = ""
     sources: list[str]
     source_count: int
     video_ids: list[str]
     transcript_excerpt: str
+    risk_score: float = 0.0
 
 
 class DebatedClaimPerspective(BaseModel):
@@ -41,9 +43,11 @@ class DebatedClaimPerspective(BaseModel):
 
 class DebatedClaim(BaseModel):
     claim: str
+    channel: str = ""
     perspectives: list[DebatedClaimPerspective]
     source_count: int
     framing_divergence: float
+    risk_score: float = 0.0
 
 
 class UniqueClaim(BaseModel):
@@ -52,12 +56,20 @@ class UniqueClaim(BaseModel):
     video_id: str
     video_title: str
     transcript_excerpt: str
+    risk_score: float = 0.0
 
 
 class ClassifiedClaims(BaseModel):
     consensus: list[ConsensusClaim]
     debated: list[DebatedClaim]
     unique: list[UniqueClaim]
+
+
+class CreatorRisk(BaseModel):
+    name: str
+    riskScore: float
+    riskLevel: str
+    claimCount: int
 
 
 # ── GET /api/trends — lean list ───────────────────────────────────────────────
@@ -77,6 +89,8 @@ class TrendListItem(BaseModel):
     sentiment_label: str
     recent_sentiment_label: str
     dominant_sentiment: str
+    dominant_public_sentiment: str = "neutral"
+    sentiment_divergence: bool = False
     top_topics: list[str]
 
 
@@ -109,10 +123,16 @@ class TrendDetail(BaseModel):
     recent_sentiment_label: str
     dominant_sentiment: str
 
+    public_sentiment_breakdown: dict[str, int] = {}
+    dominant_public_sentiment: str = "neutral"
+    avg_public_sentiment_score: float = 0.0
+    sentiment_divergence: bool = False
+
     channels: list[str]
     week_data: list[WeekData]
     top_claims: list[str]
     top_topics: list[str]
+    creator_risk: list[CreatorRisk] = []
     avg_clickbait_rating: Optional[float] = None
     thumbnail_tone_breakdown: dict[str, int] = {}
 
