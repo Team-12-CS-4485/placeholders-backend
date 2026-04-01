@@ -39,8 +39,10 @@ def run_full_pipeline(request: PipelineRunRequest):
     """
     Runs the full pipeline in sequence:
     1. Ingest — S3 → chunk → Gemini → embed → Qdrant
-    2. Cluster — UMAP/HDBSCAN → patches cluster_id/label back to Qdrant
-    3. Claim analysis — classifies consensus/debated/unique → patches back to Qdrant
+    2. Cluster — UMAP/HDBSCAN → DynamoDB
+    3. Claim analysis — classifies consensus/debated/unique → DynamoDB
+
+    Pass dry_run=true to preview counts without writing anything.
     """
     try:
         ingestion_result = PipelineService().run_s3_transcript_analysis(

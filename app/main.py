@@ -41,6 +41,9 @@ app.include_router(pipeline_router)
 app.include_router(videos_router)
 app.include_router(trends_router)
 app.include_router(weeks_router)
+app.include_router(narratives_router)
+app.include_router(search_router)
+app.include_router(stats_router)
 
 
 @app.middleware("http")
