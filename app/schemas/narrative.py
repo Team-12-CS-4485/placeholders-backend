@@ -11,7 +11,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from app.schemas.trend import ClassifiedClaims, WeekData
+from app.schemas.trend import ClassifiedClaims, CreatorRisk, WeekData
 from app.schemas.video import VideoItem
 
 # ── GET /api/narratives — lean list ──────────────────────────────────────────
@@ -50,6 +50,7 @@ class NarrativeDetail(BaseModel):
     dominant_sentiment: str
     channels: list[str]
     week_data: list[WeekData]
+    creator_risk: list[CreatorRisk] = []
     avg_clickbait_rating: Optional[float] = None
     thumbnail_tone_breakdown: dict[str, int] = {}
 
