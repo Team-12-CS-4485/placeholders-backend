@@ -21,6 +21,8 @@ class VideoItem(BaseModel):
     # Cluster assignment (written by clustering pipeline)
     cluster_id: Optional[int] = None
     cluster_label: Optional[str] = None
+    # Thumbnail — URL is derived from video_id at response time (no storage needed)
+    thumbnail_url: Optional[str] = None
     # Thumbnail analysis fields
     thumbnail_tone: Optional[str] = None
     thumbnail_clickbait_score: Optional[int] = None

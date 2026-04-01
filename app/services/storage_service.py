@@ -136,6 +136,7 @@ class StorageService:
             "sentiment": base.get("sentiment"),
             "key_claims": base.get("key_claims"),
             "is_breaking": base.get("is_breaking"),
+            "thumbnail_url": base.get("thumbnail_url"),
             "thumbnail_tone": base.get("thumbnail_tone"),
             "thumbnail_clickbait_score": base.get("thumbnail_clickbait_score"),
             "thumbnail_insight": base.get("thumbnail_insight"),

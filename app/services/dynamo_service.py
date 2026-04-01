@@ -185,8 +185,14 @@ class DynamoService:
 
     def map_video_item(self, item: dict) -> dict:
         """Map a deserialized youtube-videos DynamoDB item to an API-ready dict."""
+        video_id = item.get("SortKey", "")
+        thumbnail_url = (
+            f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
+            if video_id
+            else None
+        )
         return {
-            "video_id": item.get("SortKey", ""),
+            "video_id": video_id,
             "channel": item.get("channel") or item.get("PartitionKey", ""),
             "title": item.get("title", ""),
             "published_at": item.get("publishedAt", ""),
@@ -201,6 +207,7 @@ class DynamoService:
             "is_breaking": item.get("is_breaking"),
             "cluster_id": item.get("cluster_id"),
             "cluster_label": item.get("cluster_label") or None,
+            "thumbnail_url": thumbnail_url,
             "thumbnail_tone": item.get("thumbnail_tone") or None,
             "thumbnail_clickbait_score": item.get("thumbnail_clickbait_score"),
             "thumbnail_insight": item.get("thumbnail_insight") or None,
