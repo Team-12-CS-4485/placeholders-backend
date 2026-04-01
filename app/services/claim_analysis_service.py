@@ -380,33 +380,42 @@ class ClaimAnalysisService:
     @staticmethod
     def _compute_creator_risk(claims_data: dict) -> list[dict]:
         """
-        Aggregate claim risk scores per channel within a cluster.
+        Weighted aggregate of claim risk scores per channel.
+        Consensus claims weight 3x (corroborated = stronger signal),
+        debated 2x, unique 1x. This prevents channels with a single
+        unique claim from dominating the risk ranking.
         Returns sorted list: [{name, riskScore, riskLevel, claimCount}]
         """
-        channel_scores: dict[str, list[float]] = defaultdict(list)
+        TYPE_WEIGHTS = {"consensus": 3.0, "debated": 2.0, "unique": 1.0}
+
+        channel_weighted: dict[str, list[tuple[float, float]]] = defaultdict(list)
 
         for claim_type in ("consensus", "debated", "unique"):
+            w = TYPE_WEIGHTS[claim_type]
             for c in claims_data.get(claim_type, []):
                 channel = c.get("channel")
                 score = c.get("risk_score")
                 if channel and score is not None:
-                    channel_scores[channel].append(score)
+                    channel_weighted[channel].append((score, w))
 
         creator_risk = []
-        for channel, scores in channel_scores.items():
-            avg = sum(scores) / len(scores)
-            if avg >= 0.7:
+        for channel, pairs in channel_weighted.items():
+            total_weight = sum(w for _, w in pairs)
+            weighted_avg = sum(s * w for s, w in pairs) / total_weight
+            claim_count = len(pairs)
+
+            if weighted_avg >= 0.7:
                 level = "high"
-            elif avg >= 0.4:
+            elif weighted_avg >= 0.4:
                 level = "medium"
             else:
                 level = "low"
             creator_risk.append(
                 {
                     "name": channel,
-                    "riskScore": round(avg, 2),
+                    "riskScore": round(weighted_avg, 2),
                     "riskLevel": level,
-                    "claimCount": len(scores),
+                    "claimCount": claim_count,
                 }
             )
 
@@ -414,13 +423,19 @@ class ClaimAnalysisService:
 
     # ── Step 6: Write to DynamoDB ────────────────────────────────────────────
 
-    def _write_claims_to_dynamodb(self, cluster_results: dict[int, dict]) -> int:
+    def _write_claims_to_dynamodb(
+        self,
+        cluster_results: dict[int, dict],
+        cluster_all_classified: dict[int, dict],
+    ) -> int:
         """Update narrative-clusters items with classified_claims + creator_risk."""
         written = 0
 
         for cid, claims_data in cluster_results.items():
             clean_claims = _clean_for_dynamo(claims_data)
-            creator_risk = self._compute_creator_risk(claims_data)
+            # Compute creator risk from ALL classified claims, not just selected
+            all_claims = cluster_all_classified.get(cid, claims_data)
+            creator_risk = self._compute_creator_risk(all_claims)
             clean_risk = _clean_for_dynamo(creator_risk)
 
             try:
@@ -464,11 +479,12 @@ class ClaimAnalysisService:
 
         # 3. Process each cluster
         cluster_results = {}
+        cluster_all_classified = {}  # full classified data for creator risk
         summary = {}
 
         for cid, claims in cluster_claims.items():
             if len(claims) < 2:
-                cluster_results[cid] = {
+                small = {
                     "consensus": [],
                     "debated": [],
                     "unique": [
@@ -489,6 +505,8 @@ class ClaimAnalysisService:
                         for c in claims[:max_per_type]
                     ],
                 }
+                cluster_results[cid] = small
+                cluster_all_classified[cid] = small
                 continue
 
             # Embed
@@ -500,10 +518,11 @@ class ClaimAnalysisService:
             sim_matrix = embeddings @ embeddings.T
             groups = self._group_similar_claims(claims, sim_matrix)
 
-            # Classify + select
+            # Classify (all) + select (top N)
             classified = self._classify_groups(claims, groups)
             selected = self._select_top_claims(classified, max_per_type)
             cluster_results[cid] = selected
+            cluster_all_classified[cid] = classified  # full set for creator risk
 
             summary[cid] = {
                 "total_claims": len(claims),
@@ -519,7 +538,9 @@ class ClaimAnalysisService:
         # 4. Write to DynamoDB (skip on dry run)
         written = 0
         if not dry_run:
-            written = self._write_claims_to_dynamodb(cluster_results)
+            written = self._write_claims_to_dynamodb(
+                cluster_results, cluster_all_classified
+            )
         else:
             logger.info(f"CLAIM_ANALYSIS_DRY_RUN — skipping DynamoDB write")
 
@@ -528,5 +549,6 @@ class ClaimAnalysisService:
             "total_written": written,
             "per_cluster": summary,
             "cluster_results": cluster_results,
+            "cluster_all_classified": cluster_all_classified,
             "dry_run": dry_run,
         }

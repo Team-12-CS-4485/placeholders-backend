@@ -125,8 +125,10 @@ def main():
                         if c.get("video_title"):
                             f.write(f"    video: {c['video_title']}\n")
                         f.write("\n")
-                # Creator risk summary
-                creator_risk = service._compute_creator_risk(claims_data)
+                # Creator risk from ALL classified claims (not just selected)
+                all_classified = result.get("cluster_all_classified", {})
+                all_claims = all_classified.get(cid, claims_data)
+                creator_risk = service._compute_creator_risk(all_claims)
                 if creator_risk:
                     f.write("  [CREATOR RISK]\n")
                     for cr in creator_risk:
