@@ -53,6 +53,10 @@ class ArticleGenerationRequest(BaseModel):
         default=None,
         description="Only generate an article for this specific cluster.",
     )
+    dry_run: bool = Field(
+        default=False,
+        description="Preview job count without generating or writing anything.",
+    )
 
 
 class ArticleGenerationSummary(BaseModel):
@@ -60,3 +64,4 @@ class ArticleGenerationSummary(BaseModel):
     articles_skipped: int
     articles_failed: int
     weeks_processed: list[str]
+    dry_run: bool = False

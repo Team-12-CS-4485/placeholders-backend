@@ -27,11 +27,10 @@ logger = get_logger(__name__)
 class StorageService:
     def __init__(self, s3_client=None, dynamodb_resource=None, bucket=None):
         self.s3_client = s3_client or boto3.client("s3")
-        self.dynamodb = dynamodb_resource or boto3.resource("dynamodb")
-        self.bucket = bucket or settings.s3_bucket
         self.dynamodb = dynamodb_resource or boto3.resource(
             "dynamodb", region_name=settings.aws_region
         )
+        self.bucket = bucket or settings.s3_bucket
 
     def list_videos(self, limit: int = 20, cursor: str = None):
         list_kwargs = {

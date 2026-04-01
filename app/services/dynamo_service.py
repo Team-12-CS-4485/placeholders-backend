@@ -212,19 +212,22 @@ class DynamoService:
         Scan youtube-videos for a single video by SortKey (videoId).
         Returns the full deserialized item dict, or None if not found.
         """
+        scan_kwargs: dict = {"FilterExpression": Attr("SortKey").eq(video_id)}
         try:
-            response = self._videos_table.scan(
-                FilterExpression=Attr("SortKey").eq(video_id),
-                Limit=1,
-            )
+            while True:
+                response = self._videos_table.scan(**scan_kwargs)
+                items = response.get("Items", [])
+                if items:
+                    return self._deserialize(items[0])
+                last_key = response.get("LastEvaluatedKey")
+                if not last_key:
+                    break
+                scan_kwargs["ExclusiveStartKey"] = last_key
         except ClientError as exc:
             logger.error(f"DYNAMO_GET_VIDEO_ERROR video_id={video_id} error={exc}")
             return None
 
-        items = response.get("Items", [])
-        if not items:
-            return None
-        return self._deserialize(items[0])
+        return None
 
     # ── Clusters ─────────────────────────────────────────────────────────────
 

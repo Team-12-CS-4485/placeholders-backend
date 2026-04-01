@@ -1,69 +1,128 @@
 # Local Development and Testing Guide
 
-This document explains how to set up your local development environment, run tests, and understand the CI/CD pipeline for the Placeholders Backend.
+---
 
 ## 1. Environment Setup
 
-The project uses two dependency files to keep the production environment lean:
+The project uses two dependency files:
 
-- **`requirements.txt`**: Core dependencies needed to run the application (FastAPI, AI libraries, Database clients).
-- **`requirements-dev.txt`**: Tools for development and testing (Pytest, Black, Flake8).
+- **`requirements.txt`** — Core dependencies to run the application (FastAPI, AWS clients, AI libraries, Qdrant client)
+- **`requirements-dev.txt`** — Development and testing tools (pytest, black, flake8)
 
 ### Installation
-To install everything needed for development:
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pre-commit install   # sets up black to run on every git commit
+```
+
+Or using the Makefile:
+
 ```bash
 make install
 ```
-*Alternatively: `pip install -r requirements.txt -r requirements-dev.txt`*
 
 ---
 
-## 2. Local Development with `Makefile`
+## 2. Environment Variables
 
-A `Makefile` is provided to simplify common tasks across different operating systems.
+Copy the example env file and fill in your values:
 
-### Available Commands
-- `make install`: Installs all production and development dependencies.
-- `make test`: Executes the `pytest` suite.
-- `make lint`: Runs `flake8` to check for syntax errors and style violations.
-- `make format`: Automatically formats code using `black` and `isort`.
-- `make run`: Starts the FastAPI development server with auto-reload.
-- `make docker-build`: Validates the `Dockerfile` by building the image locally.
+```bash
+cp config/.env.example .env
+```
 
-### Platform-Specific Notes
-- **Mac/Linux:** `make` is pre-installed.
-- **Windows:** You can install `make` via [Chocolatey](https://chocolatey.org/) (`choco install make`) or [Winget](https://github.com/microsoft/winget-cli) (`winget install ezwinmake`). Alternatively, these commands can be run manually as defined in the `Makefile`.
+Minimum required to run the API locally:
+
+```bash
+AWS_REGION=us-east-2
+S3_BUCKET=your-bucket
+DYNAMODB_TABLE=youtube-videos
+GENAI_API_KEY=your-gemini-key
+QDRANT_URL=http://localhost:6333
+```
+
+The API will start without Qdrant running, but search and pipeline endpoints will fail. All read endpoints (`/api/trends`, `/api/narratives`, `/api/videos`, etc.) only require DynamoDB access.
 
 ---
 
-## 3. Automated Testing
+## 3. Running Locally
 
-### Test Structure
-Tests are located in the `tests/` directory:
-- `tests/api/`: Functional tests for API endpoints (e.g., `test_health.py`).
-- `tests/integration/`: Tests for multi-service interactions.
-- `tests/services/`: Unit tests for internal logic (Chunking, Embeddings).
+```bash
+# Start Qdrant (only needed for pipeline + search)
+docker compose -f docker-compose.qdrant.yml up -d
+
+# Start the API server
+uvicorn app.main:app --reload
+# Docs at http://localhost:8000/docs
+```
+
+### Makefile Commands
+
+| Command            | Description |
+|--------------------|-------------|
+| `make install`     | Install all dependencies |
+| `make run`         | Start FastAPI dev server with auto-reload |
+| `make test`        | Run pytest suite |
+| `make lint`        | Run flake8 |
+| `make format`      | Auto-format with black |
+| `make docker-build`| Build Docker image locally |
+
+---
+
+## 4. Test Structure
+
+```
+tests/
+├── api/          # Endpoint tests (e.g. test_health.py)
+├── services/     # Unit tests for service logic
+├── integration/  # Multi-service interaction tests
+```
 
 ### Running Tests
-To run all tests:
-```bash
-make test
-```
 
-To run a specific test file:
 ```bash
+# All tests
+make test
+# or
+pytest tests/
+
+# Specific file
 pytest tests/api/test_health.py
+
+# Verbose
+pytest tests/ -v
 ```
 
 ---
 
-## 4. CI/CD Pipeline (GitHub Actions)
+## 5. CI/CD Pipeline (GitHub Actions)
 
-Every time you push code or open a Pull Request to `main` or `master`, the GitHub Actions workflow (`.github/workflows/ci.yml`) automatically triggers:
+Defined in `.github/workflows/ci.yml`. Triggers on every push and pull request to `main`/`master`.
 
-1.  **Environment Setup:** Installs Python 3.11 and all dependencies.
-2.  **Linting:** Runs `flake8` and `black --check`. The build will fail if there are critical linting errors.
-3.  **Testing:** Runs the full `pytest` suite.
-4.  **Docker Build:** Verifies that the application can be successfully containerized.
+**Steps:**
+1. Install Python 3.11 + dependencies
+2. Run `flake8` — fails on critical errors (syntax, undefined names)
+3. Run `black` — auto-formats and commits back any changes (does not fail the build)
+4. Run `pytest tests/`
+5. Build Docker image (validates Dockerfile)
+6. On merge to `main`: trigger Render deploy via `RENDER_DEPLOY_HOOK_URL` secret
 
-**Note:** Ensure all tests pass locally (`make test`) and code is formatted (`make format`) before pushing to avoid CI failures.
+> Render's native auto-deploy should be **disabled**. Deployment is triggered exclusively by CI after all checks pass.
+
+### Pre-commit (local)
+
+`pre-commit install` (run once after cloning) sets up black to auto-format on every `git commit`. This keeps code consistently formatted before it ever reaches CI.
+
+---
+
+## 6. Common Issues
+
+**`ModuleNotFoundError: No module named 'app.schemas.article'`**
+The schema file must be at `app/schemas/article.py`. If it exists elsewhere, move it.
+
+**Test collection fails due to missing AWS credentials**
+Tests that instantiate services touching DynamoDB/S3 will fail without valid credentials. Either mock the boto3 clients or set up a local DynamoDB (e.g. via `docker run amazon/dynamodb-local`).
+
+**Qdrant connection refused**
+Start Qdrant with `docker compose -f docker-compose.qdrant.yml up -d` before running pipeline or search tests.

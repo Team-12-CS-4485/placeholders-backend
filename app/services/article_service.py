@@ -189,13 +189,23 @@ class ArticleService:
     def _article_exists(self, cluster_id: int, week_number: int) -> bool:
         """
         Scan articles table for an item with matching cluster_id + week_number.
+<<<<<<< HEAD
         The table is tiny so a filtered scan is fine.
 
         Note: cluster_id and week_number are stored as Decimal in DynamoDB.
         The filter must use Decimal too — comparing a Python int against a stored
         Decimal never matches, which caused duplicates to be generated every run.
+=======
+        Paginates fully — Limit cannot be used with FilterExpression reliably.
+>>>>>>> 4c1eb56 (Updated bugs)
         """
+        scan_kwargs: dict = {
+            "FilterExpression": Attr("cluster_id").eq(cluster_id)
+            & Attr("week_number").eq(week_number),
+            "ProjectionExpression": "article_id",
+        }
         try:
+<<<<<<< HEAD
             resp = self._articles_table.scan(
                 FilterExpression=Attr("cluster_id").eq(_dec(cluster_id))
                 & Attr("week_number").eq(_dec(week_number)),
@@ -203,6 +213,17 @@ class ArticleService:
                 Limit=1,
             )
             return len(resp.get("Items", [])) > 0
+=======
+            while True:
+                resp = self._articles_table.scan(**scan_kwargs)
+                if resp.get("Items"):
+                    return True
+                last_key = resp.get("LastEvaluatedKey")
+                if not last_key:
+                    break
+                scan_kwargs["ExclusiveStartKey"] = last_key
+            return False
+>>>>>>> 4c1eb56 (Updated bugs)
         except Exception as exc:
             logger.warning(f"ARTICLE_EXISTS_CHECK_WARN error={exc}")
             return False
@@ -399,6 +420,7 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
         week: Optional[str] = None,
         force: bool = False,
         cluster_id: Optional[int] = None,
+        dry_run: bool = False,
     ) -> dict:
         """
         Generate articles for all active cluster × week combinations.
@@ -407,6 +429,7 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
             week:       Limit to a specific week (e.g. "week1" or "1").
             force:      Overwrite existing articles.
             cluster_id: Limit to a single cluster.
+            dry_run:    Preview job count without generating or writing anything.
 
         Returns summary dict with counts and per-cluster details.
         """
@@ -448,6 +471,20 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
         failed = 0
         weeks_seen: set[str] = set()
         per_cluster: dict[str, dict] = {}
+
+        if dry_run:
+            logger.info(
+                f"ARTICLE_DRY_RUN jobs={len(deduped_jobs)} — skipping generation"
+            )
+            weeks_seen = {wk for _, _, wk in deduped_jobs}
+            return {
+                "articles_generated": 0,
+                "articles_skipped": len(deduped_jobs),
+                "articles_failed": 0,
+                "weeks_processed": sorted(weeks_seen, key=_week_number),
+                "per_cluster": {},
+                "dry_run": True,
+            }
 
         for c, week_slice, wk in deduped_jobs:
             cid = int(c.get("cluster_id", -1))
@@ -518,6 +555,7 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
             "articles_failed": failed,
             "weeks_processed": weeks_processed,
             "per_cluster": per_cluster,
+            "dry_run": False,
         }
 
     # ── Read methods ──────────────────────────────────────────────────────────
