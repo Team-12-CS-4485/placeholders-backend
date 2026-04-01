@@ -11,6 +11,11 @@ from pydantic import BaseModel, Field
 class PipelineRunRequest(BaseModel):
     prefix: Optional[str] = None
     limit: Optional[int] = Field(default=None, ge=1, le=50)
+    dry_run: bool = False
+
+
+class DryRunRequest(BaseModel):
+    dry_run: bool = False
 
 
 class VectorSearchRequest(BaseModel):
@@ -83,6 +88,7 @@ class IngestionSummary(BaseModel):
     videos_found: int
     videos_indexed: int
     total_chunks_stored: int
+    dry_run: bool = False
 
 
 class ClusteringSummary(BaseModel):
@@ -90,11 +96,13 @@ class ClusteringSummary(BaseModel):
     cluster_count: int
     noise_videos: int
     total_chunks_patched: int
+    dry_run: bool = False
 
 
 class ClaimAnalysisSummary(BaseModel):
     clusters_processed: int
     total_patched: int
+    dry_run: bool = False
 
 
 class FullPipelineResponse(BaseModel):

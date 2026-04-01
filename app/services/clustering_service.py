@@ -139,7 +139,8 @@ class ClusteringService:
         scan_kwargs = {
             "ProjectionExpression": "PartitionKey, SortKey, channel, topics, category, "
             "sentiment, is_breaking, viewCount, likeCount, commentCount, "
-            "title, publishedAt, #wk, source_key, key_claims",
+            "title, publishedAt, #wk, source_key, key_claims, "
+            "public_sentiment, public_sentiment_score",
             "ExpressionAttributeNames": {"#wk": "week"},
         }
 
@@ -161,6 +162,10 @@ class ClusteringService:
                         "week": item.get("week", "unknown"),
                         "source_key": item.get("source_key", ""),
                         "key_claims": item.get("key_claims", []),
+                        "public_sentiment": item.get("public_sentiment", "neutral"),
+                        "public_sentiment_score": float(
+                            item.get("public_sentiment_score") or 0
+                        ),
                     }
             if "LastEvaluatedKey" not in resp:
                 break
@@ -267,6 +272,8 @@ class ClusteringService:
             channels = set()
             categories = Counter()
             sentiments = Counter()
+            public_sentiments = Counter()
+            public_sentiment_scores = []
             breaking = views = likes = comments = 0
             claims = []
             titles = []
@@ -279,6 +286,8 @@ class ClusteringService:
                 channels.add(m.get("channel", ""))
                 categories[m.get("category", "Other")] += 1
                 sentiments[m.get("sentiment", "neutral")] += 1
+                public_sentiments[m.get("public_sentiment", "neutral")] += 1
+                public_sentiment_scores.append(m.get("public_sentiment_score", 0.0))
                 if m.get("is_breaking"):
                     breaking += 1
                 views += m.get("view_count", 0)
@@ -302,6 +311,9 @@ class ClusteringService:
                 week_sentiments = Counter(v.get("sentiment", "neutral") for v in wvids)
                 week_breaking = sum(1 for v in wvids if v.get("is_breaking"))
                 week_views = sum(v.get("view_count", 0) for v in wvids)
+                week_pub_sentiments = Counter(
+                    v.get("public_sentiment", "neutral") for v in wvids
+                )
                 week_data.append(
                     {
                         "week": week_name,
@@ -310,8 +322,27 @@ class ClusteringService:
                         "view_count": week_views,
                         "breaking_count": week_breaking,
                         "sentiment_breakdown": dict(week_sentiments),
+                        "public_sentiment_breakdown": dict(week_pub_sentiments),
                     }
                 )
+
+            # Compute average public sentiment score for the cluster
+            avg_public_score = (
+                round(sum(public_sentiment_scores) / len(public_sentiment_scores), 3)
+                if public_sentiment_scores
+                else 0.0
+            )
+
+            # Detect creator vs audience divergence
+            dominant_creator = (
+                sentiments.most_common(1)[0][0] if sentiments else "neutral"
+            )
+            dominant_public = (
+                public_sentiments.most_common(1)[0][0]
+                if public_sentiments
+                else "neutral"
+            )
+            sentiment_divergence = dominant_creator != dominant_public
 
             cluster_topic_counts[cid] = tc
             cluster_claims[cid] = list(dict.fromkeys(claims))[:5]  # dedupe, top 5
@@ -321,6 +352,9 @@ class ClusteringService:
                 "channels": channels,
                 "categories": categories,
                 "sentiments": sentiments,
+                "public_sentiments": public_sentiments,
+                "avg_public_sentiment_score": avg_public_score,
+                "sentiment_divergence": sentiment_divergence,
                 "breaking": breaking,
                 "views": views,
                 "likes": likes,
@@ -414,6 +448,7 @@ class ClusteringService:
                             )
                         ),
                     )
+                    time.sleep(0.5)  # pace RPM across keys
                     raw = getattr(response, "text", "") or str(response)
                     raw = raw.strip()
                     # strip markdown fences if present
@@ -482,6 +517,14 @@ class ClusteringService:
                     else "neutral"
                 ),
                 "sentiment_breakdown": dict(stats["sentiments"]),
+                "public_sentiment_breakdown": dict(stats["public_sentiments"]),
+                "avg_public_sentiment_score": stats["avg_public_sentiment_score"],
+                "dominant_public_sentiment": (
+                    stats["public_sentiments"].most_common(1)[0][0]
+                    if stats["public_sentiments"]
+                    else "neutral"
+                ),
+                "sentiment_divergence": stats["sentiment_divergence"],
                 "breaking_count": stats["breaking"],
                 "total_views": stats["views"],
                 "total_likes": stats["likes"],
@@ -543,11 +586,170 @@ class ClusteringService:
         logger.info(f"DYNAMO_CLUSTER_WRITE videos={updated}")
         return updated
 
-    def _write_cluster_summaries(self, cluster_info):
+    # ── Stable cluster matching ────────────────────────────────────────────
+
+    def _load_existing_clusters(self) -> dict[int, dict]:
+        """
+        Scan narrative-clusters table and return {cluster_id: {top_topics, label, created_at, status}}.
+        """
+        existing = {}
+        scan_kwargs: dict = {}
+        while True:
+            resp = self._clusters_table.scan(**scan_kwargs)
+            for item in resp["Items"]:
+                cid = int(item["cluster_id"])
+                existing[cid] = {
+                    "top_topics": list(item.get("top_topics", [])),
+                    "label": item.get("cluster_label", ""),
+                    "created_at": item.get("created_at"),
+                    "status": item.get("status", "active"),
+                }
+            if "LastEvaluatedKey" not in resp:
+                break
+            scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+        logger.info(f"STABLE_MATCH_LOADED existing_clusters={len(existing)}")
+        return existing
+
+    @staticmethod
+    def _topic_jaccard(topics_a: list[str], topics_b: list[str]) -> float:
+        """Jaccard similarity between two topic lists."""
+        set_a = set(t.lower() for t in topics_a)
+        set_b = set(t.lower() for t in topics_b)
+        if not set_a or not set_b:
+            return 0.0
+        intersection = set_a & set_b
+        union = set_a | set_b
+        return len(intersection) / len(union)
+
+    def _match_to_existing_clusters(
+        self,
+        new_cluster_info: dict[int, dict],
+        existing_clusters: dict[int, dict],
+        threshold: float = 0.3,
+    ) -> tuple[dict[int, int], list[int], list[int]]:
+        """
+        Match new HDBSCAN clusters to existing stable clusters by topic overlap.
+
+        Returns:
+            id_map: {hdbscan_label: stable_cluster_id}
+            new_ids: list of stable IDs assigned to genuinely new clusters
+            declined_ids: list of existing cluster IDs that had no match (inactive)
+        """
+        if not existing_clusters:
+            # First run — use HDBSCAN labels as-is
+            id_map = {cid: cid for cid in new_cluster_info if cid != -1}
+            return id_map, list(id_map.values()), []
+
+        real_new = {cid: info for cid, info in new_cluster_info.items() if cid != -1}
+
+        # Score all (new, existing) pairs
+        scores: list[tuple[float, int, int]] = []
+        for new_cid, new_info in real_new.items():
+            for old_cid, old_info in existing_clusters.items():
+                if old_info.get("status") == "inactive":
+                    continue
+                sim = self._topic_jaccard(
+                    new_info["top_topics"], old_info["top_topics"]
+                )
+                if sim >= threshold:
+                    scores.append((sim, new_cid, old_cid))
+
+        # Greedy 1-to-1 matching: best score first
+        scores.sort(reverse=True)
+        id_map: dict[int, int] = {}
+        used_old: set[int] = set()
+        used_new: set[int] = set()
+
+        for sim, new_cid, old_cid in scores:
+            if new_cid in used_new or old_cid in used_old:
+                continue
+            id_map[new_cid] = old_cid
+            used_new.add(new_cid)
+            used_old.add(old_cid)
+            logger.info(
+                f"STABLE_MATCH hdbscan={new_cid} → stable={old_cid} "
+                f"sim={sim:.2f} label={existing_clusters[old_cid]['label']!r}"
+            )
+
+        # Assign new IDs for unmatched new clusters
+        max_existing_id = max(existing_clusters.keys()) if existing_clusters else -1
+        next_id = max(max_existing_id, max(id_map.values(), default=-1)) + 1
+        new_ids = []
+        for new_cid in real_new:
+            if new_cid not in id_map:
+                id_map[new_cid] = next_id
+                new_ids.append(next_id)
+                logger.info(
+                    f"STABLE_NEW_CLUSTER hdbscan={new_cid} → stable={next_id} "
+                    f"topics={real_new[new_cid]['top_topics']}"
+                )
+                next_id += 1
+
+        # Existing clusters that weren't matched → declining
+        active_old = {
+            cid
+            for cid, info in existing_clusters.items()
+            if info.get("status") != "inactive"
+        }
+        declined_ids = sorted(active_old - used_old)
+        for cid in declined_ids:
+            logger.info(
+                f"STABLE_DECLINED cluster={cid} "
+                f"label={existing_clusters[cid]['label']!r}"
+            )
+
+        return id_map, new_ids, declined_ids
+
+    def _remap_cluster_info(
+        self,
+        cluster_info: dict[int, dict],
+        id_map: dict[int, int],
+    ) -> dict[int, dict]:
+        """Replace HDBSCAN labels with stable cluster IDs in cluster_info."""
+        remapped = {}
+        for hdbscan_id, info in cluster_info.items():
+            if hdbscan_id == -1:
+                remapped[-1] = info
+                continue
+            stable_id = id_map.get(hdbscan_id, hdbscan_id)
+            remapped[stable_id] = info
+        return remapped
+
+    def _mark_declined_clusters(self, declined_ids: list[int]) -> int:
+        """Mark existing clusters that no longer have matching videos as inactive."""
+        marked = 0
+        for cid in declined_ids:
+            self._clusters_table.update_item(
+                Key={"cluster_id": _dec(cid)},
+                UpdateExpression="SET #status = :s, #updated = :u",
+                ExpressionAttributeNames={
+                    "#status": "status",
+                    "#updated": "updated_at",
+                },
+                ExpressionAttributeValues={
+                    ":s": "inactive",
+                    ":u": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            marked += 1
+            logger.info(f"DYNAMO_CLUSTER_DECLINED cluster={cid}")
+        return marked
+
+    def _write_cluster_summaries(self, cluster_info, existing_clusters=None):
+        """
+        Write cluster summaries to DynamoDB.
+        Preserves created_at for matched (existing) clusters.
+        """
+        existing_clusters = existing_clusters or {}
         written = 0
         for cid, info in cluster_info.items():
             if cid == -1:
                 continue
+            now = datetime.now(timezone.utc).isoformat()
+            # Preserve created_at if this is an existing cluster
+            old = existing_clusters.get(cid)
+            created_at = old["created_at"] if old and old.get("created_at") else now
+
             item = {
                 "cluster_id": _dec(cid),
                 "cluster_label": info["label"],
@@ -558,6 +760,16 @@ class ClusteringService:
                 "dominant_category": info["dominant_category"],
                 "dominant_sentiment": info["dominant_sentiment"],
                 "sentiment_breakdown": _clean_for_dynamo(info["sentiment_breakdown"]),
+                "public_sentiment_breakdown": _clean_for_dynamo(
+                    info.get("public_sentiment_breakdown", {})
+                ),
+                "avg_public_sentiment_score": _dec(
+                    info.get("avg_public_sentiment_score", 0.0)
+                ),
+                "dominant_public_sentiment": info.get(
+                    "dominant_public_sentiment", "neutral"
+                ),
+                "sentiment_divergence": info.get("sentiment_divergence", False),
                 "breaking_count": _dec(info["breaking_count"]),
                 "total_views": _dec(info["total_views"]),
                 "total_likes": _dec(info["total_likes"]),
@@ -566,8 +778,9 @@ class ClusteringService:
                 "narrative_summary": info.get("narrative_summary"),
                 "week_data": _clean_for_dynamo(info["week_data"]),
                 "top_claims": info["top_claims"],
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "status": "active",
+                "created_at": created_at,
+                "updated_at": now,
             }
             self._clusters_table.put_item(Item=item)
             written += 1
@@ -607,20 +820,37 @@ class ClusteringService:
             matrix, min_cluster_size, min_samples, umap_components, umap_neighbors
         )
 
-        # 5. Label
+        # 5. Label (uses HDBSCAN labels — temporary IDs)
         cluster_info = self._label_clusters(video_ids, labels, filtered_meta)
+
+        # 6. Stable cluster matching — remap HDBSCAN IDs to stable IDs
+        existing_clusters = self._load_existing_clusters()
+        id_map, new_ids, declined_ids = self._match_to_existing_clusters(
+            cluster_info, existing_clusters
+        )
+        cluster_info = self._remap_cluster_info(cluster_info, id_map)
+
+        # Remap the per-video labels array to stable IDs
+        stable_labels = np.array(
+            [id_map.get(int(l), int(l)) if int(l) != -1 else -1 for l in labels]
+        )
 
         if dry_run:
             logger.info("DRY_RUN skipping DynamoDB writes")
             videos_updated = 0
             clusters_written = 0
+            declined_count = 0
         else:
-            # 6. Write to DynamoDB youtube-videos
+            # 7. Write to DynamoDB youtube-videos (with stable IDs)
             videos_updated = self._write_clusters_to_dynamodb(
-                video_ids, labels, probabilities, cluster_info, filtered_meta
+                video_ids, stable_labels, probabilities, cluster_info, filtered_meta
             )
-            # 7. Write to DynamoDB narrative-clusters
-            clusters_written = self._write_cluster_summaries(cluster_info)
+            # 8. Write to DynamoDB narrative-clusters (preserving created_at)
+            clusters_written = self._write_cluster_summaries(
+                cluster_info, existing_clusters
+            )
+            # 9. Mark declined clusters as inactive
+            declined_count = self._mark_declined_clusters(declined_ids)
 
         real_clusters = {k: v for k, v in cluster_info.items() if k != -1}
         noise_info = cluster_info.get(-1, {})
@@ -630,6 +860,9 @@ class ClusteringService:
             "videos_updated": videos_updated,
             "cluster_count": len(real_clusters),
             "clusters_written": clusters_written,
+            "new_clusters": len(new_ids),
+            "matched_clusters": len(real_clusters) - len(new_ids),
+            "declined_clusters": declined_count if not dry_run else len(declined_ids),
             "noise_videos": noise_info.get("video_count", 0),
             "dry_run": dry_run,
             "clusters": {
@@ -645,6 +878,7 @@ class ClusteringService:
                     "total_views": info["total_views"],
                     "week_data": info["week_data"],
                     "top_claims": info["top_claims"],
+                    "is_new": cid in new_ids,
                 }
                 for cid, info in sorted(real_clusters.items())
             },

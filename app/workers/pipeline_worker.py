@@ -1,17 +1,17 @@
 """
-embedding_worker.py - Full Pipeline Worker
+pipeline_worker.py - Full Pipeline Worker
 
 Runs the complete analysis pipeline end-to-end in one command:
-1. S3 transcript analysis → Gemini intelligence → DynamoDB + Qdrant
+1. S3 transcript analysis → Gemini intelligence (incl. public sentiment) → DynamoDB + Qdrant
 2. Sync missing videos (DynamoDB videos not yet in Qdrant)
-3. Narrative clustering (UMAP + HDBSCAN → DynamoDB)
+3. Narrative clustering (UMAP + HDBSCAN → stable matching → DynamoDB)
 4. Claim analysis (consensus/debated/unique → DynamoDB)
 5. Article generation (Gemini news articles → DynamoDB articles table)
 
 Usage:
     python -m app.workers.embedding_worker
-    python -m app.workers.embedding_worker --skip-clustering      # ingest + sync only
-    python -m app.workers.embedding_worker --clustering-only      # skip ingest, recluster
+    python -m app.workers.embedding_worker --skip-clustering    # ingest only
+    python -m app.workers.embedding_worker --clustering-only    # skip ingest, just recluster
     python -m app.workers.embedding_worker --articles-only        # generate articles only
     python -m app.workers.embedding_worker --week week2           # articles for a specific week
 """
@@ -52,6 +52,7 @@ def run_transcript_analysis_job(prefix=None, limit=None, output_file=None):
                     intel = video_result["intelligence"]
                     file.write(f"  Category: {intel.get('category')}\n")
                     file.write(f"  Sentiment: {intel.get('sentiment')}\n")
+                    file.write(f"  Public Sentiment: {intel.get('public_sentiment')}\n")
                     file.write(f"  Topics: {', '.join(intel.get('topics', []))}\n")
                     file.write(f"  Is Breaking: {intel.get('is_breaking')}\n")
                     file.write(f"  Key Claims:\n")
@@ -70,13 +71,13 @@ def run_sync():
     print("Step 2: Syncing missing videos")
     print("=" * 60)
 
-    from app.services.sync_missing import main as sync_main
+    from scripts.sync_missing import main as sync_main
 
     sync_main()
 
 
 def run_clustering():
-    """Step 3: Run narrative clustering → DynamoDB."""
+    """Step 3: Run narrative clustering → stable matching → DynamoDB."""
     print("\n" + "=" * 60)
     print("Step 3: Running narrative clustering")
     print("=" * 60)
@@ -89,18 +90,20 @@ def run_clustering():
         min_samples=2,
     )
 
-    print(f"\n  Videos clustered: {summary.get('total_videos', 0)}")
-    print(f"  Clusters found:   {summary.get('cluster_count', 0)}")
-    print(f"  Noise videos:     {summary.get('noise_videos', 0)}")
-    print(f"  DynamoDB updated: {summary.get('videos_updated', 0)}")
-    print(f"  Clusters written: {summary.get('clusters_written', 0)}")
+    print(f"\n  Videos clustered:   {summary.get('total_videos', 0)}")
+    print(f"  Clusters found:     {summary.get('cluster_count', 0)}")
+    print(f"  Matched (existing): {summary.get('matched_clusters', 0)}")
+    print(f"  New clusters:       {summary.get('new_clusters', 0)}")
+    print(f"  Declined:           {summary.get('declined_clusters', 0)}")
+    print(f"  Noise videos:       {summary.get('noise_videos', 0)}")
 
     if summary.get("clusters"):
         print("\n  Clusters:")
         for cid, info in summary["clusters"].items():
+            new_tag = " [NEW]" if info.get("is_new") else ""
             print(
                 f"    {cid}: {info['label']} "
-                f"({info['video_count']} videos, {info['channel_count']} channels)"
+                f"({info['video_count']} videos, {info['channel_count']} channels){new_tag}"
             )
 
     return summary
@@ -208,6 +211,18 @@ if __name__ == "__main__":
         default=None,
         help="Limit article generation to a single cluster ID",
     )
+    parser.add_argument(
+        "--prefix",
+        type=str,
+        default=None,
+        help="S3 prefix to ingest (e.g. youtube-data/week5/)",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Max S3 objects to process",
+    )
     args = parser.parse_args()
 
     # ── Articles-only mode ────────────────────────────────────────────────────
@@ -246,7 +261,7 @@ if __name__ == "__main__":
     # Step 1: Ingest
     print("\nStep 1: Running transcript analysis pipeline")
     print("-" * 40)
-    run_transcript_analysis_job()
+    run_transcript_analysis_job(prefix=args.prefix, limit=args.limit)
 
     # Step 2: Sync missing
     run_sync()
