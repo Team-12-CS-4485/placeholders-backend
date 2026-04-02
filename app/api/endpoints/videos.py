@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/videos", tags=["videos"])
 @router.get("", response_model=VideoListResponse)
 def list_videos(
     limit: int = Query(default=20, ge=1, le=100),
-    cursor: str = Query(default=None),
+    cursor: Optional[str] = Query(default=None),
     week: Optional[str] = Query(default=None),
 ):
     try:
