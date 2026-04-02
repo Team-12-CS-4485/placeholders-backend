@@ -189,15 +189,11 @@ class ArticleService:
     def _article_exists(self, cluster_id: int, week_number: int) -> bool:
         """
         Scan articles table for an item with matching cluster_id + week_number.
-<<<<<<< HEAD
-        The table is tiny so a filtered scan is fine.
+        Paginates fully — Limit cannot be used with FilterExpression reliably.
 
         Note: cluster_id and week_number are stored as Decimal in DynamoDB.
         The filter must use Decimal too — comparing a Python int against a stored
         Decimal never matches, which caused duplicates to be generated every run.
-=======
-        Paginates fully — Limit cannot be used with FilterExpression reliably.
->>>>>>> 4c1eb56 (Updated bugs)
         """
         scan_kwargs: dict = {
             "FilterExpression": Attr("cluster_id").eq(cluster_id)
@@ -205,15 +201,6 @@ class ArticleService:
             "ProjectionExpression": "article_id",
         }
         try:
-<<<<<<< HEAD
-            resp = self._articles_table.scan(
-                FilterExpression=Attr("cluster_id").eq(_dec(cluster_id))
-                & Attr("week_number").eq(_dec(week_number)),
-                ProjectionExpression="article_id",
-                Limit=1,
-            )
-            return len(resp.get("Items", [])) > 0
-=======
             while True:
                 resp = self._articles_table.scan(**scan_kwargs)
                 if resp.get("Items"):
@@ -223,7 +210,6 @@ class ArticleService:
                     break
                 scan_kwargs["ExclusiveStartKey"] = last_key
             return False
->>>>>>> 4c1eb56 (Updated bugs)
         except Exception as exc:
             logger.warning(f"ARTICLE_EXISTS_CHECK_WARN error={exc}")
             return False
