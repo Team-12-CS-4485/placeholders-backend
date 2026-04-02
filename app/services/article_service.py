@@ -190,11 +190,15 @@ class ArticleService:
         """
         Scan articles table for an item with matching cluster_id + week_number.
         The table is tiny so a filtered scan is fine.
+
+        Note: cluster_id and week_number are stored as Decimal in DynamoDB.
+        The filter must use Decimal too — comparing a Python int against a stored
+        Decimal never matches, which caused duplicates to be generated every run.
         """
         try:
             resp = self._articles_table.scan(
-                FilterExpression=Attr("cluster_id").eq(cluster_id)
-                & Attr("week_number").eq(week_number),
+                FilterExpression=Attr("cluster_id").eq(_dec(cluster_id))
+                & Attr("week_number").eq(_dec(week_number)),
                 ProjectionExpression="article_id",
                 Limit=1,
             )
@@ -379,8 +383,8 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
         """Remove any existing articles for this cluster + week before re-generating."""
         try:
             resp = self._articles_table.scan(
-                FilterExpression=Attr("cluster_id").eq(cluster_id)
-                & Attr("week_number").eq(week_number),
+                FilterExpression=Attr("cluster_id").eq(_dec(cluster_id))
+                & Attr("week_number").eq(_dec(week_number)),
                 ProjectionExpression="article_id",
             )
             for item in resp.get("Items", []):
