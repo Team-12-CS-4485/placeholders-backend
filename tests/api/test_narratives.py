@@ -31,7 +31,10 @@ NARRATIVE_DETAIL_FIXTURE = {
     "narrative_headline": "US-Israel Strikes Trigger Global Energy Crisis",
     "narrative_summary": "Following hostilities, 32 countries released oil reserves.",
     "top_topics": ["Middle East Conflict", "Oil Markets"],
-    "top_claims": ["The US destroyed 16 Iranian mine-laying boats.", "Over 1M passengers affected."],
+    "top_claims": [
+        "The US destroyed 16 Iranian mine-laying boats.",
+        "Over 1M passengers affected.",
+    ],
     "video_count": 37,
     "channel_count": 7,
     "breaking_count": 29,
@@ -140,7 +143,9 @@ async def test_get_narratives_week_filter_passes_param():
 @pytest.mark.asyncio
 async def test_get_narrative_detail_returns_200():
     with patch("app.api.endpoints.narratives.TrendService") as mock_svc:
-        mock_svc.return_value.get_narrative_detail.return_value = NARRATIVE_DETAIL_FIXTURE
+        mock_svc.return_value.get_narrative_detail.return_value = (
+            NARRATIVE_DETAIL_FIXTURE
+        )
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as ac:
@@ -151,7 +156,9 @@ async def test_get_narrative_detail_returns_200():
 @pytest.mark.asyncio
 async def test_get_narrative_detail_shape():
     with patch("app.api.endpoints.narratives.TrendService") as mock_svc:
-        mock_svc.return_value.get_narrative_detail.return_value = NARRATIVE_DETAIL_FIXTURE
+        mock_svc.return_value.get_narrative_detail.return_value = (
+            NARRATIVE_DETAIL_FIXTURE
+        )
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as ac:
@@ -172,7 +179,9 @@ async def test_get_narrative_detail_shape():
 @pytest.mark.asyncio
 async def test_get_narrative_claims_returns_200():
     with patch("app.api.endpoints.narratives.TrendService") as mock_svc:
-        mock_svc.return_value.get_narrative_claims.return_value = NARRATIVE_CLAIMS_FIXTURE
+        mock_svc.return_value.get_narrative_claims.return_value = (
+            NARRATIVE_CLAIMS_FIXTURE
+        )
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as ac:
@@ -183,7 +192,9 @@ async def test_get_narrative_claims_returns_200():
 @pytest.mark.asyncio
 async def test_get_narrative_claims_shape():
     with patch("app.api.endpoints.narratives.TrendService") as mock_svc:
-        mock_svc.return_value.get_narrative_claims.return_value = NARRATIVE_CLAIMS_FIXTURE
+        mock_svc.return_value.get_narrative_claims.return_value = (
+            NARRATIVE_CLAIMS_FIXTURE
+        )
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as ac:

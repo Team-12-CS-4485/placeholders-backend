@@ -67,7 +67,10 @@ TREND_DETAIL_FIXTURE = {
             "sentiment_breakdown": {"negative": 8},
         },
     ],
-    "top_claims": ["The US destroyed 16 Iranian mine-laying boats.", "Over 1M passengers affected."],
+    "top_claims": [
+        "The US destroyed 16 Iranian mine-laying boats.",
+        "Over 1M passengers affected.",
+    ],
     "top_topics": ["Middle East Conflict", "Oil Markets"],
     "avg_clickbait_rating": None,
     "thumbnail_tone_breakdown": {},

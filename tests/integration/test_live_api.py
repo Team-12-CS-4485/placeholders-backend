@@ -69,7 +69,9 @@ async def test_narratives_week_filter_live():
 @pytest.mark.asyncio
 async def test_narrative_detail_live():
     """Fetches /api/narratives/{id} and verifies the detail shape."""
-    assert _cluster_id != 0, "Run test_narratives_list_live first to populate _cluster_id"
+    assert (
+        _cluster_id != 0
+    ), "Run test_narratives_list_live first to populate _cluster_id"
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get(f"{BASE_URL}/api/narratives/{_cluster_id}")
     assert response.status_code == 200
@@ -90,7 +92,9 @@ async def test_narrative_detail_live():
 @pytest.mark.asyncio
 async def test_narrative_claims_live():
     """Fetches /api/narratives/{id}/claims and verifies classified claims shape."""
-    assert _cluster_id != 0, "Run test_narratives_list_live first to populate _cluster_id"
+    assert (
+        _cluster_id != 0
+    ), "Run test_narratives_list_live first to populate _cluster_id"
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get(f"{BASE_URL}/api/narratives/{_cluster_id}/claims")
     assert response.status_code == 200
@@ -126,7 +130,9 @@ async def test_trends_list_live():
 @pytest.mark.asyncio
 async def test_trend_detail_live():
     """Fetches /api/trends/{id} and verifies detail shape."""
-    assert _cluster_id != 0, "Run test_narratives_list_live first to populate _cluster_id"
+    assert (
+        _cluster_id != 0
+    ), "Run test_narratives_list_live first to populate _cluster_id"
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get(f"{BASE_URL}/api/trends/{_cluster_id}")
     assert response.status_code == 200
