@@ -323,6 +323,8 @@ class ClusteringService:
                         "breaking_count": week_breaking,
                         "sentiment_breakdown": dict(week_sentiments),
                         "public_sentiment_breakdown": dict(week_pub_sentiments),
+                        # week_overview is populated below after the Gemini call
+                        "week_overview": "",
                     }
                 )
 
@@ -419,6 +421,25 @@ class ClusteringService:
                 else "neutral"
             )
 
+            # Build a compact week context to pass into the prompt
+            week_context = []
+            for wd in cluster_stats[cid]["week_data"]:
+                week_sentiments = wd.get("sentiment_breakdown", {})
+                dominant_week_sentiment = (
+                    max(week_sentiments, key=week_sentiments.get)
+                    if week_sentiments
+                    else "neutral"
+                )
+                week_context.append(
+                    {
+                        "week": wd["week"],
+                        "video_count": wd["video_count"],
+                        "view_count": wd["view_count"],
+                        "breaking_count": wd["breaking_count"],
+                        "dominant_sentiment": dominant_week_sentiment,
+                    }
+                )
+
             prompt = f"""You are a news editor writing narrative labels for topic clusters.
     Given these topics, claims, and video titles from a cluster of YouTube videos, generate:
 
@@ -429,13 +450,20 @@ class ClusteringService:
     If topics seem unrelated, focus on the dominant theme.
     2. headline: A full newspaper headline, 8-14 words
     3. summary: One sentence, include a specific stat or data point if available from the claims
+    4. week_overviews: For each week listed in the week data below, write a 2-sentence plain-English
+       overview of what was happening with this story that week. Sentence 1: the main development or
+       focus of coverage. Sentence 2: scale or sentiment context (e.g. how many outlets covered it,
+       whether coverage was growing or fading, the dominant tone). Only write overviews for weeks
+       that have video_count > 0; set the value to "" for weeks with no coverage.
 
     Topics: {top_topics}
     Claims: {claims}
     Video titles: {titles}
     Dominant sentiment: {dominant_sentiment}
+    Week data: {week_context}
 
-    Return ONLY valid JSON, no markdown: {{"label": "...", "headline": "...", "summary": "..."}}"""
+    Return ONLY valid JSON, no markdown:
+    {{"label": "...", "headline": "...", "summary": "...", "week_overviews": {{"week1": "...", "week2": "..."}}}}"""
 
             for attempt in range(len(self._genai_api_keys) + 1):
                 try:
@@ -462,8 +490,17 @@ class ClusteringService:
                         "headline": parsed.get("headline"),
                         "summary": parsed.get("summary"),
                     }
+
+                    # Inject week_overviews into the already-built week_data entries
+                    week_overviews: dict = parsed.get("week_overviews") or {}
+                    for wd in cluster_stats[cid]["week_data"]:
+                        week_name = wd["week"]
+                        overview = week_overviews.get(week_name, "")
+                        wd["week_overview"] = str(overview) if overview else ""
+
                     logger.info(
-                        f"GEMINI_LABEL cluster={cid} label={cluster_labels[cid]!r}"
+                        f"GEMINI_LABEL cluster={cid} label={cluster_labels[cid]!r} "
+                        f"week_overviews={list(week_overviews.keys())}"
                     )
                     break
                 except Exception as exc:
@@ -529,6 +566,7 @@ class ClusteringService:
                 "total_views": stats["views"],
                 "total_likes": stats["likes"],
                 "total_comments": stats["comments"],
+                # week_data now contains week_overview on each entry
                 "week_data": stats["week_data"],
                 "top_claims": cluster_claims.get(cid, []),
             }
@@ -739,6 +777,7 @@ class ClusteringService:
         """
         Write cluster summaries to DynamoDB.
         Preserves created_at for matched (existing) clusters.
+        week_data entries include week_overview from the Gemini call.
         """
         existing_clusters = existing_clusters or {}
         written = 0
@@ -776,6 +815,7 @@ class ClusteringService:
                 "total_comments": _dec(info["total_comments"]),
                 "narrative_headline": info.get("narrative_headline"),
                 "narrative_summary": info.get("narrative_summary"),
+                # week_data now carries week_overview on each entry
                 "week_data": _clean_for_dynamo(info["week_data"]),
                 "top_claims": info["top_claims"],
                 "status": "active",
