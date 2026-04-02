@@ -185,8 +185,14 @@ class DynamoService:
 
     def map_video_item(self, item: dict) -> dict:
         """Map a deserialized youtube-videos DynamoDB item to an API-ready dict."""
+        video_id = item.get("SortKey", "")
+        thumbnail_url = (
+            f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
+            if video_id
+            else None
+        )
         return {
-            "video_id": item.get("SortKey", ""),
+            "video_id": video_id,
             "channel": item.get("channel") or item.get("PartitionKey", ""),
             "title": item.get("title", ""),
             "published_at": item.get("publishedAt", ""),
@@ -201,6 +207,7 @@ class DynamoService:
             "is_breaking": item.get("is_breaking"),
             "cluster_id": item.get("cluster_id"),
             "cluster_label": item.get("cluster_label") or None,
+            "thumbnail_url": thumbnail_url,
             "thumbnail_tone": item.get("thumbnail_tone") or None,
             "thumbnail_clickbait_score": item.get("thumbnail_clickbait_score"),
             "thumbnail_insight": item.get("thumbnail_insight") or None,
@@ -212,19 +219,22 @@ class DynamoService:
         Scan youtube-videos for a single video by SortKey (videoId).
         Returns the full deserialized item dict, or None if not found.
         """
+        scan_kwargs: dict = {"FilterExpression": Attr("SortKey").eq(video_id)}
         try:
-            response = self._videos_table.scan(
-                FilterExpression=Attr("SortKey").eq(video_id),
-                Limit=1,
-            )
+            while True:
+                response = self._videos_table.scan(**scan_kwargs)
+                items = response.get("Items", [])
+                if items:
+                    return self._deserialize(items[0])
+                last_key = response.get("LastEvaluatedKey")
+                if not last_key:
+                    break
+                scan_kwargs["ExclusiveStartKey"] = last_key
         except ClientError as exc:
             logger.error(f"DYNAMO_GET_VIDEO_ERROR video_id={video_id} error={exc}")
             return None
 
-        items = response.get("Items", [])
-        if not items:
-            return None
-        return self._deserialize(items[0])
+        return None
 
     # ── Clusters ─────────────────────────────────────────────────────────────
 

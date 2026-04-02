@@ -44,6 +44,7 @@ app.include_router(weeks_router)
 app.include_router(narratives_router)
 app.include_router(search_router)
 app.include_router(stats_router)
+app.include_router(articles_router)
 
 
 @app.middleware("http")

@@ -52,7 +52,7 @@ def search(
     # Deduplicate by video_id — keep the highest-scoring chunk per video
     seen: dict[str, dict] = {}
     for hit in raw_hits:
-        video_id = hit.get("transcript_index") or hit.get("source_key", "")
+        video_id = hit.get("transcript_index", "")
         if not video_id:
             continue
         if video_id not in seen or hit["score"] > seen[video_id]["score"]:
@@ -64,7 +64,7 @@ def search(
     dynamo = DynamoService()
     results = []
     for hit in top_hits:
-        video_id = hit.get("transcript_index") or hit.get("source_key", "")
+        video_id = hit.get("transcript_index", "")
         item = dynamo.get_video_by_id(video_id)
         if not item:
             logger.warning(f"SEARCH_DYNAMO_MISS video_id={video_id}")

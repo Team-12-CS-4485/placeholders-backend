@@ -37,12 +37,14 @@ def generate_articles(request: ArticleGenerationRequest):
             week=request.week,
             force=request.force,
             cluster_id=request.cluster_id,
+            dry_run=request.dry_run,
         )
         return {
             "articles_generated": result["articles_generated"],
             "articles_skipped": result["articles_skipped"],
             "articles_failed": result["articles_failed"],
             "weeks_processed": result["weeks_processed"],
+            "dry_run": result["dry_run"],
         }
     except Exception as exc:
         raise HTTPException(

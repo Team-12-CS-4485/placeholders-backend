@@ -333,6 +333,7 @@ class TrendService:
                     2,
                 )
                 c["sentiment_label"] = self._compute_sentiment_label(slice_sentiments)
+                c["recent_sentiment_label"] = c["sentiment_label"]
                 c["dominant_sentiment"] = (
                     slice_sentiments.most_common(1)[0][0]
                     if slice_sentiments

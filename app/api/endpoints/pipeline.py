@@ -20,6 +20,7 @@ from app.schemas.pipeline import (
     IngestionSummary,
     ClusteringSummary,
     ClaimAnalysisSummary,
+    ArticlesSummary,
     VectorSearchRequest,
     VectorSearchResponse,
 )
@@ -59,7 +60,9 @@ def run_full_pipeline(request: PipelineRunRequest):
 
         # Step 4: Article generation (non-fatal — pipeline succeeds even if this fails)
         try:
-            article_result = ArticleService().run_article_generation()
+            article_result = ArticleService().run_article_generation(
+                dry_run=request.dry_run,
+            )
         except Exception as article_exc:
             # Log but don't fail the whole pipeline
             import logging
@@ -72,6 +75,7 @@ def run_full_pipeline(request: PipelineRunRequest):
                 "articles_skipped": 0,
                 "articles_failed": 0,
                 "weeks_processed": [],
+                "dry_run": request.dry_run,
             }
 
         return {
@@ -99,6 +103,7 @@ def run_full_pipeline(request: PipelineRunRequest):
                 "articles_skipped": article_result.get("articles_skipped", 0),
                 "articles_failed": article_result.get("articles_failed", 0),
                 "weeks_processed": article_result.get("weeks_processed", []),
+                "dry_run": article_result.get("dry_run", False),
             },
         }
 

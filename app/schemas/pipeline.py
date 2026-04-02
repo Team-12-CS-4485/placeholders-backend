@@ -26,60 +26,6 @@ class VectorSearchRequest(BaseModel):
 # ── Pipeline response models ──────────────────────────────────────────────────
 
 
-class VideoIntelligence(BaseModel):
-    topics: list[str]
-    category: str
-    sentiment: str
-    key_claims: list[str]
-    is_breaking: bool
-
-
-class ThumbnailIntelligence(BaseModel):
-    thumbnail_visual: str
-    thumbnail_tone: str
-    thumbnail_clickbait_score: int
-    thumbnail_brand_consistent: bool
-    thumbnail_insight: str
-
-
-class VideoAnalysisResult(BaseModel):
-    transcript_key: str
-    video_id: str
-    chunk_count: int
-    chunks_stored: int
-    intelligence: Optional[VideoIntelligence] = None
-    thumbnail: Optional[ThumbnailIntelligence] = None
-    error: Optional[str] = None
-
-
-class ObjectPipelineResult(BaseModel):
-    key: str
-    status: str
-    error: Optional[str] = None
-    transcript_results: list[VideoAnalysisResult]
-
-
-class AnalysisMapEntry(BaseModel):
-    status: str
-    chunk_count: int
-    chunks_stored: int
-    intelligence: Optional[VideoIntelligence] = None
-    thumbnail: Optional[ThumbnailIntelligence] = None
-    error: Optional[str] = None
-
-
-class PipelineRunResponse(BaseModel):
-    prefix: str
-    object_limit: int
-    objects_processed: int
-    videos_found: int
-    videos_indexed: int
-    total_chunks_stored: int
-    chunk_map: dict[str, list[str]]
-    analysis_map: dict[str, AnalysisMapEntry]
-    results: list[ObjectPipelineResult]
-
-
 # ── Full pipeline response ────────────────────────────────────────────────────
 
 
@@ -105,10 +51,19 @@ class ClaimAnalysisSummary(BaseModel):
     dry_run: bool = False
 
 
+class ArticlesSummary(BaseModel):
+    articles_generated: int
+    articles_skipped: int
+    articles_failed: int
+    weeks_processed: list[str]
+    dry_run: bool = False
+
+
 class FullPipelineResponse(BaseModel):
     ingestion: IngestionSummary
     clustering: ClusteringSummary
     claim_analysis: ClaimAnalysisSummary
+    articles: ArticlesSummary
 
 
 # ── Search response models ────────────────────────────────────────────────────
