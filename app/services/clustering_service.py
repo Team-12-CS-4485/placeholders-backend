@@ -508,11 +508,13 @@ class ClusteringService:
                 except Exception as exc:
                     exc_str = str(exc)
                     is_rate_limit = (
-                        "429" in exc_str or "RESOURCE_EXHAUSTED" in exc_str
+                        "429" in exc_str
+                        or "RESOURCE_EXHAUSTED" in exc_str
                         or getattr(exc, "code", None) == 429
                     )
                     is_server_error = (
-                        "503" in exc_str or "500" in exc_str
+                        "503" in exc_str
+                        or "500" in exc_str
                         or "UNAVAILABLE" in exc_str
                         or getattr(exc, "code", None) in (500, 503)
                     )
@@ -543,9 +545,7 @@ class ClusteringService:
                         continue
 
                     # Non-retryable error — log and use TF-IDF fallback
-                    logger.error(
-                        f"GEMINI_LABEL_FATAL cluster={cid} error={exc}"
-                    )
+                    logger.error(f"GEMINI_LABEL_FATAL cluster={cid} error={exc}")
                     break
 
         # ── Build cluster_info ──
@@ -705,7 +705,8 @@ class ClusteringService:
 
         # Match against active, new, and declining clusters (only inactive is excluded)
         matchable_old = {
-            cid: info for cid, info in existing_clusters.items()
+            cid: info
+            for cid, info in existing_clusters.items()
             if info.get("status") != "inactive"
         }
         old_embeddings = {}
@@ -764,7 +765,8 @@ class ClusteringService:
 
         # Existing clusters that weren't matched → declining
         active_old = {
-            cid for cid, info in existing_clusters.items()
+            cid
+            for cid, info in existing_clusters.items()
             if info.get("status") in ("active", "new")
         }
         declined_ids = sorted(active_old - used_old)
@@ -791,7 +793,9 @@ class ClusteringService:
             remapped[stable_id] = info
         return remapped
 
-    def _mark_declined_clusters(self, declined_ids: list[int], existing_clusters: dict) -> int:
+    def _mark_declined_clusters(
+        self, declined_ids: list[int], existing_clusters: dict
+    ) -> int:
         """
         Mark existing clusters that no longer have matching videos.
         active → declining (first miss)
@@ -827,7 +831,9 @@ class ClusteringService:
             )
         return marked
 
-    def _write_cluster_summaries(self, cluster_info, existing_clusters=None, new_ids=None):
+    def _write_cluster_summaries(
+        self, cluster_info, existing_clusters=None, new_ids=None
+    ):
         """
         Write cluster summaries to DynamoDB.
         Preserves created_at for matched (existing) clusters.
@@ -989,7 +995,9 @@ class ClusteringService:
                 cluster_info, existing_clusters, new_ids
             )
             # 9. Mark declined clusters (active→declining→inactive)
-            declined_count = self._mark_declined_clusters(declined_ids, existing_clusters)
+            declined_count = self._mark_declined_clusters(
+                declined_ids, existing_clusters
+            )
 
             # 10. Freshness check — clusters with no videos in the current week
             #     are also candidates for declining, even if HDBSCAN still matches them
@@ -999,7 +1007,9 @@ class ClusteringService:
                     cluster_info, existing_clusters, current_week, declined_ids
                 )
                 if stale_ids:
-                    stale_count = self._mark_declined_clusters(stale_ids, existing_clusters)
+                    stale_count = self._mark_declined_clusters(
+                        stale_ids, existing_clusters
+                    )
                     declined_count += stale_count
                     logger.info(
                         f"FRESHNESS_CHECK current_week={current_week} "

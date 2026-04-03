@@ -3,6 +3,7 @@ mark_stale_clusters.py — One-time script to mark clusters missing the current
 week as declining. Future runs will handle this automatically via the freshness
 check in run_clustering().
 """
+
 import boto3
 from collections import defaultdict
 from decimal import Decimal

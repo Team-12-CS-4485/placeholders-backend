@@ -8,6 +8,7 @@ Verifies referential integrity between youtube-videos and narrative-clusters:
   4. Videos with cluster_id but no cluster_label (partial write)
   5. Videos with a cluster_label but no cluster_id (orphaned label)
 """
+
 import boto3
 from collections import Counter, defaultdict
 from decimal import Decimal
@@ -64,10 +65,10 @@ for c in raw_clusters:
 # Build per-cluster video counts and per-week counts from videos
 videos_per_cluster = Counter()
 weeks_per_cluster = defaultdict(set)
-orphaned_label = []       # cluster_label but no cluster_id
-partial_write = []        # cluster_id but no cluster_label
-dangling_cluster_ids = [] # cluster_id not in clusters table
-unclustered = []          # no cluster_id
+orphaned_label = []  # cluster_label but no cluster_id
+partial_write = []  # cluster_id but no cluster_label
+dangling_cluster_ids = []  # cluster_id not in clusters table
+unclustered = []  # no cluster_id
 
 for v in raw_videos:
     vid = v.get("SortKey", "?")
@@ -94,16 +95,22 @@ for cid, cluster in cluster_map.items():
     stored = to_int(cluster.get("video_count"))
     actual = videos_per_cluster.get(cid, 0)
     if stored != actual:
-        count_mismatches.append({
-            "cluster_id": cid,
-            "label": cluster.get("cluster_label", "?"),
-            "stored_count": stored,
-            "actual_count": actual,
-        })
+        count_mismatches.append(
+            {
+                "cluster_id": cid,
+                "label": cluster.get("cluster_label", "?"),
+                "stored_count": stored,
+                "actual_count": actual,
+            }
+        )
 
 # Clusters with no videos at all
 no_video_clusters = [
-    {"cluster_id": cid, "label": c.get("cluster_label", "?"), "status": c.get("status", "?")}
+    {
+        "cluster_id": cid,
+        "label": c.get("cluster_label", "?"),
+        "status": c.get("status", "?"),
+    }
     for cid, c in cluster_map.items()
     if videos_per_cluster.get(cid, 0) == 0
 ]
@@ -134,7 +141,9 @@ if dangling_cluster_ids:
 if count_mismatches:
     print(f"\n--- video_count mismatches ---")
     for m in count_mismatches:
-        print(f"  cluster={m['cluster_id']} ({m['label']}): stored={m['stored_count']} actual={m['actual_count']}")
+        print(
+            f"  cluster={m['cluster_id']} ({m['label']}): stored={m['stored_count']} actual={m['actual_count']}"
+        )
 
 if no_video_clusters:
     print(f"\n--- Clusters with 0 videos ---")
@@ -156,10 +165,16 @@ for cid, c in active:
     stored = to_int(c.get("video_count"))
     weeks = sorted(weeks_per_cluster.get(cid, set()))
     match = "OK" if stored == actual else f"MISMATCH(stored={stored})"
-    print(f"  {cid:3}: {c.get('cluster_label', '?'):<45} videos={actual} {match}  weeks={weeks}")
+    print(
+        f"  {cid:3}: {c.get('cluster_label', '?'):<45} videos={actual} {match}  weeks={weeks}"
+    )
 
-declining = [(cid, c) for cid, c in cluster_map.items() if c.get("status") == "declining"]
+declining = [
+    (cid, c) for cid, c in cluster_map.items() if c.get("status") == "declining"
+]
 if declining:
     print(f"\n--- Declining clusters ---")
     for cid, c in sorted(declining):
-        print(f"  {cid}: {c.get('cluster_label', '?')} (videos={videos_per_cluster.get(cid, 0)})")
+        print(
+            f"  {cid}: {c.get('cluster_label', '?')} (videos={videos_per_cluster.get(cid, 0)})"
+        )
