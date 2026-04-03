@@ -38,6 +38,7 @@ import boto3
 
 from app.core.config import settings
 from app.services.vector_service import VectorService
+from app.services.chunking_service import get_default_chunker
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ class ClusteringService:
         self._genai_api_keys = settings.genai_api_keys
         self._genai_key_index = 0
         self._genai_client = genai.Client(api_key=self._genai_api_keys[0])
+        self._chunker = get_default_chunker()
 
     def _rotate_key(self) -> bool:
         """Rotate to the next API key. Returns True if a new key is available."""
@@ -235,6 +237,7 @@ class ClusteringService:
                 min_cluster_size=min_cluster_size,
                 min_samples=min_samples,
                 metric="euclidean",
+                cluster_selection_method="leaf",
                 store_centers="centroid",
             )
             clusterer.fit(reduced)
@@ -465,7 +468,8 @@ class ClusteringService:
     Return ONLY valid JSON, no markdown:
     {{"label": "...", "headline": "...", "summary": "...", "week_overviews": {{"week1": "...", "week2": "..."}}}}"""
 
-            for attempt in range(len(self._genai_api_keys) + 1):
+            max_attempts = 6 * len(self._genai_api_keys)
+            for attempt in range(max_attempts):
                 try:
                     response = self._genai_client.models.generate_content(
                         model=settings.gemini_model_id,
@@ -476,10 +480,9 @@ class ClusteringService:
                             )
                         ),
                     )
-                    time.sleep(0.5)  # pace RPM across keys
+                    time.sleep(0.5)
                     raw = getattr(response, "text", "") or str(response)
                     raw = raw.strip()
-                    # strip markdown fences if present
                     if raw.startswith("```"):
                         raw = re.sub(r"^```(?:json)?\s*", "", raw)
                         raw = re.sub(r"\s*```$", "", raw)
@@ -491,7 +494,6 @@ class ClusteringService:
                         "summary": parsed.get("summary"),
                     }
 
-                    # Inject week_overviews into the already-built week_data entries
                     week_overviews: dict = parsed.get("week_overviews") or {}
                     for wd in cluster_stats[cid]["week_data"]:
                         week_name = wd["week"]
@@ -504,15 +506,23 @@ class ClusteringService:
                     )
                     break
                 except Exception as exc:
+                    exc_str = str(exc)
                     is_rate_limit = (
-                        "429" in str(exc) or getattr(exc, "code", None) == 429
+                        "429" in exc_str or "RESOURCE_EXHAUSTED" in exc_str
+                        or getattr(exc, "code", None) == 429
                     )
-                    if is_rate_limit and self._rotate_key():
-                        logger.warning(
-                            f"GEMINI_KEY_ROTATED cluster={cid} attempt={attempt+1} retrying"
-                        )
-                        continue
+                    is_server_error = (
+                        "503" in exc_str or "500" in exc_str
+                        or "UNAVAILABLE" in exc_str
+                        or getattr(exc, "code", None) in (500, 503)
+                    )
+
                     if is_rate_limit:
+                        if self._rotate_key():
+                            logger.warning(
+                                f"GEMINI_KEY_ROTATED cluster={cid} attempt={attempt+1} retrying"
+                            )
+                            continue
                         logger.warning(
                             "ALL_KEYS_EXHAUSTED resetting to key 0 and waiting 60s"
                         )
@@ -522,9 +532,19 @@ class ClusteringService:
                         )
                         time.sleep(60)
                         continue
-                    logger.warning(
-                        f"GEMINI_LABEL_FAILED cluster={cid} error={exc} "
-                        f"falling_back_to={tfidf_labels[cid]!r}"
+
+                    if is_server_error:
+                        wait = min(5 * (attempt + 1), 30)
+                        logger.warning(
+                            f"GEMINI_LABEL_503 cluster={cid} attempt={attempt+1} "
+                            f"waiting {wait}s before retry"
+                        )
+                        time.sleep(wait)
+                        continue
+
+                    # Non-retryable error — log and use TF-IDF fallback
+                    logger.error(
+                        f"GEMINI_LABEL_FATAL cluster={cid} error={exc}"
                     )
                     break
 
@@ -648,30 +668,33 @@ class ClusteringService:
         logger.info(f"STABLE_MATCH_LOADED existing_clusters={len(existing)}")
         return existing
 
+    def _embed_cluster_description(self, label: str, topics: list[str]) -> list[float]:
+        """Embed a cluster's label + topics into a single vector for matching."""
+        text = f"{label} {' '.join(topics)}"
+        return self._chunker.embed([text], is_query=False)[0]
+
     @staticmethod
-    def _topic_jaccard(topics_a: list[str], topics_b: list[str]) -> float:
-        """Jaccard similarity between two topic lists."""
-        set_a = set(t.lower() for t in topics_a)
-        set_b = set(t.lower() for t in topics_b)
-        if not set_a or not set_b:
-            return 0.0
-        intersection = set_a & set_b
-        union = set_a | set_b
-        return len(intersection) / len(union)
+    def _cosine_similarity(vec_a, vec_b) -> float:
+        a = np.array(vec_a)
+        b = np.array(vec_b)
+        dot = np.dot(a, b)
+        norm = np.linalg.norm(a) * np.linalg.norm(b)
+        return float(dot / norm) if norm > 0 else 0.0
 
     def _match_to_existing_clusters(
         self,
         new_cluster_info: dict[int, dict],
         existing_clusters: dict[int, dict],
-        threshold: float = 0.3,
+        threshold: float = 0.75,
     ) -> tuple[dict[int, int], list[int], list[int]]:
         """
-        Match new HDBSCAN clusters to existing stable clusters by topic overlap.
+        Match new HDBSCAN clusters to existing stable clusters using
+        embedding similarity on label + topics.
 
         Returns:
             id_map: {hdbscan_label: stable_cluster_id}
             new_ids: list of stable IDs assigned to genuinely new clusters
-            declined_ids: list of existing cluster IDs that had no match (inactive)
+            declined_ids: list of existing cluster IDs that had no match
         """
         if not existing_clusters:
             # First run — use HDBSCAN labels as-is
@@ -680,14 +703,30 @@ class ClusteringService:
 
         real_new = {cid: info for cid, info in new_cluster_info.items() if cid != -1}
 
+        # Match against active, new, and declining clusters (only inactive is excluded)
+        matchable_old = {
+            cid: info for cid, info in existing_clusters.items()
+            if info.get("status") != "inactive"
+        }
+        old_embeddings = {}
+        for old_cid, old_info in matchable_old.items():
+            old_embeddings[old_cid] = self._embed_cluster_description(
+                old_info["label"], old_info["top_topics"]
+            )
+
+        # Embed all new clusters
+        new_embeddings = {}
+        for new_cid, new_info in real_new.items():
+            new_embeddings[new_cid] = self._embed_cluster_description(
+                new_info["label"], new_info["top_topics"]
+            )
+
         # Score all (new, existing) pairs
         scores: list[tuple[float, int, int]] = []
-        for new_cid, new_info in real_new.items():
-            for old_cid, old_info in existing_clusters.items():
-                if old_info.get("status") == "inactive":
-                    continue
-                sim = self._topic_jaccard(
-                    new_info["top_topics"], old_info["top_topics"]
+        for new_cid in real_new:
+            for old_cid in matchable_old:
+                sim = self._cosine_similarity(
+                    new_embeddings[new_cid], old_embeddings[old_cid]
                 )
                 if sim >= threshold:
                     scores.append((sim, new_cid, old_cid))
@@ -725,9 +764,8 @@ class ClusteringService:
 
         # Existing clusters that weren't matched → declining
         active_old = {
-            cid
-            for cid, info in existing_clusters.items()
-            if info.get("status") != "inactive"
+            cid for cid, info in existing_clusters.items()
+            if info.get("status") in ("active", "new")
         }
         declined_ids = sorted(active_old - used_old)
         for cid in declined_ids:
@@ -753,33 +791,51 @@ class ClusteringService:
             remapped[stable_id] = info
         return remapped
 
-    def _mark_declined_clusters(self, declined_ids: list[int]) -> int:
-        """Mark existing clusters that no longer have matching videos as inactive."""
+    def _mark_declined_clusters(self, declined_ids: list[int], existing_clusters: dict) -> int:
+        """
+        Mark existing clusters that no longer have matching videos.
+        active → declining (first miss)
+        declining → inactive (second consecutive miss)
+        """
         marked = 0
+        now = datetime.now(timezone.utc).isoformat()
         for cid in declined_ids:
+            old_status = existing_clusters.get(cid, {}).get("status", "active")
+            if old_status == "declining":
+                new_status = "inactive"
+            else:
+                new_status = "declining"
+
             self._clusters_table.update_item(
                 Key={"cluster_id": _dec(cid)},
-                UpdateExpression="SET #status = :s, #updated = :u",
+                UpdateExpression="SET #status = :s, #updated = :u, #declined = :d",
                 ExpressionAttributeNames={
                     "#status": "status",
                     "#updated": "updated_at",
+                    "#declined": "declined_at",
                 },
                 ExpressionAttributeValues={
-                    ":s": "inactive",
-                    ":u": datetime.now(timezone.utc).isoformat(),
+                    ":s": new_status,
+                    ":u": now,
+                    ":d": now,
                 },
             )
             marked += 1
-            logger.info(f"DYNAMO_CLUSTER_DECLINED cluster={cid}")
+            logger.info(
+                f"DYNAMO_CLUSTER_{new_status.upper()} cluster={cid} "
+                f"label={existing_clusters.get(cid, {}).get('label', '?')!r}"
+            )
         return marked
 
-    def _write_cluster_summaries(self, cluster_info, existing_clusters=None):
+    def _write_cluster_summaries(self, cluster_info, existing_clusters=None, new_ids=None):
         """
         Write cluster summaries to DynamoDB.
         Preserves created_at for matched (existing) clusters.
+        New clusters get status='new', existing ones stay 'active'.
         week_data entries include week_overview from the Gemini call.
         """
         existing_clusters = existing_clusters or {}
+        new_ids = set(new_ids or [])
         written = 0
         for cid, info in cluster_info.items():
             if cid == -1:
@@ -818,7 +874,7 @@ class ClusteringService:
                 # week_data now carries week_overview on each entry
                 "week_data": _clean_for_dynamo(info["week_data"]),
                 "top_claims": info["top_claims"],
-                "status": "active",
+                "status": "new" if cid in new_ids else "active",
                 "created_at": created_at,
                 "updated_at": now,
             }
@@ -828,14 +884,57 @@ class ClusteringService:
 
         return written
 
+    # ── Freshness helpers ────────────────────────────────────────────────────
+
+    @staticmethod
+    def _detect_current_week(cluster_info: dict) -> str | None:
+        """Derive the current week from the highest week number across all clusters."""
+        max_week = None
+        max_num = -1
+        for info in cluster_info.values():
+            for wd in info.get("week_data", []):
+                wk = wd.get("week", "")
+                if wk.startswith("week") and wk[4:].isdigit():
+                    num = int(wk[4:])
+                    if num > max_num:
+                        max_num = num
+                        max_week = wk
+        return max_week
+
+    def _find_stale_clusters(
+        self,
+        cluster_info: dict,
+        existing_clusters: dict,
+        current_week: str,
+        already_declined: list[int],
+    ) -> list[int]:
+        """
+        Find active clusters that matched HDBSCAN but have no videos
+        in the current week — the story is alive historically but got
+        no new coverage this week.
+        """
+        already = set(already_declined)
+        stale = []
+        for cid, info in cluster_info.items():
+            if cid == -1 or cid in already:
+                continue
+            weeks_present = {wd["week"] for wd in info.get("week_data", [])}
+            if current_week not in weeks_present:
+                stale.append(cid)
+                logger.info(
+                    f"FRESHNESS_STALE cluster={cid} label={info.get('label', '?')!r} "
+                    f"weeks={sorted(weeks_present)} missing={current_week}"
+                )
+        return stale
+
     # ── Public API ───────────────────────────────────────────────────────────
 
     def run_clustering(
         self,
         min_cluster_size=7,
-        min_samples=2,
+        min_samples=3,
         umap_components=15,
-        umap_neighbors=15,
+        umap_neighbors=30,
         dry_run=False,
     ):
         # 1. Vectors from Qdrant
@@ -887,10 +986,25 @@ class ClusteringService:
             )
             # 8. Write to DynamoDB narrative-clusters (preserving created_at)
             clusters_written = self._write_cluster_summaries(
-                cluster_info, existing_clusters
+                cluster_info, existing_clusters, new_ids
             )
-            # 9. Mark declined clusters as inactive
-            declined_count = self._mark_declined_clusters(declined_ids)
+            # 9. Mark declined clusters (active→declining→inactive)
+            declined_count = self._mark_declined_clusters(declined_ids, existing_clusters)
+
+            # 10. Freshness check — clusters with no videos in the current week
+            #     are also candidates for declining, even if HDBSCAN still matches them
+            current_week = self._detect_current_week(cluster_info)
+            if current_week:
+                stale_ids = self._find_stale_clusters(
+                    cluster_info, existing_clusters, current_week, declined_ids
+                )
+                if stale_ids:
+                    stale_count = self._mark_declined_clusters(stale_ids, existing_clusters)
+                    declined_count += stale_count
+                    logger.info(
+                        f"FRESHNESS_CHECK current_week={current_week} "
+                        f"stale_clusters={stale_ids}"
+                    )
 
         real_clusters = {k: v for k, v in cluster_info.items() if k != -1}
         noise_info = cluster_info.get(-1, {})

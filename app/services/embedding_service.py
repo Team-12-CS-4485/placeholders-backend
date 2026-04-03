@@ -163,8 +163,8 @@ class EmbeddingService:
                     config=types.GenerateContentConfig(
                         thinking_config=types.ThinkingConfig(
                             thinking_level=settings.gemini_thinking_level,
-                            max_output_tokens=256,
-                        )
+                        ),
+                        max_output_tokens=2048,
                     ),
                 )
                 time.sleep(0.5)  # pace RPM across keys

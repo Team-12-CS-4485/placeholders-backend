@@ -238,10 +238,11 @@ class DynamoService:
 
     # ── Clusters ─────────────────────────────────────────────────────────────
 
-    def get_all_clusters(self) -> list[dict]:
+    def get_all_clusters(self, include_inactive: bool = False) -> list[dict]:
         """
         Full scan of narrative-clusters (small table, no pagination needed).
         Returns list of deserialised cluster dicts.
+        Filters out inactive clusters by default.
         """
         items = []
         scan_kwargs: dict = {}
@@ -254,7 +255,10 @@ class DynamoService:
                 break
 
             for raw in response.get("Items", []):
-                items.append(self._deserialize(raw))
+                item = self._deserialize(raw)
+                if not include_inactive and item.get("status") == "inactive":
+                    continue
+                items.append(item)
 
             last_key = response.get("LastEvaluatedKey")
             if not last_key:

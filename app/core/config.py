@@ -31,7 +31,7 @@ class Settings:
             if key:
                 self.genai_api_keys.append(key)
         self.gemini_model_id = os.getenv("GEMINI_MODEL_ID", "gemini-3-flash-preview")
-        self.gemini_thinking_level = os.getenv("GEMINI_THINKING_LEVEL", "medium")
+        self.gemini_thinking_level = os.getenv("GEMINI_THINKING_LEVEL", "low")
         self.embedding_model_id = os.getenv(
             "EMBEDDING_MODEL_ID", "nomic-ai/nomic-embed-text-v1.5"
         )
