@@ -66,7 +66,7 @@ for c in sorted(clusters, key=lambda x: int(x.get("cluster_id", 0))):
 
     print(f"  {cid:3}: {label:<45} status={status:<12} weeks={weeks}  → {marker}")
 
-    if not has_current and status == "active":
+    if not has_current and status in ("active", "new"):
         stale.append((cid, label))
 
 if not stale:

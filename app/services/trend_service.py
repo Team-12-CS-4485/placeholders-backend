@@ -111,6 +111,7 @@ class TrendService:
             "top_topics": list(item.get("top_topics", [])),
             "claims": classified_claims,
             "creator_risk": list(item.get("creator_risk", [])),
+            "status": item.get("status", "active"),
             "narrative_headline": item.get("narrative_headline"),
             "narrative_summary": item.get("narrative_summary"),
             "avg_clickbait_rating": (
