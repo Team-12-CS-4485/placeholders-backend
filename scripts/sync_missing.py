@@ -278,11 +278,11 @@ def index_videos(video_ids: list):
             print(f"  Chunks: {len(chunks)}")
 
             # Step 2: Combined Gemini intelligence + thumbnail (one call)
-            intelligence, thumbnail = (
-                gemini_service.extract_full_video_intelligence(
-                    chunks=chunks, title=title,
-                    top_comments=top_comments, video_id=video_id,
-                )
+            intelligence, thumbnail = gemini_service.extract_full_video_intelligence(
+                chunks=chunks,
+                title=title,
+                top_comments=top_comments,
+                video_id=video_id,
             )
 
             if not intelligence.get("topics"):

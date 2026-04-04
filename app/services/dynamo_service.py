@@ -302,21 +302,16 @@ class DynamoService:
         try:
             resp = self._videos_table.query(
                 IndexName="cluster-index",
-                KeyConditionExpression=Key("cluster_id").eq(
-                    Decimal(str(cluster_id))
-                ),
+                KeyConditionExpression=Key("cluster_id").eq(Decimal(str(cluster_id))),
                 ProjectionExpression="title",
                 Limit=limit,
             )
             return [
-                item["title"]
-                for item in resp.get("Items", [])
-                if item.get("title")
+                item["title"] for item in resp.get("Items", []) if item.get("title")
             ]
         except Exception as exc:
             logger.warning(
-                f"DYNAMO_VIDEO_TITLES_WARN cluster={cluster_id} "
-                f"error={exc}"
+                f"DYNAMO_VIDEO_TITLES_WARN cluster={cluster_id} " f"error={exc}"
             )
             return []
 
@@ -329,8 +324,7 @@ class DynamoService:
         """Check if an article already exists for cluster + week."""
         scan_kwargs: dict = {
             "FilterExpression": (
-                Attr("cluster_id").eq(cluster_id)
-                & Attr("week_number").eq(week_number)
+                Attr("cluster_id").eq(cluster_id) & Attr("week_number").eq(week_number)
             ),
             "ProjectionExpression": "article_id",
         }
@@ -341,9 +335,7 @@ class DynamoService:
                     return True
                 if "LastEvaluatedKey" not in resp:
                     break
-                scan_kwargs["ExclusiveStartKey"] = resp[
-                    "LastEvaluatedKey"
-                ]
+                scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
             return False
         except Exception as exc:
             logger.warning(f"ARTICLE_EXISTS_CHECK_WARN error={exc}")
@@ -353,9 +345,7 @@ class DynamoService:
         """Put an article item into the articles table."""
         self._articles_table().put_item(Item=item)
 
-    def delete_articles(
-        self, cluster_id: int, week_number: int
-    ) -> None:
+    def delete_articles(self, cluster_id: int, week_number: int) -> None:
         """Remove existing articles for a cluster + week."""
         try:
             resp = self._articles_table().scan(
@@ -370,9 +360,7 @@ class DynamoService:
                     Key={"article_id": item["article_id"]}
                 )
         except Exception as exc:
-            logger.warning(
-                f"ARTICLE_DELETE_WARN cluster={cluster_id} error={exc}"
-            )
+            logger.warning(f"ARTICLE_DELETE_WARN cluster={cluster_id} error={exc}")
 
     def get_articles(
         self,
@@ -416,9 +404,7 @@ class DynamoService:
                         "article_id": item.get("article_id", ""),
                         "cluster_id": int(item.get("cluster_id", 0)),
                         "cluster_label": item.get("cluster_label", ""),
-                        "week_number": int(
-                            item.get("week_number", 0)
-                        ),
+                        "week_number": int(item.get("week_number", 0)),
                         "title": item.get("title", ""),
                         "overview": item.get("overview", ""),
                         "created_at": item.get("created_at", ""),
@@ -429,9 +415,7 @@ class DynamoService:
 
             if len(items) >= limit or "LastEvaluatedKey" not in resp:
                 break
-            scan_kwargs["ExclusiveStartKey"] = resp[
-                "LastEvaluatedKey"
-            ]
+            scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
 
         items.sort(key=lambda x: (-x["week_number"], x["cluster_id"]))
         return items[:limit]
@@ -439,13 +423,9 @@ class DynamoService:
     def get_article_by_id(self, article_id: str) -> Optional[dict]:
         """Fetch a single article (including body) by article_id."""
         try:
-            resp = self._articles_table().get_item(
-                Key={"article_id": article_id}
-            )
+            resp = self._articles_table().get_item(Key={"article_id": article_id})
         except ClientError as exc:
-            logger.error(
-                f"ARTICLE_GET_ERROR id={article_id} error={exc}"
-            )
+            logger.error(f"ARTICLE_GET_ERROR id={article_id} error={exc}")
             return None
 
         item = resp.get("Item")

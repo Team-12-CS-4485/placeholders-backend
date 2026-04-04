@@ -390,13 +390,9 @@ class GeminiService:
 
         comments_block = ""
         if top_comments:
-            comments_text = "\n".join(
-                f"- {c}" for c in top_comments if c.strip()
-            )
+            comments_text = "\n".join(f"- {c}" for c in top_comments if c.strip())
             if comments_text:
-                comments_block = (
-                    f"\n\nTop viewer comments:\n{comments_text}\n"
-                )
+                comments_block = f"\n\nTop viewer comments:\n{comments_text}\n"
 
         # Try to fetch thumbnail
         img_bytes, mime = None, ""
@@ -518,14 +514,10 @@ class GeminiService:
 
             # ── Parse intelligence fields ──
             public_sentiment = data.get("public_sentiment", "neutral")
-            if public_sentiment not in (
-                "positive", "negative", "neutral", "mixed"
-            ):
+            if public_sentiment not in ("positive", "negative", "neutral", "mixed"):
                 public_sentiment = "neutral"
 
-            public_sentiment_score = data.get(
-                "public_sentiment_score", 0.0
-            )
+            public_sentiment_score = data.get("public_sentiment_score", 0.0)
             try:
                 public_sentiment_score = max(
                     -1.0, min(1.0, float(public_sentiment_score))
@@ -542,8 +534,7 @@ class GeminiService:
                 ),
                 "sentiment": (
                     data.get("sentiment", "neutral")
-                    if data.get("sentiment")
-                    in ("positive", "negative", "neutral")
+                    if data.get("sentiment") in ("positive", "negative", "neutral")
                     else "neutral"
                 ),
                 "key_claims": data.get("key_claims", [])[:5],
@@ -560,26 +551,18 @@ class GeminiService:
                 except (ValueError, TypeError):
                     score = 0
 
-                tone = str(
-                    data.get("thumbnail_tone", "")
-                ).lower().strip()
+                tone = str(data.get("thumbnail_tone", "")).lower().strip()
                 if tone not in THUMBNAIL_TONE_OPTIONS:
                     tone = "neutral"
 
                 thumbnail = {
-                    "thumbnail_visual": str(
-                        data.get("thumbnail_visual", "")
-                    ),
+                    "thumbnail_visual": str(data.get("thumbnail_visual", "")),
                     "thumbnail_tone": tone,
-                    "thumbnail_clickbait_score": (
-                        score if 1 <= score <= 5 else 0
-                    ),
+                    "thumbnail_clickbait_score": (score if 1 <= score <= 5 else 0),
                     "thumbnail_brand_consistent": bool(
                         data.get("thumbnail_brand_consistent", False)
                     ),
-                    "thumbnail_insight": str(
-                        data.get("thumbnail_insight", "")
-                    ),
+                    "thumbnail_insight": str(data.get("thumbnail_insight", "")),
                 }
             else:
                 thumbnail = _thumb_default
@@ -611,14 +594,12 @@ class GeminiService:
         if not analyses:
             return ""
         joined = "\n\n".join(
-            f"Chunk {idx + 1} Analysis:\n{a}"
-            for idx, a in enumerate(analyses)
+            f"Chunk {idx + 1} Analysis:\n{a}" for idx, a in enumerate(analyses)
         )
         prompt = (
             "Combine the chunk analyses into one final transcript report "
             "with: overall summary, key themes, key claims, and potential "
-            "follow-up questions.\n\n"
-            + joined
+            "follow-up questions.\n\n" + joined
         )
         logger.info("GEMINI_SUMMARIZE complete")
         return self._gemini(prompt)

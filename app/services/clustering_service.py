@@ -472,9 +472,7 @@ class ClusteringService:
                 cluster_info, existing_clusters
             )
         )
-        cluster_info = self._labeling_service.remap_cluster_info(
-            cluster_info, id_map
-        )
+        cluster_info = self._labeling_service.remap_cluster_info(cluster_info, id_map)
 
         # Remap the per-video labels array to stable IDs
         stable_labels = np.array(
@@ -496,7 +494,9 @@ class ClusteringService:
                 cluster_info, existing_clusters, new_ids
             )
             # 9. Mark declined clusters (active→declining→inactive)
-            declined_count = self._mark_declined_clusters(declined_ids, existing_clusters)
+            declined_count = self._mark_declined_clusters(
+                declined_ids, existing_clusters
+            )
 
             # 10. Freshness check — clusters with no videos in the current week
             #     are also candidates for declining, even if HDBSCAN still matches them
@@ -506,7 +506,9 @@ class ClusteringService:
                     cluster_info, existing_clusters, current_week, declined_ids
                 )
                 if stale_ids:
-                    stale_count = self._mark_declined_clusters(stale_ids, existing_clusters)
+                    stale_count = self._mark_declined_clusters(
+                        stale_ids, existing_clusters
+                    )
                     declined_count += stale_count
                     logger.info(
                         f"FRESHNESS_CHECK current_week={current_week} "

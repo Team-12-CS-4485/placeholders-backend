@@ -90,9 +90,7 @@ class ArticleService:
         gemini_service: Optional[GeminiService] = None,
     ):
         self._dynamo = dynamo_service or DynamoService()
-        self._gemini = gemini_service or GeminiService(
-            api_keys=settings.genai_api_keys
-        )
+        self._gemini = gemini_service or GeminiService(api_keys=settings.genai_api_keys)
 
     # ── Prompt builder ────────────────────────────────────────────────────────
 
@@ -111,12 +109,8 @@ class ArticleService:
         top_topics = cluster.get("top_topics", [])
         dominant_sentiment = cluster.get("dominant_sentiment", "neutral")
 
-        video_count = week_slice.get(
-            "video_count", cluster.get("video_count", 0)
-        )
-        view_count = week_slice.get(
-            "view_count", cluster.get("total_views", 0)
-        )
+        video_count = week_slice.get("video_count", cluster.get("video_count", 0))
+        view_count = week_slice.get("view_count", cluster.get("total_views", 0))
         breaking_count = week_slice.get(
             "breaking_count", cluster.get("breaking_count", 0)
         )
@@ -132,9 +126,7 @@ class ArticleService:
         for c in consensus[:4]:
             claim = c.get("claim", "")
             sources = c.get("sources", [])[:4]
-            sources_str = (
-                f" [Reported by: {', '.join(sources)}]" if sources else ""
-            )
+            sources_str = f" [Reported by: {', '.join(sources)}]" if sources else ""
             consensus_lines.append(f"• {claim}{sources_str}")
 
         # Fall back to top_claims when claim analysis hasn't been run
@@ -149,18 +141,12 @@ class ArticleService:
                 f"{p.get('channel', '')}: {p.get('sentiment', '')}"
                 for p in perspectives
             )
-            debated_lines.append(
-                f"• {claim}\n  Perspectives: {persp_str}"
-            )
+            debated_lines.append(f"• {claim}\n  Perspectives: {persp_str}")
 
         # Format sentiment breakdown
-        sentiment_parts = [
-            f"{k}: {v}" for k, v in sorted(week_sentiment.items())
-        ]
+        sentiment_parts = [f"{k}: {v}" for k, v in sorted(week_sentiment.items())]
         sentiment_str = (
-            ", ".join(sentiment_parts)
-            if sentiment_parts
-            else dominant_sentiment
+            ", ".join(sentiment_parts) if sentiment_parts else dominant_sentiment
         )
 
         # Format view count
@@ -168,9 +154,7 @@ class ArticleService:
             f"{view_count / 1_000_000:.1f}M"
             if view_count >= 1_000_000
             else (
-                f"{view_count / 1_000:.0f}K"
-                if view_count >= 1_000
-                else str(view_count)
+                f"{view_count / 1_000:.0f}K" if view_count >= 1_000 else str(view_count)
             )
         )
 
@@ -263,9 +247,7 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
             headline = _extract("headline")
             overview = _extract("overview")
             # Body is last and longest — grab everything after "body": "
-            body_match = re.search(
-                r'"body"\s*:\s*"(.*)"', clean, re.DOTALL
-            )
+            body_match = re.search(r'"body"\s*:\s*"(.*)"', clean, re.DOTALL)
             body = ""
             if body_match:
                 body = body_match.group(1)
@@ -273,12 +255,8 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                 body = body.strip()
 
         if not headline or not body:
-            logger.error(
-                f"ARTICLE_PARSE_EMPTY raw_start={raw[:300]}"
-            )
-            raise ValueError(
-                "headline or body missing from parsed response"
-            )
+            logger.error(f"ARTICLE_PARSE_EMPTY raw_start={raw[:300]}")
+            raise ValueError("headline or body missing from parsed response")
 
         return headline, overview, body
 
@@ -303,16 +281,11 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
         Returns summary dict with counts and per-cluster details.
         """
         target_week = _normalize_week(week)
-        clusters = [
-            _deserialize(c)
-            for c in self._dynamo.get_all_clusters()
-        ]
+        clusters = [_deserialize(c) for c in self._dynamo.get_all_clusters()]
 
         if cluster_id is not None:
             clusters = [
-                c
-                for c in clusters
-                if int(c.get("cluster_id", -1)) == cluster_id
+                c for c in clusters if int(c.get("cluster_id", -1)) == cluster_id
             ]
 
         # Collect (cluster, week_slice, week_str) jobs
@@ -351,8 +324,7 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
 
         if dry_run:
             logger.info(
-                f"ARTICLE_DRY_RUN jobs={len(deduped_jobs)} "
-                "— skipping generation"
+                f"ARTICLE_DRY_RUN jobs={len(deduped_jobs)} " "— skipping generation"
             )
             weeks_seen = {wk for _, _, wk in deduped_jobs}
             return {
@@ -370,16 +342,10 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
             label = c.get("cluster_label", f"Cluster {cid}")
             weeks_seen.add(wk)
 
-            logger.info(
-                f"ARTICLE_JOB cluster={cid} week={wk} "
-                f"label={label!r}"
-            )
+            logger.info(f"ARTICLE_JOB cluster={cid} week={wk} " f"label={label!r}")
 
             if not force and self._dynamo.article_exists(cid, wk_num):
-                logger.info(
-                    f"ARTICLE_SKIP cluster={cid} week={wk} "
-                    "(already exists)"
-                )
+                logger.info(f"ARTICLE_SKIP cluster={cid} week={wk} " "(already exists)")
                 skipped += 1
                 per_cluster[f"{cid}:{wk}"] = {
                     "status": "skipped",
@@ -390,14 +356,10 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
             if force:
                 self._dynamo.delete_articles(cid, wk_num)
 
-            video_titles = (
-                self._dynamo.get_video_titles_for_cluster(cid)
-            )
+            video_titles = self._dynamo.get_video_titles_for_cluster(cid)
 
             try:
-                prompt = self._build_prompt(
-                    c, wk, week_slice, video_titles
-                )
+                prompt = self._build_prompt(c, wk, week_slice, video_titles)
                 raw = self._gemini._gemini(prompt)
                 headline, overview, body = self._parse_response(raw)
 
@@ -427,8 +389,7 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                     "headline": headline,
                 }
                 logger.info(
-                    f"ARTICLE_GENERATED cluster={cid} week={wk} "
-                    f"id={article_id}"
+                    f"ARTICLE_GENERATED cluster={cid} week={wk} " f"id={article_id}"
                 )
 
             except Exception as exc:
@@ -438,10 +399,7 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                     "week": wk,
                     "error": str(exc),
                 }
-                logger.error(
-                    f"ARTICLE_FAILED cluster={cid} week={wk} "
-                    f"error={exc}"
-                )
+                logger.error(f"ARTICLE_FAILED cluster={cid} week={wk} " f"error={exc}")
 
         weeks_processed = sorted(weeks_seen, key=_week_number)
         logger.info(

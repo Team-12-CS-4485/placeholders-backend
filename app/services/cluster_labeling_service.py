@@ -87,9 +87,7 @@ class ClusterLabelingService:
                 categories[m.get("category", "Other")] += 1
                 sentiments[m.get("sentiment", "neutral")] += 1
                 public_sentiments[m.get("public_sentiment", "neutral")] += 1
-                public_sentiment_scores.append(
-                    m.get("public_sentiment_score", 0.0)
-                )
+                public_sentiment_scores.append(m.get("public_sentiment_score", 0.0))
                 if m.get("is_breaking"):
                     breaking += 1
                 views += m.get("view_count", 0)
@@ -105,19 +103,13 @@ class ClusterLabelingService:
             for week_name in sorted(
                 week_buckets,
                 key=lambda w: (
-                    int(w[4:])
-                    if w.startswith("week") and w[4:].isdigit()
-                    else 9999
+                    int(w[4:]) if w.startswith("week") and w[4:].isdigit() else 9999
                 ),
             ):
                 wvids = week_buckets[week_name]
                 week_channels = {v.get("channel", "") for v in wvids}
-                week_sentiments = Counter(
-                    v.get("sentiment", "neutral") for v in wvids
-                )
-                week_breaking = sum(
-                    1 for v in wvids if v.get("is_breaking")
-                )
+                week_sentiments = Counter(v.get("sentiment", "neutral") for v in wvids)
+                week_breaking = sum(1 for v in wvids if v.get("is_breaking"))
                 week_views = sum(v.get("view_count", 0) for v in wvids)
                 week_pub_sentiments = Counter(
                     v.get("public_sentiment", "neutral") for v in wvids
@@ -130,9 +122,7 @@ class ClusterLabelingService:
                         "view_count": week_views,
                         "breaking_count": week_breaking,
                         "sentiment_breakdown": dict(week_sentiments),
-                        "public_sentiment_breakdown": dict(
-                            week_pub_sentiments
-                        ),
+                        "public_sentiment_breakdown": dict(week_pub_sentiments),
                         # week_overview is populated below after Gemini call
                         "week_overview": "",
                     }
@@ -141,8 +131,7 @@ class ClusterLabelingService:
             # Compute average public sentiment score for the cluster
             avg_public_score = (
                 round(
-                    sum(public_sentiment_scores)
-                    / len(public_sentiment_scores),
+                    sum(public_sentiment_scores) / len(public_sentiment_scores),
                     3,
                 )
                 if public_sentiment_scores
@@ -151,9 +140,7 @@ class ClusterLabelingService:
 
             # Detect creator vs audience divergence
             dominant_creator = (
-                sentiments.most_common(1)[0][0]
-                if sentiments
-                else "neutral"
+                sentiments.most_common(1)[0][0] if sentiments else "neutral"
             )
             dominant_public = (
                 public_sentiments.most_common(1)[0][0]
@@ -196,10 +183,7 @@ class ClusterLabelingService:
             for topic, count in tc.items():
                 tf = count / size
                 idf = (
-                    math.log(
-                        (n_clusters + 1)
-                        / (topic_cluster_count.get(topic, 0) + 1)
-                    )
+                    math.log((n_clusters + 1) / (topic_cluster_count.get(topic, 0) + 1))
                     + 1
                 )
                 scored.append((topic, tf * idf))
@@ -222,11 +206,7 @@ class ClusterLabelingService:
                     break
             if not chosen:
                 top_two = [t[0] for t in cluster_scored[cid][:2]]
-                chosen = (
-                    " & ".join(top_two)
-                    if len(top_two) == 2
-                    else f"Cluster {cid}"
-                )
+                chosen = " & ".join(top_two) if len(top_two) == 2 else f"Cluster {cid}"
             tfidf_labels[cid] = chosen
             used.add(chosen)
 
@@ -235,9 +215,7 @@ class ClusterLabelingService:
         cluster_narratives: dict[int, dict] = {}
 
         for cid in real_cids:
-            top_topics = [
-                t[0] for t in cluster_topic_counts[cid].most_common(5)
-            ]
+            top_topics = [t[0] for t in cluster_topic_counts[cid].most_common(5)]
             claims = cluster_claims.get(cid, [])
             titles = cluster_titles.get(cid, [])
             dominant_sentiment = (
@@ -303,34 +281,24 @@ class ClusterLabelingService:
                         ),
                     )
                     time.sleep(0.5)
-                    raw = (
-                        getattr(response, "text", "") or str(response)
-                    )
+                    raw = getattr(response, "text", "") or str(response)
                     raw = raw.strip()
                     if raw.startswith("```"):
-                        raw = re.sub(
-                            r"^```(?:json)?\s*", "", raw
-                        )
+                        raw = re.sub(r"^```(?:json)?\s*", "", raw)
                         raw = re.sub(r"\s*```$", "", raw)
 
                     parsed = json.loads(raw)
-                    cluster_labels[cid] = parsed.get(
-                        "label", tfidf_labels[cid]
-                    )
+                    cluster_labels[cid] = parsed.get("label", tfidf_labels[cid])
                     cluster_narratives[cid] = {
                         "headline": parsed.get("headline"),
                         "summary": parsed.get("summary"),
                     }
 
-                    week_overviews: dict = (
-                        parsed.get("week_overviews") or {}
-                    )
+                    week_overviews: dict = parsed.get("week_overviews") or {}
                     for wd in cluster_stats[cid]["week_data"]:
                         week_name = wd["week"]
                         overview = week_overviews.get(week_name, "")
-                        wd["week_overview"] = (
-                            str(overview) if overview else ""
-                        )
+                        wd["week_overview"] = str(overview) if overview else ""
 
                     logger.info(
                         f"GEMINI_LABEL cluster={cid} "
@@ -360,8 +328,7 @@ class ClusterLabelingService:
                             )
                             continue
                         logger.warning(
-                            "ALL_KEYS_EXHAUSTED resetting to key 0 "
-                            "and waiting 60s"
+                            "ALL_KEYS_EXHAUSTED resetting to key 0 " "and waiting 60s"
                         )
                         self._genai_key_index = 0
                         self._genai_client = genai.Client(
@@ -381,9 +348,7 @@ class ClusterLabelingService:
                         continue
 
                     # Non-retryable error — log and use TF-IDF fallback
-                    logger.error(
-                        f"GEMINI_LABEL_FATAL cluster={cid} error={exc}"
-                    )
+                    logger.error(f"GEMINI_LABEL_FATAL cluster={cid} error={exc}")
                     break
 
         # ── Build cluster_info ──
@@ -412,12 +377,8 @@ class ClusterLabelingService:
                     else "neutral"
                 ),
                 "sentiment_breakdown": dict(stats["sentiments"]),
-                "public_sentiment_breakdown": dict(
-                    stats["public_sentiments"]
-                ),
-                "avg_public_sentiment_score": stats[
-                    "avg_public_sentiment_score"
-                ],
+                "public_sentiment_breakdown": dict(stats["public_sentiments"]),
+                "avg_public_sentiment_score": stats["avg_public_sentiment_score"],
                 "dominant_public_sentiment": (
                     stats["public_sentiments"].most_common(1)[0][0]
                     if stats["public_sentiments"]
@@ -461,14 +422,10 @@ class ClusterLabelingService:
             if "LastEvaluatedKey" not in resp:
                 break
             scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
-        logger.info(
-            f"STABLE_MATCH_LOADED existing_clusters={len(existing)}"
-        )
+        logger.info(f"STABLE_MATCH_LOADED existing_clusters={len(existing)}")
         return existing
 
-    def embed_cluster_description(
-        self, label: str, topics: list[str]
-    ) -> list[float]:
+    def embed_cluster_description(self, label: str, topics: list[str]) -> list[float]:
         """Embed a cluster's label + topics into a single vector."""
         text = f"{label} {' '.join(topics)}"
         return self._chunker.embed([text], is_query=False)[0]
@@ -498,16 +455,10 @@ class ClusterLabelingService:
         """
         if not existing_clusters:
             # First run — use HDBSCAN labels as-is
-            id_map = {
-                cid: cid for cid in new_cluster_info if cid != -1
-            }
+            id_map = {cid: cid for cid in new_cluster_info if cid != -1}
             return id_map, list(id_map.values()), []
 
-        real_new = {
-            cid: info
-            for cid, info in new_cluster_info.items()
-            if cid != -1
-        }
+        real_new = {cid: info for cid, info in new_cluster_info.items() if cid != -1}
 
         # Match against active, new, and declining clusters
         matchable_old = {
@@ -557,12 +508,8 @@ class ClusterLabelingService:
             )
 
         # Assign new IDs for unmatched new clusters
-        max_existing_id = (
-            max(existing_clusters.keys()) if existing_clusters else -1
-        )
-        next_id = max(
-            max_existing_id, max(id_map.values(), default=-1)
-        ) + 1
+        max_existing_id = max(existing_clusters.keys()) if existing_clusters else -1
+        next_id = max(max_existing_id, max(id_map.values(), default=-1)) + 1
         new_ids = []
         for new_cid in real_new:
             if new_cid not in id_map:
