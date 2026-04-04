@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 import boto3
 from app.core.config import settings
 from app.services.embedding_service import EmbeddingService
+from app.services.gemini_service import GeminiService
 from app.services.vector_service import VectorService
 from app.services.storage_service import StorageService
 from qdrant_client import QdrantClient
@@ -199,7 +200,8 @@ def build_s3_video_map() -> dict[str, str]:
 def index_videos(video_ids: list):
     dynamo = boto3.resource("dynamodb", region_name=settings.aws_region)
     table = dynamo.Table(settings.dynamodb_table)
-    embedding_service = EmbeddingService(api_keys=settings.genai_api_keys)
+    embedding_service = EmbeddingService()
+    gemini_service = GeminiService(api_keys=settings.genai_api_keys)
     vector_service = VectorService()
     storage_service = StorageService()
 
@@ -275,9 +277,12 @@ def index_videos(video_ids: list):
             chunks = embedding_service.chunk_text(transcript)
             print(f"  Chunks: {len(chunks)}")
 
-            # Step 2: Gemini intelligence (includes public sentiment from comments)
-            intelligence = embedding_service.extract_video_intelligence(
-                chunks=chunks, title=title, top_comments=top_comments
+            # Step 2: Combined Gemini intelligence + thumbnail (one call)
+            intelligence, thumbnail = (
+                gemini_service.extract_full_video_intelligence(
+                    chunks=chunks, title=title,
+                    top_comments=top_comments, video_id=video_id,
+                )
             )
 
             if not intelligence.get("topics"):
@@ -301,10 +306,7 @@ def index_videos(video_ids: list):
             )
             print(f"  DynamoDB: intelligence written")
 
-            # Step 4: Thumbnail analysis — non-fatal if it fails
-            thumbnail = embedding_service.analyze_thumbnail(
-                video_id=video_id, title=title
-            )
+            # Step 4: Thumbnail analysis from combined call
             thumbnail_ok = (
                 thumbnail.get("thumbnail_visual")
                 or thumbnail.get("thumbnail_tone")

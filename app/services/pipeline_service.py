@@ -5,12 +5,11 @@ Coordinates the end-to-end transcript analysis workflow:
 1. Loads video objects from S3 via StorageService (transcript + metadata)
 2. DynamoDB join for fresh viewCount/likeCount via StorageService
 3. Semantic chunking via EmbeddingService
-4. One Gemini call per video → topics, category, sentiment, key_claims, is_breaking
-5. Writes intelligence to DynamoDB (youtube-videos table)
-6. One Gemini vision call per video → thumbnail fields (with 503 guard)
-7. Writes thumbnail fields to DynamoDB (youtube-videos table)
-8. Embeds chunks locally via EmbeddingService (nomic, free)
-9. Upserts to Qdrant with search-only payload (vector, text, transcript_index)
+4. ONE combined Gemini call per video (multimodal: transcript + thumbnail image)
+   → topics, category, sentiment, key_claims, is_breaking, thumbnail fields
+5. Writes intelligence + thumbnail to DynamoDB (youtube-videos table)
+6. Embeds chunks locally via EmbeddingService (nomic, free)
+7. Upserts to Qdrant with search-only payload (vector, text, transcript_index)
 
 DynamoDB youtube-videos item gets:
   topics, category, sentiment, key_claims, is_breaking, source_key, week, chunk_count
@@ -22,7 +21,6 @@ Qdrant transcript_chunks point gets:
 """
 
 import re
-import time
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -33,6 +31,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.services.storage_service import StorageService
 from app.services.embedding_service import EmbeddingService
+from app.services.gemini_service import GeminiService
 from app.services.vector_service import VectorService
 
 
@@ -80,10 +79,15 @@ def _thumbnail_is_empty(thumb: dict) -> bool:
 
 class PipelineService:
     def __init__(
-        self, storage_service=None, embedding_service=None, vector_service=None
+        self,
+        storage_service=None,
+        embedding_service=None,
+        gemini_service=None,
+        vector_service=None,
     ):
         self.storage_service = storage_service or StorageService()
-        self.embedding_service = embedding_service or EmbeddingService(
+        self.embedding_service = embedding_service or EmbeddingService()
+        self.gemini_service = gemini_service or GeminiService(
             api_keys=settings.genai_api_keys
         )
         self.vector_service = vector_service or VectorService()
@@ -355,17 +359,18 @@ class PipelineService:
                     chunk_map[transcript_key] = chunks
 
                     try:
-                        # Step 2: Gemini intelligence — one call per video
+                        # Step 2: Combined Gemini intelligence + thumbnail — ONE call
                         self.logger.info(
-                            f"GEMINI_INTELLIGENCE_START videoId={video_id} "
+                            f"GEMINI_COMBINED_START videoId={video_id} "
                             f"chunks={len(chunks)} "
-                            f"key=#{self.embedding_service.current_key_index + 1}"
+                            f"key=#{self.gemini_service.current_key_index + 1}"
                         )
-                        intelligence = (
-                            self.embedding_service.extract_video_intelligence(
+                        intelligence, thumbnail = (
+                            self.gemini_service.extract_full_video_intelligence(
                                 chunks=chunks,
                                 title=title,
                                 top_comments=top_comments,
+                                video_id=video_id,
                             )
                         )
 
@@ -389,12 +394,12 @@ class PipelineService:
                             continue
 
                         self.logger.info(
-                            f"GEMINI_INTELLIGENCE_DONE videoId={video_id} "
+                            f"GEMINI_COMBINED_DONE videoId={video_id} "
                             f"category={intelligence['category']} "
                             f"sentiment={intelligence['sentiment']} "
-                            f"topics={intelligence['topics']}"
+                            f"topics={intelligence['topics']} "
+                            f"thumbnail_tone={thumbnail.get('thumbnail_tone')}"
                         )
-                        time.sleep(1)
 
                         # Step 3: Write intelligence to DynamoDB
                         self._write_intelligence_to_dynamodb(
@@ -405,33 +410,18 @@ class PipelineService:
                             chunk_count=len(chunks),
                         )
 
-                        # Step 4: Gemini vision — thumbnail analysis
-                        self.logger.info(f"THUMBNAIL_ANALYSIS_START videoId={video_id}")
-                        thumbnail = self.embedding_service.analyze_thumbnail(
-                            video_id=video_id,
-                            title=title,
-                        )
-
-                        # Guard: 503 or no image — log and continue (non-fatal)
+                        # Step 4: Write thumbnail to DynamoDB (if non-empty)
                         if _thumbnail_is_empty(thumbnail):
                             self.logger.warning(
                                 f"THUMBNAIL_EMPTY videoId={video_id} "
-                                f"— skipping thumbnail write (503 or no image)"
+                                f"— skipping thumbnail write (no image)"
                             )
                         else:
-                            self.logger.info(
-                                f"THUMBNAIL_ANALYSIS_DONE videoId={video_id} "
-                                f"tone={thumbnail.get('thumbnail_tone')} "
-                                f"score={thumbnail.get('thumbnail_clickbait_score')}"
-                            )
-                            # Step 5: Write thumbnail to DynamoDB
                             self._write_thumbnail_to_dynamodb(
                                 channel=channel,
                                 video_id=video_id,
                                 thumbnail=thumbnail,
                             )
-
-                        time.sleep(1)
 
                         # Step 6: Embed chunks locally
                         vectors = self.embedding_service.embed_chunks(chunks)

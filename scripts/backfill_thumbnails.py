@@ -42,7 +42,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import boto3
 from app.core.config import settings
-from app.services.embedding_service import EmbeddingService
+from app.services.gemini_service import GeminiService
 
 REGION = os.getenv("AWS_REGION", "us-east-2")
 
@@ -268,7 +268,7 @@ def main():
         return
 
     print("\nInitializing Gemini client...")
-    embedding_service = EmbeddingService(api_keys=settings.genai_api_keys)
+    embedding_service = GeminiService(api_keys=settings.genai_api_keys)
 
     print(f"\nAnalyzing {len(videos)} thumbnails...\n")
     succeeded = 0
