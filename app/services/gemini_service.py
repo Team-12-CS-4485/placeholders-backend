@@ -85,6 +85,7 @@ THUMBNAIL_TONE_OPTIONS = (
 
 class KeysExhaustedError(Exception):
     """Raised when all keys in a worker's pool are rate-limited."""
+
     pass
 
 

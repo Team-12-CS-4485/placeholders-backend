@@ -72,6 +72,7 @@ def _run_full_pipeline_background(request: PipelineRunRequest, job_id: str) -> N
             article_result = ArticleService().run_article_generation()
         except Exception as article_exc:
             import logging
+
             logging.getLogger(__name__).error(
                 f"ARTICLE_GENERATION_FAILED (non-fatal) error={article_exc}"
             )
@@ -82,31 +83,34 @@ def _run_full_pipeline_background(request: PipelineRunRequest, job_id: str) -> N
                 "weeks_processed": [],
             }
 
-        job_service.complete_job(job_id, {
-            "ingestion": {
-                "objects_processed": ingest_result["objects_processed"],
-                "videos_found": ingest_result["videos_found"],
-                "videos_indexed": ingest_result["videos_indexed"],
-                "total_chunks_stored": ingest_result["total_chunks_stored"],
-                "failed_videos": ingest_result.get("failed_videos", []),
+        job_service.complete_job(
+            job_id,
+            {
+                "ingestion": {
+                    "objects_processed": ingest_result["objects_processed"],
+                    "videos_found": ingest_result["videos_found"],
+                    "videos_indexed": ingest_result["videos_indexed"],
+                    "total_chunks_stored": ingest_result["total_chunks_stored"],
+                    "failed_videos": ingest_result.get("failed_videos", []),
+                },
+                "clustering": {
+                    "total_videos": clustering_result.get("total_videos", 0),
+                    "cluster_count": clustering_result.get("cluster_count", 0),
+                    "noise_videos": clustering_result.get("noise_videos", 0),
+                    "videos_updated": clustering_result.get("videos_updated", 0),
+                },
+                "claim_analysis": {
+                    "clusters_processed": claim_result.get("clusters_processed", 0),
+                    "total_written": claim_result.get("total_written", 0),
+                },
+                "articles": {
+                    "articles_generated": article_result.get("articles_generated", 0),
+                    "articles_skipped": article_result.get("articles_skipped", 0),
+                    "articles_failed": article_result.get("articles_failed", 0),
+                    "weeks_processed": article_result.get("weeks_processed", []),
+                },
             },
-            "clustering": {
-                "total_videos": clustering_result.get("total_videos", 0),
-                "cluster_count": clustering_result.get("cluster_count", 0),
-                "noise_videos": clustering_result.get("noise_videos", 0),
-                "videos_updated": clustering_result.get("videos_updated", 0),
-            },
-            "claim_analysis": {
-                "clusters_processed": claim_result.get("clusters_processed", 0),
-                "total_written": claim_result.get("total_written", 0),
-            },
-            "articles": {
-                "articles_generated": article_result.get("articles_generated", 0),
-                "articles_skipped": article_result.get("articles_skipped", 0),
-                "articles_failed": article_result.get("articles_failed", 0),
-                "weeks_processed": article_result.get("weeks_processed", []),
-            },
-        })
+        )
     except Exception as exc:
         job_service.fail_job(job_id, str(exc))
 
@@ -138,7 +142,9 @@ def run_full_pipeline(request: PipelineRunRequest):
             article_result = ArticleService().run_article_generation(dry_run=True)
             return {"job_id": None, "status": "complete"}
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Dry run failed: {exc}") from exc
+            raise HTTPException(
+                status_code=500, detail=f"Dry run failed: {exc}"
+            ) from exc
 
     job_id = job_service.create_job()
     threading.Thread(
@@ -165,7 +171,9 @@ def run_ingest(request: PipelineRunRequest):
             )
             return {"job_id": None, "status": "complete"}
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Dry run failed: {exc}") from exc
+            raise HTTPException(
+                status_code=500, detail=f"Dry run failed: {exc}"
+            ) from exc
 
     job_id = job_service.create_job()
     threading.Thread(

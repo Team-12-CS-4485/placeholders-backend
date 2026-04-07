@@ -500,12 +500,13 @@ class PipelineService:
 
             if job_id:
                 from app.services import job_service
+
                 job_service.update_total(job_id, len(pending))
 
             # ── Parallel Gemini phase ─────────────────────────────────────────
             worker_services = self._make_worker_gemini_services()
-            retry_queue = []      # (video, source_key) — key-exhausted videos
-            gemini_results = {}   # video_id → result dict
+            retry_queue = []  # (video, source_key) — key-exhausted videos
+            gemini_results = {}  # video_id → result dict
 
             with ThreadPoolExecutor(max_workers=NUM_WORKERS) as pool:
                 futures = {
@@ -549,7 +550,10 @@ class PipelineService:
 
                     if job_id:
                         from app.services import job_service
-                        failed = gemini_results.get(video_id, {}).get("status") == "failed"
+
+                        failed = (
+                            gemini_results.get(video_id, {}).get("status") == "failed"
+                        )
                         job_service.increment_progress(
                             job_id,
                             failed_video=video_id if failed else None,
@@ -623,15 +627,17 @@ class PipelineService:
                 source_key = obj_result["key"]
                 for video_id, result in gemini_results.items():
                     if result.get("source_key") == source_key:
-                        obj_result["transcript_results"].append({
-                            "transcript_key": result["transcript_key"],
-                            "video_id": video_id,
-                            "chunk_count": result["chunk_count"],
-                            "chunks_stored": result["chunks_stored"],
-                            "intelligence": result["intelligence"],
-                            "thumbnail": result["thumbnail"],
-                            "error": result["error"],
-                        })
+                        obj_result["transcript_results"].append(
+                            {
+                                "transcript_key": result["transcript_key"],
+                                "video_id": video_id,
+                                "chunk_count": result["chunk_count"],
+                                "chunks_stored": result["chunks_stored"],
+                                "intelligence": result["intelligence"],
+                                "thumbnail": result["thumbnail"],
+                                "error": result["error"],
+                            }
+                        )
                         if result["status"] == "failed":
                             obj_result["status"] = "partial_failed"
 

@@ -28,17 +28,20 @@ import json
 import logging
 import re
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
 from app.core.config import settings
 from app.services.dynamo_service import DynamoService
-from app.services.gemini_service import GeminiService
+from app.services.gemini_service import GeminiService, KeysExhaustedError
 
 logger = logging.getLogger(__name__)
 
 _WEEK_RE = re.compile(r"week(\d+)", re.IGNORECASE)
+
+NUM_WORKERS = 10
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -91,6 +94,83 @@ class ArticleService:
     ):
         self._dynamo = dynamo_service or DynamoService()
         self._gemini = gemini_service or GeminiService(api_keys=settings.genai_api_keys)
+<<<<<<< HEAD
+=======
+
+    # ── Worker helpers ────────────────────────────────────────────────────────
+
+    def _make_worker_gemini_services(self) -> list[GeminiService]:
+        """Split all API keys into NUM_WORKERS groups of ~3 keys each."""
+        keys = self._gemini.api_keys
+        group_size = max(1, len(keys) // NUM_WORKERS)
+        services = []
+        for i in range(0, len(keys), group_size):
+            services.append(
+                GeminiService(
+                    api_keys=keys[i : i + group_size],
+                    fail_on_exhaustion=True,
+                )
+            )
+            if len(services) == NUM_WORKERS:
+                break
+        return services
+
+    def _generate_single_article(
+        self,
+        cluster: dict,
+        week_slice: dict,
+        wk: str,
+        gemini_service: GeminiService,
+        force: bool,
+    ) -> dict:
+        """
+        Generate and persist one article for a (cluster, week) combination.
+
+        Returns { status: "generated"|"skipped", article_id?, week, headline? }.
+        Raises KeysExhaustedError if the worker's key pool is exhausted.
+        """
+        cid = int(cluster.get("cluster_id", -1))
+        wk_num = _week_number(wk)
+        label = cluster.get("cluster_label", f"Cluster {cid}")
+
+        if not force and self._dynamo.article_exists(cid, wk_num):
+            logger.info(f"ARTICLE_SKIP cluster={cid} week={wk} (already exists)")
+            return {"status": "skipped", "week": wk}
+
+        if force:
+            self._dynamo.delete_articles(cid, wk_num)
+
+        video_titles = self._dynamo.get_video_titles_for_cluster(cid)
+        prompt = self._build_prompt(cluster, wk, week_slice, video_titles)
+        raw = gemini_service._gemini(prompt)
+        headline, overview, body = self._parse_response(raw)
+
+        now = datetime.now(timezone.utc).isoformat()
+        article_id = f"article-{uuid.uuid4().hex[:8]}"
+
+        self._dynamo.save_article(
+            {
+                "article_id": article_id,
+                "cluster_id": _dec(cid),
+                "cluster_label": label,
+                "week": wk,
+                "week_number": _dec(wk_num),
+                "title": headline,
+                "overview": overview,
+                "body": body,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+>>>>>>> af24397 (Added the article workers)
+
+        logger.info(f"ARTICLE_GENERATED cluster={cid} week={wk} id={article_id}")
+        return {
+            "status": "generated",
+            "article_id": article_id,
+            "week": wk,
+            "headline": headline,
+        }
 
     # ── Prompt builder ────────────────────────────────────────────────────────
 
@@ -336,12 +416,10 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                 "dry_run": True,
             }
 
-        for c, week_slice, wk in deduped_jobs:
-            cid = int(c.get("cluster_id", -1))
-            wk_num = _week_number(wk)
-            label = c.get("cluster_label", f"Cluster {cid}")
-            weeks_seen.add(wk)
+        worker_services = self._make_worker_gemini_services()
+        retry_jobs: list[tuple[dict, dict, str]] = []
 
+<<<<<<< HEAD
             logger.info(f"ARTICLE_JOB cluster={cid} week={wk} " f"label={label!r}")
 
             if not force and self._dynamo.article_exists(cid, wk_num):
@@ -371,16 +449,49 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                         "article_id": article_id,
                         "cluster_id": _dec(cid),
                         "cluster_label": label,
-                        "week": wk,
-                        "week_number": _dec(wk_num),
-                        "title": headline,
-                        "overview": overview,
-                        "body": body,
-                        "created_at": now,
-                        "updated_at": now,
-                    }
-                )
+=======
+        with ThreadPoolExecutor(max_workers=NUM_WORKERS) as pool:
+            futures = {
+                pool.submit(
+                    self._generate_single_article,
+                    c,
+                    week_slice,
+                    wk,
+                    worker_services[i % NUM_WORKERS],
+                    force,
+                ): (c, week_slice, wk)
+                for i, (c, week_slice, wk) in enumerate(deduped_jobs)
+            }
 
+            for future in as_completed(futures):
+                c, week_slice, wk = futures[future]
+                cid = int(c.get("cluster_id", -1))
+                key = f"{cid}:{wk}"
+                weeks_seen.add(wk)
+
+                try:
+                    result = future.result()
+                    per_cluster[key] = result
+                    if result["status"] == "generated":
+                        generated += 1
+                    else:
+                        skipped += 1
+                except KeysExhaustedError:
+                    retry_jobs.append((c, week_slice, wk))
+                    logger.warning(
+                        f"ARTICLE_WORKER_EXHAUSTED cluster={cid} week={wk} → retry queue"
+                    )
+                except Exception as exc:
+                    failed += 1
+                    per_cluster[key] = {
+                        "status": "failed",
+>>>>>>> af24397 (Added the article workers)
+                        "week": wk,
+                        "error": str(exc),
+                    }
+                    logger.error(f"ARTICLE_FAILED cluster={cid} week={wk} error={exc}")
+
+<<<<<<< HEAD
                 generated += 1
                 per_cluster[f"{cid}:{wk}"] = {
                     "status": "generated",
@@ -400,6 +511,34 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                     "error": str(exc),
                 }
                 logger.error(f"ARTICLE_FAILED cluster={cid} week={wk} " f"error={exc}")
+=======
+        # Retry pass — sequential, full key pool (fail_on_exhaustion=False)
+        if retry_jobs:
+            logger.info(f"ARTICLE_RETRY_PASS jobs={len(retry_jobs)}")
+            for c, week_slice, wk in retry_jobs:
+                cid = int(c.get("cluster_id", -1))
+                key = f"{cid}:{wk}"
+                weeks_seen.add(wk)
+                try:
+                    result = self._generate_single_article(
+                        c, week_slice, wk, self._gemini, force
+                    )
+                    per_cluster[key] = result
+                    if result["status"] == "generated":
+                        generated += 1
+                    else:
+                        skipped += 1
+                except Exception as exc:
+                    failed += 1
+                    per_cluster[key] = {
+                        "status": "failed",
+                        "week": wk,
+                        "error": str(exc),
+                    }
+                    logger.error(
+                        f"ARTICLE_RETRY_FAILED cluster={cid} week={wk} error={exc}"
+                    )
+>>>>>>> af24397 (Added the article workers)
 
         weeks_processed = sorted(weeks_seen, key=_week_number)
         logger.info(
