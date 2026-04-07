@@ -13,6 +13,8 @@ Sets up the Newsify backend API server with:
 Run with: uvicorn app.main:app --reload
 """
 
+import time
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
@@ -49,20 +51,23 @@ app.include_router(articles_router)
 
 @app.middleware("http")
 async def log_requests(request, call_next):
+    _start = time.time()
     try:
         response = await call_next(request)
+        elapsed_ms = int((time.time() - _start) * 1000)
         if response.status_code < 400:
             logger.info(
-                f"API_SUCCESS method={request.method} path={request.url.path} status={response.status_code}"
+                f"API_SUCCESS method={request.method} path={request.url.path} status={response.status_code} elapsed_ms={elapsed_ms}"
             )
         else:
             logger.error(
-                f"API_FAILURE method={request.method} path={request.url.path} status={response.status_code}"
+                f"API_FAILURE method={request.method} path={request.url.path} status={response.status_code} elapsed_ms={elapsed_ms}"
             )
         return response
     except Exception as exc:
+        elapsed_ms = int((time.time() - _start) * 1000)
         logger.error(
-            f"API_FAILURE method={request.method} path={request.url.path} error={exc}"
+            f"API_FAILURE method={request.method} path={request.url.path} error={exc} elapsed_ms={elapsed_ms}"
         )
         raise
 

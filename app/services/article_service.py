@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -336,6 +337,7 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                 "dry_run": True,
             }
 
+        _start = time.time()
         for c, week_slice, wk in deduped_jobs:
             cid = int(c.get("cluster_id", -1))
             wk_num = _week_number(wk)
@@ -404,7 +406,8 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
         weeks_processed = sorted(weeks_seen, key=_week_number)
         logger.info(
             f"ARTICLE_RUN_COMPLETE generated={generated} "
-            f"skipped={skipped} failed={failed}"
+            f"skipped={skipped} failed={failed} "
+            f"elapsed_s={time.time() - _start:.1f}"
         )
 
         return {

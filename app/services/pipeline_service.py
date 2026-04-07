@@ -21,6 +21,7 @@ Qdrant transcript_chunks point gets:
 """
 
 import re
+import time
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -266,6 +267,7 @@ class PipelineService:
     def run_s3_transcript_analysis(self, prefix=None, limit=None, dry_run=False):
         use_prefix = prefix if prefix is not None else settings.s3_prefix
         use_limit = limit if limit is not None else settings.s3_object_limit
+        _start = time.time()
         self.logger.info(
             f"PIPELINE_START prefix={use_prefix} limit={use_limit} dry_run={dry_run}"
         )
@@ -501,7 +503,8 @@ class PipelineService:
             self.logger.info(
                 f"PIPELINE_COMPLETE videos_found={total_videos} "
                 f"videos_indexed={analyzed_videos} "
-                f"chunks_stored={total_chunks_stored}"
+                f"chunks_stored={total_chunks_stored} "
+                f"elapsed_s={time.time() - _start:.1f}"
             )
             return result
 
