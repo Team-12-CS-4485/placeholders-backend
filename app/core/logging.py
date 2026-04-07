@@ -16,6 +16,10 @@ import json
 import logging
 import os
 import sys
+from contextvars import ContextVar
+
+# Set by the HTTP middleware for each request; defaults to "-" for background tasks
+request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
 
 
 class _JsonFormatter(logging.Formatter):
@@ -24,6 +28,7 @@ class _JsonFormatter(logging.Formatter):
             "timestamp": self.formatTime(record, "%Y-%m-%dT%H:%M:%SZ"),
             "level": record.levelname,
             "module": record.name,
+            "request_id": request_id_var.get(),
             "message": record.getMessage(),
         }
         if record.exc_info:
