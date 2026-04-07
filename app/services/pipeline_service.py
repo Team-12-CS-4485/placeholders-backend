@@ -20,6 +20,7 @@ Parallelization:
 """
 
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -438,11 +439,10 @@ class PipelineService:
 
     # ── Main pipeline ─────────────────────────────────────────────────────────
 
-    def run_s3_transcript_analysis(
-        self, prefix=None, limit=None, dry_run=False, job_id=None
-    ):
+    def run_s3_transcript_analysis(self, prefix=None, limit=None, dry_run=False):
         use_prefix = prefix if prefix is not None else settings.s3_prefix
         use_limit = limit if limit is not None else settings.s3_object_limit
+        _start = time.time()
         self.logger.info(
             f"PIPELINE_START prefix={use_prefix} limit={use_limit} dry_run={dry_run}"
         )
@@ -498,11 +498,6 @@ class PipelineService:
 
                 object_results.append(object_result)
 
-            if job_id:
-                from app.services import job_service
-
-                job_service.update_total(job_id, len(pending))
-
             # ── Parallel Gemini phase ─────────────────────────────────────────
             worker_services = self._make_worker_gemini_services()
             retry_queue = []  # (video, source_key) — key-exhausted videos
@@ -546,17 +541,6 @@ class PipelineService:
                         }
                         self.logger.error(
                             f"VIDEO_FAILED videoId={video_id} error={exc}"
-                        )
-
-                    if job_id:
-                        from app.services import job_service
-
-                        failed = (
-                            gemini_results.get(video_id, {}).get("status") == "failed"
-                        )
-                        job_service.increment_progress(
-                            job_id,
-                            failed_video=video_id if failed else None,
                         )
 
             # ── Retry pass: sequential, full 30-key pool ──────────────────────
@@ -658,7 +642,8 @@ class PipelineService:
                 f"PIPELINE_COMPLETE videos_found={total_videos} "
                 f"videos_indexed={analyzed_videos} "
                 f"chunks_stored={total_chunks_stored} "
-                f"failed={len(failed_video_ids)}"
+                f"failed={len(failed_video_ids)} "
+                f"elapsed_s={time.time() - _start:.1f}"
             )
             return result_summary
 

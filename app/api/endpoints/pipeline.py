@@ -1,13 +1,10 @@
 """
 pipeline.py - Pipeline API Endpoints
 
-POST /api/pipeline/run    : Starts the full pipeline in background, returns job_id
-POST /api/pipeline/ingest : Ingest only — starts in background, returns job_id
+POST /api/pipeline/run    : Starts the full pipeline in background, returns immediately
+POST /api/pipeline/ingest : Ingest only — starts in background, returns immediately
 POST /api/pipeline/cluster: Cluster only — UMAP/HDBSCAN → DynamoDB (synchronous)
 POST /api/pipeline/claims : Claim analysis only — classify → DynamoDB (synchronous)
-
-GET  /api/pipeline/jobs/{job_id} : Poll status of a background pipeline job
-
 POST /api/pipeline/search : Semantic search over indexed transcript chunks
 
 All write endpoints accept dry_run=true to preview without writing.
@@ -17,6 +14,11 @@ All write endpoints accept dry_run=true to preview without writing.
 import threading
 
 from fastapi import APIRouter, HTTPException
+
+from app.core.cache import invalidate_all
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 from app.schemas.pipeline import (
     PipelineRunRequest,
@@ -28,8 +30,6 @@ from app.schemas.pipeline import (
     ArticlesSummary,
     VectorSearchRequest,
     VectorSearchResponse,
-    JobSubmitResponse,
-    JobStatusResponse,
 )
 from app.services.pipeline_service import PipelineService
 from app.services.clustering_service import ClusteringService
@@ -37,7 +37,6 @@ from app.services.claim_analysis_service import ClaimAnalysisService
 from app.services.article_service import ArticleService
 from app.services.embedding_service import EmbeddingService
 from app.services.vector_service import VectorService
-from app.services import job_service
 from app.core.config import settings
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
@@ -46,79 +45,38 @@ router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
 # ── Background workers ────────────────────────────────────────────────────────
 
 
-def _run_ingest_background(request: PipelineRunRequest, job_id: str) -> None:
+def _run_ingest_background(request: PipelineRunRequest) -> None:
     try:
-        result = PipelineService().run_s3_transcript_analysis(
+        PipelineService().run_s3_transcript_analysis(
             prefix=request.prefix,
             limit=request.limit,
-            job_id=job_id,
         )
-        job_service.complete_job(job_id, result)
     except Exception as exc:
-        job_service.fail_job(job_id, str(exc))
+        logger.error(f"INGEST_BACKGROUND_FATAL error={exc}")
 
 
-def _run_full_pipeline_background(request: PipelineRunRequest, job_id: str) -> None:
+def _run_full_pipeline_background(request: PipelineRunRequest) -> None:
     try:
-        ingest_result = PipelineService().run_s3_transcript_analysis(
+        PipelineService().run_s3_transcript_analysis(
             prefix=request.prefix,
             limit=request.limit,
-            job_id=job_id,
         )
-        clustering_result = ClusteringService().run_clustering()
-        claim_result = ClaimAnalysisService().run_claim_analysis()
-
+        ClusteringService().run_clustering()
+        ClaimAnalysisService().run_claim_analysis()
         try:
-            article_result = ArticleService().run_article_generation()
-        except Exception as article_exc:
-            import logging
-
-            logging.getLogger(__name__).error(
-                f"ARTICLE_GENERATION_FAILED (non-fatal) error={article_exc}"
-            )
-            article_result = {
-                "articles_generated": 0,
-                "articles_skipped": 0,
-                "articles_failed": 0,
-                "weeks_processed": [],
-            }
-
-        job_service.complete_job(
-            job_id,
-            {
-                "ingestion": {
-                    "objects_processed": ingest_result["objects_processed"],
-                    "videos_found": ingest_result["videos_found"],
-                    "videos_indexed": ingest_result["videos_indexed"],
-                    "total_chunks_stored": ingest_result["total_chunks_stored"],
-                    "failed_videos": ingest_result.get("failed_videos", []),
-                },
-                "clustering": {
-                    "total_videos": clustering_result.get("total_videos", 0),
-                    "cluster_count": clustering_result.get("cluster_count", 0),
-                    "noise_videos": clustering_result.get("noise_videos", 0),
-                    "videos_updated": clustering_result.get("videos_updated", 0),
-                },
-                "claim_analysis": {
-                    "clusters_processed": claim_result.get("clusters_processed", 0),
-                    "total_written": claim_result.get("total_written", 0),
-                },
-                "articles": {
-                    "articles_generated": article_result.get("articles_generated", 0),
-                    "articles_skipped": article_result.get("articles_skipped", 0),
-                    "articles_failed": article_result.get("articles_failed", 0),
-                    "weeks_processed": article_result.get("weeks_processed", []),
-                },
-            },
-        )
+            ArticleService().run_article_generation()
+        except Exception as exc:
+            logger.error(f"ARTICLE_GENERATION_FAILED (non-fatal) error={exc}")
+        invalidate_all()
+        logger.info("PIPELINE_BACKGROUND_COMPLETE cache invalidated")
     except Exception as exc:
-        job_service.fail_job(job_id, str(exc))
+        logger.error(f"PIPELINE_BACKGROUND_FATAL error={exc}")
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
-@router.post("/run", response_model=JobSubmitResponse)
+@router.post("/run")
 def run_full_pipeline(request: PipelineRunRequest):
     """
     Starts the full pipeline in the background:
@@ -127,70 +85,57 @@ def run_full_pipeline(request: PipelineRunRequest):
     3. Claim analysis — classifies consensus/debated/unique → DynamoDB
     4. Article generation — Gemini articles (10 parallel workers) → DynamoDB
 
-    Returns job_id immediately. Poll GET /api/pipeline/jobs/{job_id} for status.
-    dry_run=true runs synchronously and returns immediately (no Gemini calls).
+    Returns immediately. dry_run=true runs synchronously (no Gemini calls).
     """
     if request.dry_run:
         try:
-            ingestion_result = PipelineService().run_s3_transcript_analysis(
+            PipelineService().run_s3_transcript_analysis(
                 prefix=request.prefix,
                 limit=request.limit,
                 dry_run=True,
             )
-            clustering_result = ClusteringService().run_clustering(dry_run=True)
-            claim_result = ClaimAnalysisService().run_claim_analysis(dry_run=True)
-            article_result = ArticleService().run_article_generation(dry_run=True)
-            return {"job_id": None, "status": "complete"}
+            ClusteringService().run_clustering(dry_run=True)
+            ClaimAnalysisService().run_claim_analysis(dry_run=True)
+            ArticleService().run_article_generation(dry_run=True)
+            return {"status": "complete"}
         except Exception as exc:
             raise HTTPException(
                 status_code=500, detail=f"Dry run failed: {exc}"
             ) from exc
 
-    job_id = job_service.create_job()
     threading.Thread(
         target=_run_full_pipeline_background,
-        args=(request, job_id),
+        args=(request,),
         daemon=True,
     ).start()
-    return {"job_id": job_id, "status": "running"}
+    return {"status": "running"}
 
 
-@router.post("/ingest", response_model=JobSubmitResponse)
+@router.post("/ingest")
 def run_ingest(request: PipelineRunRequest):
     """
     Ingest only — S3 → chunk → Gemini (10 parallel workers) → DynamoDB → Qdrant.
-    Returns job_id immediately. Poll GET /api/pipeline/jobs/{job_id} for status.
-    dry_run=true runs synchronously (no Gemini calls, fast).
+    Returns immediately. dry_run=true runs synchronously (no Gemini calls, fast).
     """
     if request.dry_run:
         try:
-            result = PipelineService().run_s3_transcript_analysis(
+            PipelineService().run_s3_transcript_analysis(
                 prefix=request.prefix,
                 limit=request.limit,
                 dry_run=True,
             )
-            return {"job_id": None, "status": "complete"}
+            return {"status": "complete"}
         except Exception as exc:
             raise HTTPException(
                 status_code=500, detail=f"Dry run failed: {exc}"
             ) from exc
 
-    job_id = job_service.create_job()
     threading.Thread(
         target=_run_ingest_background,
-        args=(request, job_id),
+        args=(request,),
         daemon=True,
     ).start()
-    return {"job_id": job_id, "status": "running"}
-
-
-@router.get("/jobs/{job_id}", response_model=JobStatusResponse)
-def get_job_status(job_id: str):
-    """Poll the status of a background pipeline job."""
-    job = job_service.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return job
+    return {"status": "running"}
 
 
 @router.post("/cluster", response_model=ClusteringSummary)

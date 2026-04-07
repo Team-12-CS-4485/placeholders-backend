@@ -13,6 +13,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.core.cache import get_cached
 from app.schemas.narrative import (
     NarrativeListResponse,
     NarrativeDetail,
@@ -36,15 +37,21 @@ def get_narratives(
         description="Sort field: video_count (default), label",
     ),
 ):
-    service = TrendService()
-    return service.get_narratives(week=week, sort_by=sort_by)
+    return get_cached(
+        f"narratives:{week}:{sort_by}",
+        ttl=300,
+        fetch_fn=lambda: TrendService().get_narratives(week=week, sort_by=sort_by),
+    )
 
 
 @router.get("/{cluster_id}/claims", response_model=NarrativeClaims)
 def get_narrative_claims(cluster_id: int):
-    service = TrendService()
     try:
-        return service.get_narrative_claims(cluster_id)
+        return get_cached(
+            f"narrative_claims:{cluster_id}",
+            ttl=300,
+            fetch_fn=lambda: TrendService().get_narrative_claims(cluster_id),
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Narrative {cluster_id} not found")
 
@@ -67,8 +74,11 @@ def get_narrative_videos(
 
 @router.get("/{cluster_id}", response_model=NarrativeDetail)
 def get_narrative_detail(cluster_id: int):
-    service = TrendService()
     try:
-        return service.get_narrative_detail(cluster_id)
+        return get_cached(
+            f"narrative_detail:{cluster_id}",
+            ttl=300,
+            fetch_fn=lambda: TrendService().get_narrative_detail(cluster_id),
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Narrative {cluster_id} not found")

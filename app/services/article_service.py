@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -416,6 +417,7 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                 "dry_run": True,
             }
 
+        _start = time.time()
         worker_services = self._make_worker_gemini_services()
         retry_jobs: list[tuple[dict, dict, str]] = []
 
@@ -543,7 +545,8 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
         weeks_processed = sorted(weeks_seen, key=_week_number)
         logger.info(
             f"ARTICLE_RUN_COMPLETE generated={generated} "
-            f"skipped={skipped} failed={failed}"
+            f"skipped={skipped} failed={failed} "
+            f"elapsed_s={time.time() - _start:.1f}"
         )
 
         return {
