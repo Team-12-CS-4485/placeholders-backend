@@ -32,10 +32,13 @@ def get_videos_by_channel(
 ):
     try:
         service = DynamoService()
-        return service.get_videos_by_channel(channel_name=channel_name, limit=limit, cursor=cursor)
+        return service.get_videos_by_channel(
+            channel_name=channel_name, limit=limit, cursor=cursor
+        )
     except Exception as exc:
         raise HTTPException(
-            status_code=500, detail=f"Failed to fetch videos for channel '{channel_name}': {exc}"
+            status_code=500,
+            detail=f"Failed to fetch videos for channel '{channel_name}': {exc}",
         ) from exc
 
 

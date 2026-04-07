@@ -182,7 +182,7 @@ class DynamoService:
             "total_returned": len(items),
             "next_cursor": next_cursor,
         }
-    
+
     def get_videos_by_channel(
         self,
         channel_name: str,
@@ -208,7 +208,9 @@ class DynamoService:
         try:
             response = self._videos_table.query(**query_kwargs)
         except ClientError as exc:
-            logger.error(f"DYNAMO_QUERY_CHANNEL_ERROR channel={channel_name} error={exc}")
+            logger.error(
+                f"DYNAMO_QUERY_CHANNEL_ERROR channel={channel_name} error={exc}"
+            )
             return {"items": [], "total_returned": 0, "next_cursor": None}
 
         items = [
@@ -222,8 +224,15 @@ class DynamoService:
             clean_key = self._deserialize(last_key)
             next_cursor = base64.b64encode(json.dumps(clean_key).encode()).decode()
 
-        logger.info(f"DYNAMO_QUERY_CHANNEL channel={channel_name} returned={len(items)}")
-        return {"items": items, "total_returned": len(items), "next_cursor": next_cursor}
+        logger.info(
+            f"DYNAMO_QUERY_CHANNEL channel={channel_name} returned={len(items)}"
+        )
+        return {
+            "items": items,
+            "total_returned": len(items),
+            "next_cursor": next_cursor,
+        }
+
     def map_video_item(self, item: dict) -> dict:
         """Map a deserialized youtube-videos DynamoDB item to an API-ready dict."""
         video_id = item.get("SortKey", "")
