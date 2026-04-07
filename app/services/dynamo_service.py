@@ -22,7 +22,7 @@ from decimal import Decimal
 from typing import Optional
 
 import boto3
-from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 
 from app.core.config import settings
@@ -238,10 +238,11 @@ class DynamoService:
 
     # ── Clusters ─────────────────────────────────────────────────────────────
 
-    def get_all_clusters(self) -> list[dict]:
+    def get_all_clusters(self, include_inactive: bool = False) -> list[dict]:
         """
         Full scan of narrative-clusters (small table, no pagination needed).
         Returns list of deserialised cluster dicts.
+        Filters out inactive clusters by default.
         """
         items = []
         scan_kwargs: dict = {}
@@ -254,7 +255,10 @@ class DynamoService:
                 break
 
             for raw in response.get("Items", []):
-                items.append(self._deserialize(raw))
+                item = self._deserialize(raw)
+                if not include_inactive and item.get("status") == "inactive":
+                    continue
+                items.append(item)
 
             last_key = response.get("LastEvaluatedKey")
             if not last_key:
@@ -285,3 +289,158 @@ class DynamoService:
             raise KeyError(cluster_id)
 
         return self._deserialize(item)
+
+    # ── Video titles by cluster ─────────────────────────────────────────────
+
+    def get_video_titles_for_cluster(
+        self, cluster_id: int, limit: int = 6
+    ) -> list[str]:
+        """
+        Pull video titles from youtube-videos via the cluster-index GSI.
+        Returns empty list gracefully if the GSI doesn't exist.
+        """
+        try:
+            resp = self._videos_table.query(
+                IndexName="cluster-index",
+                KeyConditionExpression=Key("cluster_id").eq(Decimal(str(cluster_id))),
+                ProjectionExpression="title",
+                Limit=limit,
+            )
+            return [
+                item["title"] for item in resp.get("Items", []) if item.get("title")
+            ]
+        except Exception as exc:
+            logger.warning(
+                f"DYNAMO_VIDEO_TITLES_WARN cluster={cluster_id} " f"error={exc}"
+            )
+            return []
+
+    # ── Articles ────────────────────────────────────────────────────────────
+
+    def _articles_table(self):
+        return self._dynamodb.Table("articles")
+
+    def article_exists(self, cluster_id: int, week_number: int) -> bool:
+        """Check if an article already exists for cluster + week."""
+        scan_kwargs: dict = {
+            "FilterExpression": (
+                Attr("cluster_id").eq(cluster_id) & Attr("week_number").eq(week_number)
+            ),
+            "ProjectionExpression": "article_id",
+        }
+        try:
+            while True:
+                resp = self._articles_table().scan(**scan_kwargs)
+                if resp.get("Items"):
+                    return True
+                if "LastEvaluatedKey" not in resp:
+                    break
+                scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+            return False
+        except Exception as exc:
+            logger.warning(f"ARTICLE_EXISTS_CHECK_WARN error={exc}")
+            return False
+
+    def save_article(self, item: dict) -> None:
+        """Put an article item into the articles table."""
+        self._articles_table().put_item(Item=item)
+
+    def delete_articles(self, cluster_id: int, week_number: int) -> None:
+        """Remove existing articles for a cluster + week."""
+        try:
+            resp = self._articles_table().scan(
+                FilterExpression=(
+                    Attr("cluster_id").eq(Decimal(str(cluster_id)))
+                    & Attr("week_number").eq(Decimal(str(week_number)))
+                ),
+                ProjectionExpression="article_id",
+            )
+            for item in resp.get("Items", []):
+                self._articles_table().delete_item(
+                    Key={"article_id": item["article_id"]}
+                )
+        except Exception as exc:
+            logger.warning(f"ARTICLE_DELETE_WARN cluster={cluster_id} error={exc}")
+
+    def get_articles(
+        self,
+        cluster_id: Optional[int] = None,
+        week_number: Optional[int] = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        """List articles, optionally filtered. Returns metadata (no body)."""
+        filter_parts = []
+        if cluster_id is not None:
+            filter_parts.append(Attr("cluster_id").eq(cluster_id))
+        if week_number is not None:
+            filter_parts.append(Attr("week_number").eq(week_number))
+
+        scan_kwargs: dict = {
+            "ProjectionExpression": (
+                "article_id, cluster_id, cluster_label, "
+                "week_number, #wk, title, overview, created_at"
+            ),
+            "ExpressionAttributeNames": {"#wk": "week"},
+        }
+
+        if filter_parts:
+            expr = filter_parts[0]
+            for part in filter_parts[1:]:
+                expr = expr & part
+            scan_kwargs["FilterExpression"] = expr
+
+        items: list[dict] = []
+        while True:
+            try:
+                resp = self._articles_table().scan(**scan_kwargs)
+            except ClientError as exc:
+                logger.error(f"ARTICLE_LIST_ERROR error={exc}")
+                break
+
+            for raw in resp.get("Items", []):
+                item = self._deserialize(raw)
+                items.append(
+                    {
+                        "article_id": item.get("article_id", ""),
+                        "cluster_id": int(item.get("cluster_id", 0)),
+                        "cluster_label": item.get("cluster_label", ""),
+                        "week_number": int(item.get("week_number", 0)),
+                        "title": item.get("title", ""),
+                        "overview": item.get("overview", ""),
+                        "created_at": item.get("created_at", ""),
+                    }
+                )
+                if len(items) >= limit:
+                    break
+
+            if len(items) >= limit or "LastEvaluatedKey" not in resp:
+                break
+            scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+        items.sort(key=lambda x: (-x["week_number"], x["cluster_id"]))
+        return items[:limit]
+
+    def get_article_by_id(self, article_id: str) -> Optional[dict]:
+        """Fetch a single article (including body) by article_id."""
+        try:
+            resp = self._articles_table().get_item(Key={"article_id": article_id})
+        except ClientError as exc:
+            logger.error(f"ARTICLE_GET_ERROR id={article_id} error={exc}")
+            return None
+
+        item = resp.get("Item")
+        if not item:
+            return None
+
+        item = self._deserialize(item)
+        return {
+            "article_id": item.get("article_id", ""),
+            "cluster_id": int(item.get("cluster_id", 0)),
+            "cluster_label": item.get("cluster_label", ""),
+            "week_number": int(item.get("week_number", 0)),
+            "title": item.get("title", ""),
+            "overview": item.get("overview", ""),
+            "body": item.get("body", ""),
+            "created_at": item.get("created_at", ""),
+            "updated_at": item.get("updated_at", ""),
+        }

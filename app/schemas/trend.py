@@ -78,6 +78,7 @@ class CreatorRisk(BaseModel):
 class TrendListItem(BaseModel):
     cluster_id: int
     label: str
+    status: str = "active"
     category: str
     trend_type: str
     metric_badge: str
@@ -105,6 +106,7 @@ class TrendListResponse(BaseModel):
 class TrendDetail(BaseModel):
     cluster_id: int
     label: str
+    status: str = "active"
     category: str
     trend_type: str
     metric_badge: str
