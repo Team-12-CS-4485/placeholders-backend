@@ -194,6 +194,7 @@ class VectorService:
 
         base_payload = {
             "transcript_key": transcript_key,
+            "video_id": transcript_key.split("::")[-1],
             "source_key": source_key,
             "transcript_index": str(transcript_index),
         }
@@ -263,6 +264,7 @@ class VectorService:
             {
                 "id": str(r.id),
                 "score": float(r.score),
+                "video_id": r.payload.get("video_id", ""),
                 "transcript_key": r.payload.get("transcript_key", ""),
                 "source_key": r.payload.get("source_key", ""),
                 "channel": r.payload.get("channel", ""),

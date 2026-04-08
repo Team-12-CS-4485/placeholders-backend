@@ -72,6 +72,7 @@ class FullPipelineResponse(BaseModel):
 class SearchHit(BaseModel):
     id: str
     score: float
+    video_id: str
     transcript_key: str
     source_key: str
     channel: str
