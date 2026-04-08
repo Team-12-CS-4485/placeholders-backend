@@ -444,7 +444,7 @@ class PipelineService:
         use_limit = limit if limit is not None else settings.s3_object_limit
         _start = time.time()
         self.logger.info(
-            f"PIPELINE_START prefix={use_prefix} limit={use_limit} dry_run={dry_run}"
+            f"INGEST_START prefix={use_prefix} limit={use_limit} dry_run={dry_run}"
         )
 
         if dry_run:
@@ -504,26 +504,36 @@ class PipelineService:
             gemini_results = {}  # video_id → result dict
 
             with ThreadPoolExecutor(max_workers=NUM_WORKERS) as pool:
-                futures = {
-                    pool.submit(
+                futures = {}
+                for i, (video, source_key) in enumerate(pending):
+                    worker_idx = i % len(worker_services)
+                    video_id = video.get("videoId", "")
+                    channel = video.get("channel", "")
+                    self.logger.info(
+                        f"WORKER_START worker={worker_idx} video={video_id} channel={channel}"
+                    )
+                    fut = pool.submit(
                         self._process_single_video,
                         video,
                         source_key,
-                        worker_services[i % len(worker_services)],
-                    ): (video, source_key)
-                    for i, (video, source_key) in enumerate(pending)
-                }
+                        worker_services[worker_idx],
+                    )
+                    futures[fut] = (video, source_key, worker_idx, time.time())
 
                 for future in as_completed(futures):
-                    video, source_key = futures[future]
+                    video, source_key, worker_idx, t0 = futures[future]
                     video_id = video.get("videoId", "")
+                    elapsed_ms = int((time.time() - t0) * 1000)
                     try:
                         result = future.result()
                         gemini_results[video_id] = result
+                        self.logger.info(
+                            f"WORKER_COMPLETE worker={worker_idx} video={video_id} elapsed_ms={elapsed_ms}"
+                        )
                     except KeysExhaustedError:
                         retry_queue.append((video, source_key))
                         self.logger.warning(
-                            f"WORKER_EXHAUSTED videoId={video_id} → retry queue"
+                            f"WORKER_RETRY worker={worker_idx} video={video_id} reason=keys_exhausted"
                         )
                     except Exception as exc:
                         gemini_results[video_id] = {
@@ -540,19 +550,23 @@ class PipelineService:
                             "error": str(exc),
                         }
                         self.logger.error(
-                            f"VIDEO_FAILED videoId={video_id} error={exc}"
+                            f"WORKER_FAILED worker={worker_idx} video={video_id} error={exc}"
                         )
 
             # ── Retry pass: sequential, full 30-key pool ──────────────────────
             if retry_queue:
-                self.logger.info(f"RETRY_PASS videos={len(retry_queue)}")
+                self.logger.info(f"RETRY_START jobs={len(retry_queue)}")
                 for video, source_key in retry_queue:
                     video_id = video.get("videoId", "")
+                    t0 = time.time()
                     try:
                         result = self._process_single_video(
                             video, source_key, self.gemini_service
                         )
                         gemini_results[video_id] = result
+                        self.logger.info(
+                            f"RETRY_COMPLETE video={video_id} elapsed_ms={int((time.time()-t0)*1000)}"
+                        )
                     except Exception as exc:
                         gemini_results[video_id] = {
                             "video_id": video_id,
@@ -568,7 +582,7 @@ class PipelineService:
                             "error": str(exc),
                         }
                         self.logger.error(
-                            f"RETRY_FAILED videoId={video_id} error={exc}"
+                            f"RETRY_FAILED video={video_id} error={exc}"
                         )
 
             # ── Sequential embed + Qdrant upsert ──────────────────────────────
@@ -601,7 +615,7 @@ class PipelineService:
                 result["chunks_stored"] = points_indexed
                 analyzed_videos += 1
                 total_chunks_stored += points_indexed
-                self.logger.info(
+                self.logger.debug(
                     f"VIDEO_INDEXED videoId={video_id} channel={result['channel']} "
                     f"chunks={len(chunks)} points={points_indexed}"
                 )
@@ -639,10 +653,11 @@ class PipelineService:
                 "results": object_results,
             }
             self.logger.info(
-                f"PIPELINE_COMPLETE videos_found={total_videos} "
-                f"videos_indexed={analyzed_videos} "
-                f"chunks_stored={total_chunks_stored} "
+                f"INGEST_COMPLETE videos={total_videos} "
+                f"succeeded={analyzed_videos} "
                 f"failed={len(failed_video_ids)} "
+                f"retried={len(retry_queue)} "
+                f"chunks_stored={total_chunks_stored} "
                 f"elapsed_s={time.time() - _start:.1f}"
             )
             return result_summary

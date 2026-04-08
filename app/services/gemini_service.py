@@ -182,7 +182,7 @@ class GeminiService:
                 time.sleep(0.5)  # pace RPM across keys
                 usage = getattr(response, "usage_metadata", None)
                 if usage:
-                    logger.info(
+                    logger.debug(
                         f"GEMINI_TOKENS in={usage.prompt_token_count}"
                         f" out={usage.candidates_token_count}"
                         f" total={usage.total_token_count}"

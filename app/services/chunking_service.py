@@ -58,23 +58,22 @@ class SemanticChunker:
         try:
             from sentence_transformers import SentenceTransformer
 
-            logger.info(f"CHUNKER_LOAD model={self.model_name}")
             SemanticChunker._model = SentenceTransformer(
                 self.model_name,
                 trust_remote_code=True,
             )
             SemanticChunker._model_name_loaded = self.model_name
-            logger.info("CHUNKER_READY")
+            logger.info(f"CHUNKER_READY model={self.model_name}")
             return True
         except ImportError:
-            logger.warning(
-                "sentence-transformers not installed — using character chunking fallback.\n"
-                "Fix: pip install sentence-transformers"
+            logger.error(
+                "CHUNKER_LOAD_FAILED sentence-transformers not installed — "
+                "fix: pip install sentence-transformers"
             )
             return False
         except Exception as exc:
-            logger.warning(
-                f"CHUNKER_LOAD_FAILED error={exc} — using character chunking fallback"
+            logger.error(
+                f"CHUNKER_LOAD_FAILED model={self.model_name} error={exc}"
             )
             return False
 
@@ -174,7 +173,7 @@ class SemanticChunker:
         if current:
             chunks.append(" ".join(current))
 
-        logger.info(
+        logger.debug(
             f"SEMANTIC_CHUNK_DONE sentences={len(sentences)} chunks={len(chunks)}"
         )
         return chunks
@@ -191,7 +190,7 @@ class SemanticChunker:
             if end >= len(clean):
                 break
             start = end - overlap
-        logger.info(f"CHAR_CHUNK_FALLBACK chunks={len(chunks)}")
+        logger.warning(f"CHAR_CHUNK_FALLBACK chunks={len(chunks)} — semantic model unavailable")
         return chunks
 
 

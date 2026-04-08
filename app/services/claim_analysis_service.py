@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from collections import defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -109,7 +110,7 @@ class ClaimAnalysisService:
                 break
             scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
 
-        logger.info(
+        logger.debug(
             f"CLAIM_READ clusters={len(cluster_videos)} "
             f"total_videos={sum(len(v) for v in cluster_videos.values())}"
         )
@@ -153,7 +154,7 @@ class ClaimAnalysisService:
                     )
 
             cluster_claims[cid] = claims
-            logger.info(f"CLAIM_COLLECT cluster={cid} claims={len(claims)}")
+            logger.debug(f"CLAIM_COLLECT cluster={cid} claims={len(claims)}")
 
         return cluster_claims
 
@@ -469,10 +470,17 @@ class ClaimAnalysisService:
     # ── Public API ───────────────────────────────────────────────────────────
 
     def run_claim_analysis(self, max_per_type: int = 3, dry_run: bool = False) -> dict:
+        _start = time.time()
+
         # 1. Read from DynamoDB
         cluster_videos = self._get_clustered_videos()
         if not cluster_videos:
             return {"clusters_processed": 0, "total_written": 0, "dry_run": dry_run}
+
+        logger.info(
+            f"CLAIMS_START clusters={len(cluster_videos)} "
+            f"total_videos={sum(len(v) for v in cluster_videos.values())}"
+        )
 
         # 2. Collect attributed claims
         cluster_claims = self._collect_attributed_claims(cluster_videos)
@@ -543,6 +551,14 @@ class ClaimAnalysisService:
             )
         else:
             logger.info(f"CLAIM_ANALYSIS_DRY_RUN — skipping DynamoDB write")
+
+        total_consensus = sum(s["consensus"] for s in summary.values())
+        total_debated = sum(s["debated"] for s in summary.values())
+        logger.info(
+            f"CLAIMS_COMPLETE clusters_processed={len(cluster_results)} "
+            f"consensus={total_consensus} debated={total_debated} "
+            f"written={written} elapsed_s={time.time() - _start:.1f}"
+        )
 
         return {
             "clusters_processed": len(cluster_results),

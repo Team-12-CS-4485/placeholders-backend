@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
@@ -105,7 +106,7 @@ class ClusteringService:
             if offset is None:
                 break
 
-        logger.info(f"CLUSTER_SCROLL videos={len(video_chunks)}")
+        logger.debug(f"CLUSTER_SCROLL videos={len(video_chunks)}")
         return video_chunks
 
     # ── Step 2: Pull metadata from DynamoDB ──────────────────────────────────
@@ -151,7 +152,7 @@ class ClusteringService:
                 break
             scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
 
-        logger.info(f"CLUSTER_DYNAMO_META videos_with_intel={len(meta)}")
+        logger.debug(f"CLUSTER_DYNAMO_META videos_with_intel={len(meta)}")
         return meta
 
     # ── Step 3: Build video representatives ──────────────────────────────────
@@ -175,7 +176,7 @@ class ClusteringService:
             filtered_meta[vid] = meta_map[vid]
 
         matrix = np.array(vectors, dtype=np.float32) if vectors else np.array([])
-        logger.info(f"CLUSTER_REPRESENTATIVES shape={matrix.shape}")
+        logger.debug(f"CLUSTER_REPRESENTATIVES shape={matrix.shape}")
         return video_ids, matrix, filtered_meta
 
     # ── Step 4: UMAP + HDBSCAN ──────────────────────────────────────────────
@@ -194,7 +195,7 @@ class ClusteringService:
             random_state=42,
         )
         reduced = reducer.fit_transform(matrix)
-        logger.info(f"UMAP_COMPLETE {matrix.shape[1]}d → {n_components}d")
+        logger.debug(f"UMAP_COMPLETE {matrix.shape[1]}d → {n_components}d")
         return reduced
 
     def _cluster_vectors(
@@ -235,7 +236,7 @@ class ClusteringService:
 
         n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
         n_noise = int(np.sum(labels == -1))
-        logger.info(f"HDBSCAN_COMPLETE clusters={n_clusters} noise={n_noise}")
+        logger.debug(f"HDBSCAN_COMPLETE clusters={n_clusters} noise={n_noise}")
         return labels, probabilities
 
     # ── Step 6: Write to DynamoDB ────────────────────────────────────────────
@@ -283,7 +284,7 @@ class ClusteringService:
                 )
             updated += 1
 
-        logger.info(f"DYNAMO_CLUSTER_WRITE videos={updated}")
+        logger.debug(f"DYNAMO_CLUSTER_WRITE videos={updated}")
         return updated
 
     def _mark_declined_clusters(
@@ -379,7 +380,7 @@ class ClusteringService:
             }
             self._clusters_table.put_item(Item=item)
             written += 1
-            logger.info(f"DYNAMO_CLUSTER_SUMMARY cluster={cid} label={info['label']!r}")
+            logger.debug(f"DYNAMO_CLUSTER_SUMMARY cluster={cid} label={info['label']!r}")
 
         return written
 
@@ -436,10 +437,14 @@ class ClusteringService:
         umap_neighbors=30,
         dry_run=False,
     ):
+        _start = time.time()
+
         # 1. Vectors from Qdrant
         video_chunks = self._scroll_vectors()
         if not video_chunks:
             return {"clusters": {}, "videos_updated": 0}
+
+        logger.info(f"CLUSTER_START total_vectors={len(video_chunks)}")
 
         # 2. Metadata from DynamoDB
         meta_map = self._get_video_metadata()
@@ -517,6 +522,15 @@ class ClusteringService:
 
         real_clusters = {k: v for k, v in cluster_info.items() if k != -1}
         noise_info = cluster_info.get(-1, {})
+
+        logger.info(
+            f"CLUSTER_COMPLETE clusters={len(real_clusters)} "
+            f"new={len(new_ids)} matched={len(real_clusters) - len(new_ids)} "
+            f"declined={declined_count if not dry_run else len(declined_ids)} "
+            f"noise_videos={noise_info.get('video_count', 0)} "
+            f"total_videos={len(video_ids)} "
+            f"elapsed_s={time.time() - _start:.1f}"
+        )
 
         return {
             "total_videos": len(video_ids),

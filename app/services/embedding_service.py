@@ -44,7 +44,7 @@ class EmbeddingService:
     def embed_chunks(self, chunks: list[str]) -> list[list[float]]:
         if not chunks:
             return []
-        logger.info(f"EMBED_LOCAL chunks={len(chunks)}")
+        logger.debug(f"EMBED_LOCAL chunks={len(chunks)}")
         return self._chunker.embed(chunks, is_query=False)
 
     def embed_query(self, query: str) -> list[float]:

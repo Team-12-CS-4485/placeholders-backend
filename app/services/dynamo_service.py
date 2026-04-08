@@ -315,7 +315,7 @@ class DynamoService:
                 break
             scan_kwargs["ExclusiveStartKey"] = last_key
 
-        logger.info(f"DYNAMO_SCAN_CLUSTERS returned={len(items)}")
+        logger.debug(f"DYNAMO_SCAN_CLUSTERS returned={len(items)}")
         return items
 
     def get_cluster(self, cluster_id: int) -> dict:

@@ -133,7 +133,7 @@ class ArticleService:
         label = cluster.get("cluster_label", f"Cluster {cid}")
 
         if not force and self._dynamo.article_exists(cid, wk_num):
-            logger.info(f"ARTICLE_SKIP cluster={cid} week={wk} (already exists)")
+            logger.debug(f"ARTICLE_SKIP cluster={cid} week={wk} (already exists)")
             return {"status": "skipped", "week": wk}
 
         if force:
@@ -420,36 +420,48 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
         worker_services = self._make_worker_gemini_services()
         retry_jobs: list[tuple[dict, dict, str]] = []
 
+        new_jobs = [(c, wd, wk) for c, wd, wk in deduped_jobs]
+        logger.info(
+            f"ARTICLES_START jobs={len(new_jobs)} skipping={len(deduped_jobs) - len(new_jobs)} workers={NUM_WORKERS}"
+        )
+
         with ThreadPoolExecutor(max_workers=NUM_WORKERS) as pool:
-            futures = {
-                pool.submit(
+            futures = {}
+            for i, (c, week_slice, wk) in enumerate(deduped_jobs):
+                worker_idx = i % NUM_WORKERS
+                cid = int(c.get("cluster_id", -1))
+                logger.info(f"WORKER_START worker={worker_idx} cluster={cid} week={wk}")
+                fut = pool.submit(
                     self._generate_single_article,
                     c,
                     week_slice,
                     wk,
-                    worker_services[i % NUM_WORKERS],
+                    worker_services[worker_idx],
                     force,
-                ): (c, week_slice, wk)
-                for i, (c, week_slice, wk) in enumerate(deduped_jobs)
-            }
+                )
+                futures[fut] = (c, week_slice, wk, worker_idx, time.time())
 
             for future in as_completed(futures):
-                c, week_slice, wk = futures[future]
+                c, week_slice, wk, worker_idx, t0 = futures[future]
                 cid = int(c.get("cluster_id", -1))
                 key = f"{cid}:{wk}"
                 weeks_seen.add(wk)
+                elapsed_ms = int((time.time() - t0) * 1000)
 
                 try:
                     result = future.result()
                     per_cluster[key] = result
                     if result["status"] == "generated":
                         generated += 1
+                        logger.info(
+                            f"WORKER_COMPLETE worker={worker_idx} cluster={cid} week={wk} elapsed_ms={elapsed_ms}"
+                        )
                     else:
                         skipped += 1
                 except KeysExhaustedError:
                     retry_jobs.append((c, week_slice, wk))
                     logger.warning(
-                        f"ARTICLE_WORKER_EXHAUSTED cluster={cid} week={wk} → retry queue"
+                        f"WORKER_RETRY worker={worker_idx} cluster={cid} week={wk} reason=keys_exhausted"
                     )
                 except Exception as exc:
                     failed += 1
@@ -458,15 +470,16 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                         "week": wk,
                         "error": str(exc),
                     }
-                    logger.error(f"ARTICLE_FAILED cluster={cid} week={wk} error={exc}")
+                    logger.error(f"WORKER_FAILED worker={worker_idx} cluster={cid} week={wk} error={exc}")
 
         # Retry pass — sequential, full key pool (fail_on_exhaustion=False)
         if retry_jobs:
-            logger.info(f"ARTICLE_RETRY_PASS jobs={len(retry_jobs)}")
+            logger.info(f"RETRY_START jobs={len(retry_jobs)}")
             for c, week_slice, wk in retry_jobs:
                 cid = int(c.get("cluster_id", -1))
                 key = f"{cid}:{wk}"
                 weeks_seen.add(wk)
+                t0 = time.time()
                 try:
                     result = self._generate_single_article(
                         c, week_slice, wk, self._gemini, force
@@ -474,6 +487,9 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                     per_cluster[key] = result
                     if result["status"] == "generated":
                         generated += 1
+                        logger.info(
+                            f"RETRY_COMPLETE cluster={cid} week={wk} elapsed_ms={int((time.time()-t0)*1000)}"
+                        )
                     else:
                         skipped += 1
                 except Exception as exc:
@@ -484,14 +500,13 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                         "error": str(exc),
                     }
                     logger.error(
-                        f"ARTICLE_RETRY_FAILED cluster={cid} week={wk} error={exc}"
+                        f"RETRY_FAILED cluster={cid} week={wk} error={exc}"
                     )
 
         weeks_processed = sorted(weeks_seen, key=_week_number)
         logger.info(
-            f"ARTICLE_RUN_COMPLETE generated={generated} "
-            f"skipped={skipped} failed={failed} "
-            f"elapsed_s={time.time() - _start:.1f}"
+            f"ARTICLES_COMPLETE generated={generated} skipped={skipped} "
+            f"failed={failed} elapsed_s={time.time() - _start:.1f}"
         )
 
         return {

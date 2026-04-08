@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import sys
+import warnings
 from contextvars import ContextVar
 
 # Set by the HTTP middleware for each request; defaults to "-" for background tasks
@@ -47,6 +48,24 @@ def setup_logging() -> None:
     level = os.getenv("LOG_LEVEL", "INFO").upper()
     root_logger.setLevel(getattr(logging, level, logging.INFO))
     root_logger.addHandler(handler)
+
+    # Silence noisy third-party loggers — WARNING keeps rate limit alerts visible
+    for noisy in ("httpx", "httpcore", "google_genai", "google.ai", "botocore", "boto3", "urllib3"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+    # Fully suppress — these have no actionable warnings for us
+    for silent in ("sentence_transformers", "huggingface_hub", "transformers", "transformers_modules"):
+        logging.getLogger(silent).setLevel(logging.ERROR)
+
+    # Suppress Python warnings from third-party libraries (umap, sklearn, hf)
+    warnings.filterwarnings("ignore", category=UserWarning, module="umap")
+    warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn")
+    warnings.filterwarnings("ignore", message=".*unauthenticated.*", category=UserWarning)
+    warnings.filterwarnings("ignore", message=".*All keys matched.*")
+
+    # Stop HuggingFace from printing directly to stderr
+    os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+    os.environ.setdefault("HF_HUB_DISABLE_IMPLICIT_TOKEN", "1")
 
 
 def get_logger(name: str) -> logging.Logger:

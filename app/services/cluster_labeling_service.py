@@ -393,7 +393,7 @@ class ClusterLabelingService:
                 "week_data": stats["week_data"],
                 "top_claims": cluster_claims.get(cid, []),
             }
-            logger.info(
+            logger.debug(
                 f"CLUSTER_LABELED id={cid} "
                 f"label={cluster_labels[cid]!r} videos={len(vids)}"
             )
@@ -422,7 +422,7 @@ class ClusterLabelingService:
             if "LastEvaluatedKey" not in resp:
                 break
             scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
-        logger.info(f"STABLE_MATCH_LOADED existing_clusters={len(existing)}")
+        logger.debug(f"STABLE_MATCH_LOADED existing_clusters={len(existing)}")
         return existing
 
     def embed_cluster_description(self, label: str, topics: list[str]) -> list[float]:
@@ -501,7 +501,7 @@ class ClusterLabelingService:
             id_map[new_cid] = old_cid
             used_new.add(new_cid)
             used_old.add(old_cid)
-            logger.info(
+            logger.debug(
                 f"STABLE_MATCH hdbscan={new_cid} → stable={old_cid} "
                 f"sim={sim:.2f} "
                 f"label={existing_clusters[old_cid]['label']!r}"
