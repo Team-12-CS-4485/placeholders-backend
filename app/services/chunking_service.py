@@ -72,9 +72,7 @@ class SemanticChunker:
             )
             return False
         except Exception as exc:
-            logger.error(
-                f"CHUNKER_LOAD_FAILED model={self.model_name} error={exc}"
-            )
+            logger.error(f"CHUNKER_LOAD_FAILED model={self.model_name} error={exc}")
             return False
 
     @property
@@ -190,7 +188,9 @@ class SemanticChunker:
             if end >= len(clean):
                 break
             start = end - overlap
-        logger.warning(f"CHAR_CHUNK_FALLBACK chunks={len(chunks)} — semantic model unavailable")
+        logger.warning(
+            f"CHAR_CHUNK_FALLBACK chunks={len(chunks)} — semantic model unavailable"
+        )
         return chunks
 
 

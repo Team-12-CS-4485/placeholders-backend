@@ -470,7 +470,9 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                         "week": wk,
                         "error": str(exc),
                     }
-                    logger.error(f"WORKER_FAILED worker={worker_idx} cluster={cid} week={wk} error={exc}")
+                    logger.error(
+                        f"WORKER_FAILED worker={worker_idx} cluster={cid} week={wk} error={exc}"
+                    )
 
         # Retry pass — sequential, full key pool (fail_on_exhaustion=False)
         if retry_jobs:
@@ -499,9 +501,7 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                         "week": wk,
                         "error": str(exc),
                     }
-                    logger.error(
-                        f"RETRY_FAILED cluster={cid} week={wk} error={exc}"
-                    )
+                    logger.error(f"RETRY_FAILED cluster={cid} week={wk} error={exc}")
 
         weeks_processed = sorted(weeks_seen, key=_week_number)
         logger.info(

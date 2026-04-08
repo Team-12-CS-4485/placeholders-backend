@@ -380,7 +380,9 @@ class ClusteringService:
             }
             self._clusters_table.put_item(Item=item)
             written += 1
-            logger.debug(f"DYNAMO_CLUSTER_SUMMARY cluster={cid} label={info['label']!r}")
+            logger.debug(
+                f"DYNAMO_CLUSTER_SUMMARY cluster={cid} label={info['label']!r}"
+            )
 
         return written
 

@@ -581,9 +581,7 @@ class PipelineService:
                             "thumbnail": None,
                             "error": str(exc),
                         }
-                        self.logger.error(
-                            f"RETRY_FAILED video={video_id} error={exc}"
-                        )
+                        self.logger.error(f"RETRY_FAILED video={video_id} error={exc}")
 
             # ── Sequential embed + Qdrant upsert ──────────────────────────────
             analyzed_videos = 0
