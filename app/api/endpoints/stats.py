@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.core.cache import get_cached
 from app.services.trend_service import TrendService
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
@@ -24,5 +25,4 @@ class StatsResponse(BaseModel):
 @router.get("", response_model=StatsResponse)
 def get_stats():
     """Aggregate stats derived from narrative-clusters — no extra reads."""
-    service = TrendService()
-    return service.get_stats()
+    return get_cached("stats", ttl=300, fetch_fn=lambda: TrendService().get_stats())

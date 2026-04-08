@@ -1,17 +1,24 @@
 """
 pipeline.py - Pipeline API Endpoints
 
-POST /api/pipeline/run    : Runs the full pipeline — ingest → cluster → claim analysis → articles
-POST /api/pipeline/ingest : Ingest only — S3 → Gemini → DynamoDB → Qdrant
-POST /api/pipeline/cluster: Cluster only — UMAP/HDBSCAN → DynamoDB
-POST /api/pipeline/claims : Claim analysis only — classify → DynamoDB
-
+POST /api/pipeline/run    : Starts the full pipeline in background, returns immediately
+POST /api/pipeline/ingest : Ingest only — starts in background, returns immediately
+POST /api/pipeline/cluster: Cluster only — UMAP/HDBSCAN → DynamoDB (synchronous)
+POST /api/pipeline/claims : Claim analysis only — classify → DynamoDB (synchronous)
 POST /api/pipeline/search : Semantic search over indexed transcript chunks
 
 All write endpoints accept dry_run=true to preview without writing.
+/ingest and /run with dry_run=true run synchronously (no Gemini calls, fast).
 """
 
+import threading
+
 from fastapi import APIRouter, HTTPException
+
+from app.core.cache import invalidate_all
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 from app.schemas.pipeline import (
     PipelineRunRequest,
@@ -35,100 +42,100 @@ from app.core.config import settings
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
 
 
-@router.post("/run", response_model=FullPipelineResponse)
+# ── Background workers ────────────────────────────────────────────────────────
+
+
+def _run_ingest_background(request: PipelineRunRequest) -> None:
+    try:
+        PipelineService().run_s3_transcript_analysis(
+            prefix=request.prefix,
+            limit=request.limit,
+        )
+    except Exception as exc:
+        logger.error(f"INGEST_BACKGROUND_FATAL error={exc}")
+
+
+def _run_full_pipeline_background(request: PipelineRunRequest) -> None:
+    try:
+        PipelineService().run_s3_transcript_analysis(
+            prefix=request.prefix,
+            limit=request.limit,
+        )
+        ClusteringService().run_clustering()
+        ClaimAnalysisService().run_claim_analysis()
+        try:
+            ArticleService().run_article_generation()
+        except Exception as exc:
+            logger.error(f"ARTICLE_GENERATION_FAILED (non-fatal) error={exc}")
+        invalidate_all()
+        logger.info("PIPELINE_BACKGROUND_COMPLETE cache invalidated")
+    except Exception as exc:
+        logger.error(f"PIPELINE_BACKGROUND_FATAL error={exc}")
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+
+@router.post("/run")
 def run_full_pipeline(request: PipelineRunRequest):
     """
-    Runs the full pipeline in sequence:
-    1. Ingest — S3 → chunk → Gemini → embed → Qdrant
+    Starts the full pipeline in the background:
+    1. Ingest — S3 → chunk → Gemini (10 parallel workers) → embed → Qdrant
     2. Cluster — UMAP/HDBSCAN → DynamoDB
     3. Claim analysis — classifies consensus/debated/unique → DynamoDB
+    4. Article generation — Gemini articles (10 parallel workers) → DynamoDB
 
-    Pass dry_run=true to preview counts without writing anything.
+    Returns immediately. dry_run=true runs synchronously (no Gemini calls).
     """
-    try:
-        ingestion_result = PipelineService().run_s3_transcript_analysis(
-            prefix=request.prefix,
-            limit=request.limit,
-            dry_run=request.dry_run,
-        )
-        clustering_result = ClusteringService().run_clustering(
-            dry_run=request.dry_run,
-        )
-        claim_result = ClaimAnalysisService().run_claim_analysis(
-            dry_run=request.dry_run,
-        )
-
-        # Step 4: Article generation (non-fatal — pipeline succeeds even if this fails)
+    if request.dry_run:
         try:
-            article_result = ArticleService().run_article_generation(
-                dry_run=request.dry_run,
+            PipelineService().run_s3_transcript_analysis(
+                prefix=request.prefix,
+                limit=request.limit,
+                dry_run=True,
             )
-        except Exception as article_exc:
-            # Log but don't fail the whole pipeline
-            import logging
+            ClusteringService().run_clustering(dry_run=True)
+            ClaimAnalysisService().run_claim_analysis(dry_run=True)
+            ArticleService().run_article_generation(dry_run=True)
+            return {"status": "complete"}
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500, detail=f"Dry run failed: {exc}"
+            ) from exc
 
-            logging.getLogger(__name__).error(
-                f"ARTICLE_GENERATION_FAILED (non-fatal) error={article_exc}"
-            )
-            article_result = {
-                "articles_generated": 0,
-                "articles_skipped": 0,
-                "articles_failed": 0,
-                "weeks_processed": [],
-                "dry_run": request.dry_run,
-            }
-
-        return {
-            "ingestion": {
-                "objects_processed": ingestion_result["objects_processed"],
-                "videos_found": ingestion_result["videos_found"],
-                "videos_indexed": ingestion_result["videos_indexed"],
-                "total_chunks_stored": ingestion_result["total_chunks_stored"],
-                "dry_run": ingestion_result.get("dry_run", False),
-            },
-            "clustering": {
-                "total_videos": clustering_result.get("total_videos", 0),
-                "cluster_count": clustering_result.get("cluster_count", 0),
-                "noise_videos": clustering_result.get("noise_videos", 0),
-                "total_chunks_patched": clustering_result.get("videos_updated", 0),
-                "dry_run": clustering_result.get("dry_run", False),
-            },
-            "claim_analysis": {
-                "clusters_processed": claim_result.get("clusters_processed", 0),
-                "total_patched": claim_result.get("total_written", 0),
-                "dry_run": claim_result.get("dry_run", False),
-            },
-            "articles": {
-                "articles_generated": article_result.get("articles_generated", 0),
-                "articles_skipped": article_result.get("articles_skipped", 0),
-                "articles_failed": article_result.get("articles_failed", 0),
-                "weeks_processed": article_result.get("weeks_processed", []),
-                "dry_run": article_result.get("dry_run", False),
-            },
-        }
-
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Pipeline failed: {exc}") from exc
+    threading.Thread(
+        target=_run_full_pipeline_background,
+        args=(request,),
+        daemon=True,
+    ).start()
+    return {"status": "running"}
 
 
-@router.post("/ingest", response_model=IngestionSummary)
+@router.post("/ingest")
 def run_ingest(request: PipelineRunRequest):
-    """Ingest only — S3 → chunk → Gemini → DynamoDB → Qdrant."""
-    try:
-        result = PipelineService().run_s3_transcript_analysis(
-            prefix=request.prefix,
-            limit=request.limit,
-            dry_run=request.dry_run,
-        )
-        return {
-            "objects_processed": result["objects_processed"],
-            "videos_found": result["videos_found"],
-            "videos_indexed": result["videos_indexed"],
-            "total_chunks_stored": result["total_chunks_stored"],
-            "dry_run": result.get("dry_run", False),
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Ingest failed: {exc}") from exc
+    """
+    Ingest only — S3 → chunk → Gemini (10 parallel workers) → DynamoDB → Qdrant.
+    Returns immediately. dry_run=true runs synchronously (no Gemini calls, fast).
+    """
+    if request.dry_run:
+        try:
+            PipelineService().run_s3_transcript_analysis(
+                prefix=request.prefix,
+                limit=request.limit,
+                dry_run=True,
+            )
+            return {"status": "complete"}
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500, detail=f"Dry run failed: {exc}"
+            ) from exc
+
+    threading.Thread(
+        target=_run_ingest_background,
+        args=(request,),
+        daemon=True,
+    ).start()
+    return {"status": "running"}
 
 
 @router.post("/cluster", response_model=ClusteringSummary)
