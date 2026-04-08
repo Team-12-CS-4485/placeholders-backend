@@ -83,6 +83,12 @@ THUMBNAIL_TONE_OPTIONS = (
 )
 
 
+class KeysExhaustedError(Exception):
+    """Raised when all keys in a worker's pool are rate-limited."""
+
+    pass
+
+
 class GeminiService:
 
     def __init__(
@@ -90,12 +96,14 @@ class GeminiService:
         client=None,
         chunker: Optional[SemanticChunker] = None,
         api_keys=None,
+        fail_on_exhaustion: bool = False,
     ):
         self.model_id = settings.gemini_model_id
 
         self.api_keys = api_keys or [settings.genai_api_key]
         self.current_key_index = 0
         self.client = client or genai.Client(api_key=self.api_keys[0])
+        self.fail_on_exhaustion = fail_on_exhaustion
 
         self._chunker = chunker or get_default_chunker(
             model_name=settings.embedding_model_id
@@ -193,6 +201,10 @@ class GeminiService:
                             f"GEMINI_KEY_ROTATED attempt={attempt+1} retrying immediately"
                         )
                         continue
+                    if self.fail_on_exhaustion:
+                        raise KeysExhaustedError(
+                            f"All {len(self.api_keys)} keys exhausted for this worker"
+                        )
                     logger.warning(
                         "ALL_KEYS_EXHAUSTED resetting to key 0 and waiting 60s"
                     )
@@ -238,6 +250,10 @@ class GeminiService:
                             f"retrying immediately"
                         )
                         continue
+                    if self.fail_on_exhaustion:
+                        raise KeysExhaustedError(
+                            f"All {len(self.api_keys)} keys exhausted for this worker"
+                        )
                     logger.warning(
                         "ALL_KEYS_EXHAUSTED (vision) resetting to key 0 and waiting 60s"
                     )

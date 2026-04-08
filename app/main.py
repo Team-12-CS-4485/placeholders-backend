@@ -20,6 +20,7 @@ import uuid
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.api.endpoints.trends import router as trends_router, weeks_router
@@ -34,6 +35,7 @@ from app.core.logging import get_logger, request_id_var
 app = FastAPI(title="Placeholders Backend API")
 logger = get_logger(__name__)
 
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

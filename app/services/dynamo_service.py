@@ -183,6 +183,56 @@ class DynamoService:
             "next_cursor": next_cursor,
         }
 
+    def get_videos_by_channel(
+        self,
+        channel_name: str,
+        limit: int = 20,
+        cursor: str = None,
+    ) -> dict:
+        """
+        Query youtube-videos by PartitionKey (channel name).
+        Uses native DynamoDB key-based pagination.
+        """
+        query_kwargs: dict = {
+            "KeyConditionExpression": Key("PartitionKey").eq(channel_name),
+            "Limit": limit,
+        }
+
+        if cursor:
+            try:
+                raw = base64.b64decode(cursor.encode()).decode()
+                query_kwargs["ExclusiveStartKey"] = json.loads(raw)
+            except Exception:
+                logger.warning(f"DYNAMO_QUERY_BAD_CURSOR cursor={cursor!r}")
+
+        try:
+            response = self._videos_table.query(**query_kwargs)
+        except ClientError as exc:
+            logger.error(
+                f"DYNAMO_QUERY_CHANNEL_ERROR channel={channel_name} error={exc}"
+            )
+            return {"items": [], "total_returned": 0, "next_cursor": None}
+
+        items = [
+            self.map_video_item(self._deserialize(raw))
+            for raw in response.get("Items", [])
+        ]
+
+        next_cursor = None
+        last_key = response.get("LastEvaluatedKey")
+        if last_key:
+            clean_key = self._deserialize(last_key)
+            next_cursor = base64.b64encode(json.dumps(clean_key).encode()).decode()
+
+        logger.info(
+            f"DYNAMO_QUERY_CHANNEL channel={channel_name} returned={len(items)}"
+        )
+        return {
+            "items": items,
+            "total_returned": len(items),
+            "next_cursor": next_cursor,
+        }
+
     def map_video_item(self, item: dict) -> dict:
         """Map a deserialized youtube-videos DynamoDB item to an API-ready dict."""
         video_id = item.get("SortKey", "")

@@ -5,8 +5,8 @@ Emits structured JSON to stdout so logs are queryable in Render, GCP, or any
 log aggregator.  Each line is a self-contained JSON object:
 
   {"timestamp": "2026-04-06T14:23:01Z", "level": "INFO",
-   "module": "pipeline_service", "message": "PIPELINE_COMPLETE",
-   "elapsed_s": 47.3, "videos_indexed": 48}
+   "module": "pipeline_service", "request_id": "a1b2c3d4e5f6",
+   "message": "PIPELINE_COMPLETE elapsed_s=47.3"}
 
 Log level is controlled by the LOG_LEVEL env var (default: INFO).
 All modules should call get_logger(__name__) to obtain a named logger.

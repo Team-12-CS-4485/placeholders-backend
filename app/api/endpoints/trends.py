@@ -14,6 +14,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.core.cache import get_cached
 from app.schemas.trend import (
     TrendListResponse,
     TrendDetail,
@@ -38,33 +39,45 @@ def get_trends(
         description="Filter to a specific week (e.g. week1, week2). Returns metrics scoped to that week.",
     ),
 ):
-    service = TrendService()
-    return service.get_trends(sort_by=sort_by, week=week)
+    return get_cached(
+        f"trends:{sort_by}:{week}",
+        ttl=300,
+        fetch_fn=lambda: TrendService().get_trends(sort_by=sort_by, week=week),
+    )
 
 
 @router.get("/{cluster_id}/sentiment", response_model=TrendSentiment)
 def get_trend_sentiment(cluster_id: int):
-    service = TrendService()
     try:
-        return service.get_trend_sentiment(cluster_id)
+        return get_cached(
+            f"trend_sentiment:{cluster_id}",
+            ttl=300,
+            fetch_fn=lambda: TrendService().get_trend_sentiment(cluster_id),
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Trend {cluster_id} not found")
 
 
 @router.get("/{cluster_id}/claims", response_model=TrendClaims)
 def get_trend_claims(cluster_id: int):
-    service = TrendService()
     try:
-        return service.get_trend_claims(cluster_id)
+        return get_cached(
+            f"trend_claims:{cluster_id}",
+            ttl=300,
+            fetch_fn=lambda: TrendService().get_trend_claims(cluster_id),
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Trend {cluster_id} not found")
 
 
 @router.get("/{cluster_id}", response_model=TrendDetail)
 def get_trend_detail(cluster_id: int):
-    service = TrendService()
     try:
-        return service.get_trend_detail(cluster_id)
+        return get_cached(
+            f"trend_detail:{cluster_id}",
+            ttl=300,
+            fetch_fn=lambda: TrendService().get_trend_detail(cluster_id),
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Trend {cluster_id} not found")
 
@@ -72,5 +85,4 @@ def get_trend_detail(cluster_id: int):
 @weeks_router.get("", response_model=WeeksResponse)
 def get_weeks():
     """List all available weeks with aggregate stats across all clusters."""
-    service = TrendService()
-    return service.get_weeks()
+    return get_cached("weeks", ttl=300, fetch_fn=lambda: TrendService().get_weeks())

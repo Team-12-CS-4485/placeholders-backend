@@ -8,20 +8,20 @@ Coordinates the end-to-end transcript analysis workflow:
 4. ONE combined Gemini call per video (multimodal: transcript + thumbnail image)
    → topics, category, sentiment, key_claims, is_breaking, thumbnail fields
 5. Writes intelligence + thumbnail to DynamoDB (youtube-videos table)
-6. Embeds chunks locally via EmbeddingService (nomic, free)
+6. Embeds chunks locally via EmbeddingService (nomic, free) — sequential, not thread-safe
 7. Upserts to Qdrant with search-only payload (vector, text, transcript_index)
+8. Runs sync_missing to catch any Qdrant gaps
 
-DynamoDB youtube-videos item gets:
-  topics, category, sentiment, key_claims, is_breaking, source_key, week, chunk_count
-  thumbnail_visual, thumbnail_tone, thumbnail_clickbait_score,
-  thumbnail_brand_consistent, thumbnail_insight
-
-Qdrant transcript_chunks point gets:
-  vector, text, chunk_index, word_count, transcript_index, source_key
+Parallelization:
+- Gemini calls are fanned out across 10 workers, each holding 3 API keys
+- Workers raise KeysExhaustedError on quota exhaustion (no 60s block)
+- Failed videos go to a retry queue, processed sequentially with the full key pool
+- Embedding and Qdrant upserts remain sequential (sentence-transformers not thread-safe)
 """
 
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -32,8 +32,10 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.services.storage_service import StorageService
 from app.services.embedding_service import EmbeddingService
-from app.services.gemini_service import GeminiService
+from app.services.gemini_service import GeminiService, KeysExhaustedError
 from app.services.vector_service import VectorService
+
+NUM_WORKERS = 10
 
 
 def _extract_week(source_key: str) -> str:
@@ -96,6 +98,28 @@ class PipelineService:
 
         self._dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
         self._videos_table = self._dynamodb.Table(settings.dynamodb_table)
+
+    # ── Worker pool ───────────────────────────────────────────────────────────
+
+    def _make_worker_gemini_services(self) -> list:
+        """
+        Split all API keys into NUM_WORKERS groups of 3.
+        Each worker gets its own GeminiService with fail_on_exhaustion=True
+        so it raises immediately instead of blocking its thread for 60s.
+        """
+        keys = self.gemini_service.api_keys
+        group_size = max(1, len(keys) // NUM_WORKERS)
+        services = []
+        for i in range(0, len(keys), group_size):
+            services.append(
+                GeminiService(
+                    api_keys=keys[i : i + group_size],
+                    fail_on_exhaustion=True,
+                )
+            )
+            if len(services) == NUM_WORKERS:
+                break
+        return services
 
     # ── DynamoDB: intelligence write ──────────────────────────────────────────
 
@@ -262,6 +286,157 @@ class PipelineService:
         except Exception as exc:
             self.logger.error(f"DYNAMO_THUMBNAIL_FAILED videoId={video_id} error={exc}")
 
+    # ── Per-video worker ──────────────────────────────────────────────────────
+
+    def _process_single_video(
+        self,
+        video: dict,
+        source_key: str,
+        gemini_service: GeminiService,
+    ) -> dict:
+        """
+        Process one video: chunk → Gemini → DynamoDB writes.
+        Returns a result dict including the chunks so the caller can embed them
+        sequentially after all futures complete.
+
+        Does NOT embed or upsert to Qdrant — sentence-transformers is not thread-safe.
+        Raises KeysExhaustedError if the worker's key pool is fully rate-limited.
+        """
+        video_id = video.get("videoId", "")
+        title = video.get("title", "")
+        channel = video.get("channel", "")
+        transcript = video.get("transcript", "")
+        top_comments = video.get("top_comments", [])
+        transcript_key = f"{source_key}::{video_id}"
+
+        # Already indexed in Qdrant — skip to save Gemini quota
+        try:
+            existing = self.vector_service.client.scroll(
+                collection_name=self.vector_service.collection_name,
+                scroll_filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="transcript_index",
+                            match=models.MatchValue(value=video_id),
+                        )
+                    ]
+                ),
+                limit=1,
+            )[0]
+            if existing:
+                self.logger.info(
+                    f"VIDEO_SKIP_ALREADY_INDEXED videoId={video_id} channel={channel}"
+                )
+                return {
+                    "video_id": video_id,
+                    "transcript_key": transcript_key,
+                    "source_key": source_key,
+                    "channel": channel,
+                    "status": "skipped",
+                    "chunks": [],
+                    "chunk_count": len(existing),
+                    "chunks_stored": len(existing),
+                    "intelligence": None,
+                    "thumbnail": None,
+                    "error": None,
+                }
+        except Exception:
+            pass
+
+        # Step 1: Chunk
+        chunks = self.embedding_service.chunk_text(transcript)
+
+        # Step 2: Combined Gemini intelligence + thumbnail — ONE call
+        self.logger.info(
+            f"GEMINI_COMBINED_START videoId={video_id} "
+            f"chunks={len(chunks)} "
+            f"key=#{gemini_service.current_key_index + 1}"
+        )
+        intelligence, thumbnail = gemini_service.extract_full_video_intelligence(
+            chunks=chunks,
+            title=title,
+            top_comments=top_comments,
+            video_id=video_id,
+        )
+
+        # Guard: Gemini 503 returns empty topics
+        if not intelligence.get("topics"):
+            self.logger.warning(
+                f"GEMINI_INTELLIGENCE_EMPTY videoId={video_id} — skipping (likely 503)"
+            )
+            return {
+                "video_id": video_id,
+                "transcript_key": transcript_key,
+                "source_key": source_key,
+                "channel": channel,
+                "status": "failed",
+                "chunks": [],
+                "chunk_count": len(chunks),
+                "chunks_stored": 0,
+                "intelligence": None,
+                "thumbnail": None,
+                "error": "Gemini returned empty intelligence (503)",
+            }
+
+        self.logger.info(
+            f"GEMINI_COMBINED_DONE videoId={video_id} "
+            f"category={intelligence['category']} "
+            f"sentiment={intelligence['sentiment']} "
+            f"topics={intelligence['topics']} "
+            f"thumbnail_tone={thumbnail.get('thumbnail_tone')}"
+        )
+
+        # Step 3: Write intelligence to DynamoDB
+        self._write_intelligence_to_dynamodb(
+            channel=channel,
+            video_id=video_id,
+            source_key=source_key,
+            intelligence=intelligence,
+            chunk_count=len(chunks),
+        )
+
+        # Step 4: Write thumbnail to DynamoDB (if non-empty)
+        if _thumbnail_is_empty(thumbnail):
+            self.logger.warning(
+                f"THUMBNAIL_EMPTY videoId={video_id} — skipping thumbnail write"
+            )
+        else:
+            self._write_thumbnail_to_dynamodb(
+                channel=channel,
+                video_id=video_id,
+                thumbnail=thumbnail,
+            )
+
+        return {
+            "video_id": video_id,
+            "transcript_key": transcript_key,
+            "source_key": source_key,
+            "channel": channel,
+            "status": "success",
+            "chunks": chunks,
+            "chunk_count": len(chunks),
+            "chunks_stored": 0,  # filled in after Qdrant upsert
+            "intelligence": intelligence,
+            "thumbnail": thumbnail,
+            "error": None,
+        }
+
+    # ── sync_missing ──────────────────────────────────────────────────────────
+
+    def _run_sync_missing(self) -> None:
+        """
+        After ingest: find videos in DynamoDB missing from Qdrant and re-index them.
+        Catches any Qdrant write failures from the parallel phase.
+        """
+        from scripts.sync_missing import main as sync_main
+
+        self.logger.info("SYNC_MISSING_START")
+        try:
+            sync_main()
+            self.logger.info("SYNC_MISSING_COMPLETE")
+        except Exception as exc:
+            self.logger.error(f"SYNC_MISSING_FAILED error={exc}")
+
     # ── Main pipeline ─────────────────────────────────────────────────────────
 
     def run_s3_transcript_analysis(self, prefix=None, limit=None, dry_run=False):
@@ -288,6 +463,7 @@ class PipelineService:
                 "videos_found": total_videos,
                 "videos_indexed": 0,
                 "total_chunks_stored": 0,
+                "failed_videos": [],
                 "results": [],
                 "dry_run": True,
             }
@@ -298,215 +474,178 @@ class PipelineService:
                 limit=use_limit,
             )
 
-            object_results = []
+            # ── Build pending list ────────────────────────────────────────────
+            pending = []  # list of (video_dict, source_key)
             total_videos = 0
-            analyzed_videos = 0
-            total_chunks_stored = 0
-            chunk_map = {}
-            analysis_map = {}
+            object_results = []
 
             for source in source_objects:
                 source_key = source.get("key", "")
-
                 object_result = {
                     "key": source_key,
                     "status": "success",
                     "error": source.get("error"),
                     "transcript_results": [],
                 }
-
                 if source.get("error"):
                     object_result["status"] = "failed"
                     object_results.append(object_result)
                     continue
 
-                videos = source.get("videos", [])
-                total_videos += len(videos)
+                for video in source.get("videos", []):
+                    total_videos += 1
+                    pending.append((video, source_key))
 
-                for video in videos:
+                object_results.append(object_result)
+
+            # ── Parallel Gemini phase ─────────────────────────────────────────
+            worker_services = self._make_worker_gemini_services()
+            retry_queue = []  # (video, source_key) — key-exhausted videos
+            gemini_results = {}  # video_id → result dict
+
+            with ThreadPoolExecutor(max_workers=NUM_WORKERS) as pool:
+                futures = {
+                    pool.submit(
+                        self._process_single_video,
+                        video,
+                        source_key,
+                        worker_services[i % len(worker_services)],
+                    ): (video, source_key)
+                    for i, (video, source_key) in enumerate(pending)
+                }
+
+                for future in as_completed(futures):
+                    video, source_key = futures[future]
                     video_id = video.get("videoId", "")
-                    title = video.get("title", "")
-                    channel = video.get("channel", "")
-                    transcript = video.get("transcript", "")
-                    top_comments = video.get("top_comments", [])
-
-                    transcript_key = f"{source_key}::{video_id}"
-
-                    # Check if already indexed in Qdrant — skip to save Gemini quota
                     try:
-                        existing = self.vector_service.client.scroll(
-                            collection_name=self.vector_service.collection_name,
-                            scroll_filter=models.Filter(
-                                must=[
-                                    models.FieldCondition(
-                                        key="transcript_index",
-                                        match=models.MatchValue(value=video_id),
-                                    )
-                                ]
-                            ),
-                            limit=1,
-                        )[0]
-                        if existing:
-                            self.logger.info(
-                                f"VIDEO_SKIP_ALREADY_INDEXED videoId={video_id} channel={channel}"
-                            )
-                            analyzed_videos += 1
-                            total_chunks_stored += len(existing)
-                            continue
-                    except Exception:
-                        pass
-
-                    # Step 1: Chunk
-                    chunks = self.embedding_service.chunk_text(transcript)
-                    chunk_map[transcript_key] = chunks
-
-                    try:
-                        # Step 2: Combined Gemini intelligence + thumbnail — ONE call
-                        self.logger.info(
-                            f"GEMINI_COMBINED_START videoId={video_id} "
-                            f"chunks={len(chunks)} "
-                            f"key=#{self.gemini_service.current_key_index + 1}"
+                        result = future.result()
+                        gemini_results[video_id] = result
+                    except KeysExhaustedError:
+                        retry_queue.append((video, source_key))
+                        self.logger.warning(
+                            f"WORKER_EXHAUSTED videoId={video_id} → retry queue"
                         )
-                        intelligence, thumbnail = (
-                            self.gemini_service.extract_full_video_intelligence(
-                                chunks=chunks,
-                                title=title,
-                                top_comments=top_comments,
-                                video_id=video_id,
-                            )
-                        )
-
-                        # Guard: Gemini 503 returns empty topics — skip this video
-                        if not intelligence.get("topics"):
-                            self.logger.warning(
-                                f"GEMINI_INTELLIGENCE_EMPTY videoId={video_id} "
-                                f"— skipping (likely 503)"
-                            )
-                            object_result["transcript_results"].append(
-                                {
-                                    "transcript_key": transcript_key,
-                                    "video_id": video_id,
-                                    "chunk_count": len(chunks),
-                                    "chunks_stored": 0,
-                                    "intelligence": None,
-                                    "thumbnail": None,
-                                    "error": "Gemini returned empty intelligence (503)",
-                                }
-                            )
-                            continue
-
-                        self.logger.info(
-                            f"GEMINI_COMBINED_DONE videoId={video_id} "
-                            f"category={intelligence['category']} "
-                            f"sentiment={intelligence['sentiment']} "
-                            f"topics={intelligence['topics']} "
-                            f"thumbnail_tone={thumbnail.get('thumbnail_tone')}"
-                        )
-
-                        # Step 3: Write intelligence to DynamoDB
-                        self._write_intelligence_to_dynamodb(
-                            channel=channel,
-                            video_id=video_id,
-                            source_key=source_key,
-                            intelligence=intelligence,
-                            chunk_count=len(chunks),
-                        )
-
-                        # Step 4: Write thumbnail to DynamoDB (if non-empty)
-                        if _thumbnail_is_empty(thumbnail):
-                            self.logger.warning(
-                                f"THUMBNAIL_EMPTY videoId={video_id} "
-                                f"— skipping thumbnail write (no image)"
-                            )
-                        else:
-                            self._write_thumbnail_to_dynamodb(
-                                channel=channel,
-                                video_id=video_id,
-                                thumbnail=thumbnail,
-                            )
-
-                        # Step 6: Embed chunks locally
-                        vectors = self.embedding_service.embed_chunks(chunks)
-
-                        # Step 7: Upsert to Qdrant — SEARCH FIELDS ONLY
-                        points_indexed = self.vector_service.upsert_transcript_chunks(
-                            transcript_key=transcript_key,
-                            source_key=source_key,
-                            transcript_index=video_id,
-                            chunks=chunks,
-                            vectors=vectors,
-                            extra_metadata=None,
-                        )
-
-                        analysis_map[transcript_key] = {
-                            "status": "success",
-                            "chunk_count": len(chunks),
-                            "chunks_stored": points_indexed,
-                            "intelligence": intelligence,
-                            "thumbnail": thumbnail,
-                            "error": None,
-                        }
-                        object_result["transcript_results"].append(
-                            {
-                                "transcript_key": transcript_key,
-                                "video_id": video_id,
-                                "chunk_count": len(chunks),
-                                "chunks_stored": points_indexed,
-                                "intelligence": intelligence,
-                                "thumbnail": thumbnail,
-                                "error": None,
-                            }
-                        )
-                        analyzed_videos += 1
-                        total_chunks_stored += points_indexed
-                        self.logger.info(
-                            f"VIDEO_INDEXED videoId={video_id} channel={channel} "
-                            f"chunks={len(chunks)} points={points_indexed}"
-                        )
-
                     except Exception as exc:
-                        analysis_map[transcript_key] = {
+                        gemini_results[video_id] = {
+                            "video_id": video_id,
+                            "transcript_key": f"{source_key}::{video_id}",
+                            "source_key": source_key,
+                            "channel": video.get("channel", ""),
                             "status": "failed",
-                            "chunk_count": len(chunks),
+                            "chunks": [],
+                            "chunk_count": 0,
                             "chunks_stored": 0,
                             "intelligence": None,
                             "thumbnail": None,
                             "error": str(exc),
                         }
-                        object_result["status"] = "partial_failed"
-                        object_result["transcript_results"].append(
-                            {
-                                "transcript_key": transcript_key,
-                                "video_id": video_id,
-                                "chunk_count": len(chunks),
-                                "chunks_stored": 0,
-                                "intelligence": None,
-                                "thumbnail": None,
-                                "error": str(exc),
-                            }
-                        )
                         self.logger.error(
                             f"VIDEO_FAILED videoId={video_id} error={exc}"
                         )
 
-                object_results.append(object_result)
+            # ── Retry pass: sequential, full 30-key pool ──────────────────────
+            if retry_queue:
+                self.logger.info(f"RETRY_PASS videos={len(retry_queue)}")
+                for video, source_key in retry_queue:
+                    video_id = video.get("videoId", "")
+                    try:
+                        result = self._process_single_video(
+                            video, source_key, self.gemini_service
+                        )
+                        gemini_results[video_id] = result
+                    except Exception as exc:
+                        gemini_results[video_id] = {
+                            "video_id": video_id,
+                            "transcript_key": f"{source_key}::{video_id}",
+                            "source_key": source_key,
+                            "channel": video.get("channel", ""),
+                            "status": "failed",
+                            "chunks": [],
+                            "chunk_count": 0,
+                            "chunks_stored": 0,
+                            "intelligence": None,
+                            "thumbnail": None,
+                            "error": str(exc),
+                        }
+                        self.logger.error(
+                            f"RETRY_FAILED videoId={video_id} error={exc}"
+                        )
 
-            result = {
+            # ── Sequential embed + Qdrant upsert ──────────────────────────────
+            analyzed_videos = 0
+            total_chunks_stored = 0
+            failed_video_ids = []
+
+            for video_id, result in gemini_results.items():
+                if result["status"] == "failed":
+                    failed_video_ids.append(video_id)
+                    continue
+                if result["status"] == "skipped":
+                    analyzed_videos += 1
+                    total_chunks_stored += result.get("chunks_stored", 0)
+                    continue
+
+                chunks = result.get("chunks", [])
+                if not chunks:
+                    continue
+
+                vectors = self.embedding_service.embed_chunks(chunks)
+                points_indexed = self.vector_service.upsert_transcript_chunks(
+                    transcript_key=result["transcript_key"],
+                    source_key=result["source_key"],
+                    transcript_index=video_id,
+                    chunks=chunks,
+                    vectors=vectors,
+                    extra_metadata=None,
+                )
+                result["chunks_stored"] = points_indexed
+                analyzed_videos += 1
+                total_chunks_stored += points_indexed
+                self.logger.info(
+                    f"VIDEO_INDEXED videoId={video_id} channel={result['channel']} "
+                    f"chunks={len(chunks)} points={points_indexed}"
+                )
+
+            # ── Rebuild object_results for API response ───────────────────────
+            for obj_result in object_results:
+                source_key = obj_result["key"]
+                for video_id, result in gemini_results.items():
+                    if result.get("source_key") == source_key:
+                        obj_result["transcript_results"].append(
+                            {
+                                "transcript_key": result["transcript_key"],
+                                "video_id": video_id,
+                                "chunk_count": result["chunk_count"],
+                                "chunks_stored": result["chunks_stored"],
+                                "intelligence": result["intelligence"],
+                                "thumbnail": result["thumbnail"],
+                                "error": result["error"],
+                            }
+                        )
+                        if result["status"] == "failed":
+                            obj_result["status"] = "partial_failed"
+
+            # ── sync_missing ──────────────────────────────────────────────────
+            self._run_sync_missing()
+
+            result_summary = {
                 "prefix": use_prefix,
                 "object_limit": use_limit,
                 "objects_processed": len(source_objects),
                 "videos_found": total_videos,
                 "videos_indexed": analyzed_videos,
                 "total_chunks_stored": total_chunks_stored,
+                "failed_videos": failed_video_ids,
                 "results": object_results,
             }
             self.logger.info(
                 f"PIPELINE_COMPLETE videos_found={total_videos} "
                 f"videos_indexed={analyzed_videos} "
                 f"chunks_stored={total_chunks_stored} "
+                f"failed={len(failed_video_ids)} "
                 f"elapsed_s={time.time() - _start:.1f}"
             )
-            return result
+            return result_summary
 
         except Exception as exc:
             self.logger.error(f"PIPELINE_FATAL error={exc}")
