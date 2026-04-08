@@ -38,16 +38,16 @@ DYNAMODB_MAX_ITEM_BYTES = int(os.getenv("DYNAMODB_MAX_ITEM_BYTES", 380000))
 MAX_TRANSCRIPT_CHARS = int(os.getenv("MAX_TRANSCRIPT_CHARS", 120000))
 
 NEWS_CHANNELS = {
-    # "BBCNews": "UC16niRr50-MSBwiO3YDb3RA",
-    # "CNBC": "UCvJJ_dzjViJCoLf5uKUTwoA",
-    # "SkyNews": "UCoMdktPbSTixAyNGwb-UYkQ",
-    # "FoxNews": "UCXIJgqnII2ZOINSWNOGFThA",
+    "BBCNews": "UC16niRr50-MSBwiO3YDb3RA",
+    "CNBC": "UCvJJ_dzjViJCoLf5uKUTwoA",
+    "SkyNews": "UCoMdktPbSTixAyNGwb-UYkQ",
+    "FoxNews": "UCXIJgqnII2ZOINSWNOGFThA",
     "ABCNews": "UCBi2mrWuNuyYy4gbM6fU18Q",
-    # "NBCNews": "UCeY0bbntWzzVIaj2z3QigXg",
-    # "CBSNews": "UC8p1vwvWtl6T73JiExfWs1g",
-    # "NewYorkTimes": "UCqnbDFdCpuN8CMEg0VuEBqA",
-    # "WashingtonPost": "UCHd62-u_v4DvJ8TCFtpi4GA",
-    # "aljazeeraenglish": "UCNye-wNBqNL5ZzHSJj3l8Bg",
+    "NBCNews": "UCeY0bbntWzzVIaj2z3QigXg",
+    "CBSNews": "UC8p1vwvWtl6T73JiExfWs1g",
+    "NewYorkTimes": "UCqnbDFdCpuN8CMEg0VuEBqA",
+    "WashingtonPost": "UCHd62-u_v4DvJ8TCFtpi4GA",
+    "aljazeeraenglish": "UCNye-wNBqNL5ZzHSJj3l8Bg",
 }
 
 # Validation

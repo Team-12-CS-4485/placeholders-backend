@@ -244,7 +244,7 @@ def save_to_s3(channel_name, videos):
     """Save channel data to S3"""
     try:
         timestamp = datetime.now().isoformat()
-        s3_key = f"youtube-data/week6/{channel_name.lower()}.json"
+        s3_key = f"youtube-data/week4/{channel_name.lower()}.json"
 
         payload = {"channel": channel_name, "fetched_at": timestamp, "videos": videos}
 
@@ -403,12 +403,10 @@ def main():
             existing_ids = get_existing_video_ids(
                 dynamodb, DYNAMODB_TABLE, channel_name
             )
-            videos_before_dedup = len(videos)
             videos = [v for v in videos if v["videoId"] not in existing_ids]
-            skipped_count = videos_before_dedup - len(videos)
-            if skipped_count:
+            if existing_ids:
                 logger.info(
-                    f"[{channel_name}] Skipped {skipped_count} already-ingested videos ({len(videos)} new candidates remaining)"
+                    f"[{channel_name}] Skipped {len(existing_ids)} already-ingested videos"
                 )
 
             if not videos:
