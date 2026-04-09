@@ -17,3 +17,4 @@ einops>=0.7.0
 yt-dlp>=2026.2.21
 apscheduler>=3.10.0
 pre-commit>=3.7.0
+slowapi>=0.1.9
