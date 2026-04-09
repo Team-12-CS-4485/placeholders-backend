@@ -611,7 +611,7 @@ class ClusteringService:
 
         # 5. Label (via ClusterLabelingService — uses HDBSCAN labels as temporary IDs)
         cluster_info = self._labeling_service.label_clusters(
-            video_ids, labels, filtered_meta
+            video_ids, labels, filtered_meta, dry_run=dry_run
         )
 
         # 6. Stable cluster matching — remap HDBSCAN IDs to stable IDs

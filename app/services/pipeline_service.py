@@ -30,6 +30,7 @@ from qdrant_client.http import models
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.services import job_service
 from app.services.storage_service import StorageService
 from app.services.embedding_service import EmbeddingService
 from app.services.gemini_service import GeminiService, KeysExhaustedError
@@ -439,7 +440,9 @@ class PipelineService:
 
     # ── Main pipeline ─────────────────────────────────────────────────────────
 
-    def run_s3_transcript_analysis(self, prefix=None, limit=None, dry_run=False):
+    def run_s3_transcript_analysis(
+        self, prefix=None, limit=None, dry_run=False, job_id=None
+    ):
         use_prefix = prefix if prefix is not None else settings.s3_prefix
         use_limit = limit if limit is not None else settings.s3_object_limit
         _start = time.time()
@@ -452,9 +455,121 @@ class PipelineService:
                 prefix=use_prefix,
                 limit=use_limit,
             )
-            total_videos = sum(len(s.get("videos", [])) for s in source_objects)
+
+            # Get all already-indexed video IDs from Qdrant (one scroll, no Gemini)
+            indexed_ids: set[str] = set()
+            try:
+                offset = None
+                while True:
+                    results, offset = self.vector_service.client.scroll(
+                        collection_name=self.vector_service.collection_name,
+                        limit=500,
+                        offset=offset,
+                        with_vectors=False,
+                        with_payload=["transcript_index"],
+                    )
+                    for point in results:
+                        vid = point.payload.get("transcript_index", "")
+                        if vid:
+                            indexed_ids.add(vid)
+                    if offset is None:
+                        break
+            except Exception as exc:
+                self.logger.warning(f"DRY_RUN_QDRANT_CHECK_FAILED error={exc}")
+
+            object_results = []
+            total_videos = 0
+            would_index = 0
+            would_skip = 0
+
+            for source in source_objects:
+                source_key = source.get("key", "")
+                transcript_results = []
+
+                if source.get("error"):
+                    object_results.append(
+                        {
+                            "key": source_key,
+                            "status": "failed",
+                            "error": source["error"],
+                            "transcript_results": [],
+                        }
+                    )
+                    continue
+
+                for video in source.get("videos", []):
+                    total_videos += 1
+                    video_id = video.get("videoId", "")
+                    channel = video.get("channel", "")
+                    transcript = video.get("transcript", "")
+                    already_indexed = video_id in indexed_ids
+
+                    # Estimate chunk count from transcript length (no actual chunking)
+                    estimated_chunks = (
+                        max(1, len(transcript) // 6000) if transcript else 0
+                    )
+
+                    if already_indexed:
+                        would_skip += 1
+                        transcript_results.append(
+                            {
+                                "transcript_key": f"{source_key}::{video_id}",
+                                "video_id": video_id,
+                                "channel": channel,
+                                "status": "would_skip",
+                                "reason": "already indexed in Qdrant",
+                                "chunk_count": estimated_chunks,
+                                "chunks_stored": 0,
+                                "intelligence": None,
+                                "thumbnail": None,
+                                "error": None,
+                            }
+                        )
+                    else:
+                        would_index += 1
+                        transcript_results.append(
+                            {
+                                "transcript_key": f"{source_key}::{video_id}",
+                                "video_id": video_id,
+                                "channel": channel,
+                                "status": "would_index",
+                                "reason": "new video — would chunk → Gemini → embed → Qdrant",
+                                "chunk_count": estimated_chunks,
+                                "chunks_stored": estimated_chunks,
+                                "intelligence": {
+                                    "topics": ["[Gemini would extract topic tags]"],
+                                    "category": "[Gemini would classify category]",
+                                    "sentiment": "[positive | negative | neutral]",
+                                    "key_claims": [
+                                        "[Gemini would extract factual claims]"
+                                    ],
+                                    "is_breaking": False,
+                                    "public_sentiment": "[Gemini would infer from comments]",
+                                    "public_sentiment_score": 0.0,
+                                },
+                                "thumbnail": {
+                                    "thumbnail_tone": "[Gemini Vision would classify tone]",
+                                    "thumbnail_clickbait_score": 0,
+                                    "thumbnail_brand_consistent": False,
+                                    "thumbnail_visual": "[Gemini Vision would describe image]",
+                                    "thumbnail_insight": "[Gemini Vision would explain clickbait rating]",
+                                },
+                                "error": None,
+                            }
+                        )
+
+                object_results.append(
+                    {
+                        "key": source_key,
+                        "status": "would_process",
+                        "error": None,
+                        "transcript_results": transcript_results,
+                    }
+                )
+
             self.logger.info(
-                f"PIPELINE_DRY_RUN objects={len(source_objects)} videos={total_videos}"
+                f"PIPELINE_DRY_RUN objects={len(source_objects)} "
+                f"videos={total_videos} would_index={would_index} would_skip={would_skip}"
             )
             return {
                 "prefix": use_prefix,
@@ -462,9 +577,17 @@ class PipelineService:
                 "objects_processed": len(source_objects),
                 "videos_found": total_videos,
                 "videos_indexed": 0,
+                "would_index": would_index,
+                "would_skip": would_skip,
                 "total_chunks_stored": 0,
+                "estimated_chunks": sum(
+                    r["chunk_count"]
+                    for obj in object_results
+                    for r in obj.get("transcript_results", [])
+                    if r["status"] == "would_index"
+                ),
                 "failed_videos": [],
-                "results": [],
+                "results": object_results,
                 "dry_run": True,
             }
 
@@ -497,6 +620,9 @@ class PipelineService:
                     pending.append((video, source_key))
 
                 object_results.append(object_result)
+
+            if job_id:
+                job_service.update_total(job_id, len(pending))
 
             # ── Parallel Gemini phase ─────────────────────────────────────────
             worker_services = self._make_worker_gemini_services()
@@ -551,6 +677,17 @@ class PipelineService:
                         }
                         self.logger.error(
                             f"WORKER_FAILED worker={worker_idx} video={video_id} error={exc}"
+                        )
+
+                    if job_id:
+                        job_service.increment_progress(
+                            job_id,
+                            failed_video=(
+                                video_id
+                                if gemini_results.get(video_id, {}).get("status")
+                                == "failed"
+                                else None
+                            ),
                         )
 
             # ── Retry pass: sequential, full 30-key pool ──────────────────────

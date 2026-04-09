@@ -405,12 +405,50 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                 f"ARTICLE_DRY_RUN jobs={len(deduped_jobs)} — skipping generation"
             )
             weeks_seen = {wk for _, _, wk in deduped_jobs}
+
+            # Build per-cluster preview — check which articles already exist
+            dry_per_cluster: dict[str, dict] = {}
+            would_generate = 0
+            would_skip = 0
+            for c, wd, wk in deduped_jobs:
+                cid = str(int(c.get("cluster_id", -1)))
+                label = c.get("cluster_label", "Unknown")
+                exists = self._dynamo.article_exists(int(cid), wk)
+                status = "would_skip" if exists else "would_generate"
+                if exists:
+                    would_skip += 1
+                else:
+                    would_generate += 1
+
+                dry_per_cluster.setdefault(
+                    cid,
+                    {
+                        "cluster_label": label,
+                        "weeks": {},
+                    },
+                )
+                dry_per_cluster[cid]["weeks"][wk] = {
+                    "status": status,
+                    "video_count": wd.get("video_count", 0),
+                    "view_count": wd.get("view_count", 0),
+                    "simulated_structure": (
+                        None
+                        if exists
+                        else {
+                            "title": f"[Gemini would generate headline for '{label}' in {wk}]",
+                            "overview": "[Gemini would generate 2-3 sentence overview with key stats]",
+                            "body": f"[Gemini would generate 400-600 word article covering {wd.get('video_count', 0)} videos across {wk}]",
+                        }
+                    ),
+                }
+
             return {
                 "articles_generated": 0,
-                "articles_skipped": len(deduped_jobs),
+                "articles_would_generate": would_generate,
+                "articles_would_skip": would_skip,
                 "articles_failed": 0,
                 "weeks_processed": sorted(weeks_seen, key=_week_number),
-                "per_cluster": {},
+                "per_cluster": dry_per_cluster,
                 "dry_run": True,
             }
 

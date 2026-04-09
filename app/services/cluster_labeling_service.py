@@ -57,7 +57,7 @@ class ClusterLabelingService:
 
     # ── TF-IDF + Gemini labeling ────────────────────────────────────────────
 
-    def label_clusters(self, video_ids, labels, meta_map):
+    def label_clusters(self, video_ids, labels, meta_map, dry_run=False):
         cluster_members: dict[int, list[str]] = {}
         for vid, label in zip(video_ids, labels):
             cluster_members.setdefault(int(label), []).append(vid)
@@ -210,11 +210,25 @@ class ClusterLabelingService:
             tfidf_labels[cid] = chosen
             used.add(chosen)
 
-        # ── Gemini enrichment per cluster ──
+        # ── Gemini enrichment per cluster (skipped in dry_run) ──
         cluster_labels: dict[int, str] = dict(tfidf_labels)
         cluster_narratives: dict[int, dict] = {}
 
-        for cid in real_cids:
+        if dry_run:
+            for cid in real_cids:
+                cluster_narratives[cid] = {
+                    "headline": "[Gemini would generate a newspaper headline]",
+                    "summary": "[Gemini would generate a one-sentence summary with stats]",
+                }
+                for wd in cluster_stats[cid]["week_data"]:
+                    wd["week_overview"] = (
+                        "[Gemini would generate a 2-sentence week overview]"
+                    )
+            logger.info(
+                f"LABEL_DRY_RUN skipping Gemini — using TF-IDF labels for {len(real_cids)} clusters"
+            )
+
+        for cid in real_cids if not dry_run else []:
             top_topics = [t[0] for t in cluster_topic_counts[cid].most_common(5)]
             claims = cluster_claims.get(cid, [])
             titles = cluster_titles.get(cid, [])
