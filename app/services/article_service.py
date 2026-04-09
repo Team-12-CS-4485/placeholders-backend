@@ -200,7 +200,9 @@ WRITING INSTRUCTIONS
 4. Include at least one specific number or statistic in the body.
 5. Close with a single forward-looking sentence about implications or what to watch.
 6. Tone: authoritative, neutral, past tense where describing events.
-7. Length: 400–600 words in the body.
+7. Avoid common AI clichés, vague phrasing, and sensational language. Keep wording precise and direct.
+8. Discuss conflicting narratives by briefly presenting differing viewpoints in a balanced, non-speculative manner.
+9. Length: 400–600 words in the body.
 
 Return ONLY a valid JSON object with exactly these keys (no markdown fences):
 {{
