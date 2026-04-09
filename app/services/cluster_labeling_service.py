@@ -507,14 +507,17 @@ class ClusterLabelingService:
                 f"label={existing_clusters[old_cid]['label']!r}"
             )
 
-        # Assign new IDs for unmatched new clusters
-        max_existing_id = max(existing_clusters.keys()) if existing_clusters else -1
-        next_id = max(max_existing_id, max(id_map.values(), default=-1)) + 1
+        # Assign new IDs for unmatched new clusters — fill lowest available gap
+        all_taken = set(existing_clusters.keys())
         new_ids = []
+        next_id = 0
         for new_cid in real_new:
             if new_cid not in id_map:
+                while next_id in all_taken:
+                    next_id += 1
                 id_map[new_cid] = next_id
                 new_ids.append(next_id)
+                all_taken.add(next_id)
                 logger.info(
                     f"STABLE_NEW_CLUSTER hdbscan={new_cid} "
                     f"→ stable={next_id} "

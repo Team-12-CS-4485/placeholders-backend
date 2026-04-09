@@ -325,6 +325,49 @@ class ClusteringService:
             )
         return marked
 
+    def _purge_inactive_clusters(self, existing_clusters: dict) -> int:
+        """
+        Delete clusters with status='inactive' from narrative-clusters and
+        remove their associated articles from the articles table.
+        Called once per pipeline run after decline marking.
+        """
+        articles_table = self._dynamodb.Table("articles")
+        inactive_ids = [
+            cid
+            for cid, info in existing_clusters.items()
+            if info.get("status") == "inactive"
+        ]
+        if not inactive_ids:
+            return 0
+
+        # Delete articles for inactive clusters
+        articles_deleted = 0
+        scan_kwargs: dict = {
+            "ProjectionExpression": "article_id, cluster_id",
+        }
+        while True:
+            resp = articles_table.scan(**scan_kwargs)
+            for item in resp["Items"]:
+                if int(item.get("cluster_id", -1)) in inactive_ids:
+                    articles_table.delete_item(Key={"article_id": item["article_id"]})
+                    articles_deleted += 1
+            if "LastEvaluatedKey" not in resp:
+                break
+            scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+        # Delete the cluster records
+        for cid in inactive_ids:
+            self._clusters_table.delete_item(Key={"cluster_id": _dec(cid)})
+            logger.info(
+                f"DYNAMO_CLUSTER_PURGED cluster={cid} "
+                f"label={existing_clusters[cid].get('label', '?')!r}"
+            )
+
+        logger.info(
+            f"CLUSTER_PURGE inactive={len(inactive_ids)} articles_deleted={articles_deleted}"
+        )
+        return len(inactive_ids)
+
     def _write_cluster_summaries(
         self, cluster_info, existing_clusters=None, new_ids=None
     ):
@@ -385,6 +428,107 @@ class ClusteringService:
             )
 
         return written
+
+    # ── Sequential renumbering ───────────────────────────────────────────────
+
+    def _renumber_clusters(self) -> int:
+        """
+        Renumber all active/declining clusters to sequential IDs (0, 1, 2...)
+        sorted by created_at ascending. Updates narrative-clusters, youtube-videos,
+        and articles so all foreign keys stay consistent.
+        Called as the final step of every pipeline run.
+        """
+        articles_table = self._dynamodb.Table("articles")
+
+        # Scan current clusters (active + declining only)
+        all_clusters = []
+        scan_kwargs: dict = {}
+        while True:
+            resp = self._clusters_table.scan(**scan_kwargs)
+            all_clusters.extend(resp["Items"])
+            if "LastEvaluatedKey" not in resp:
+                break
+            scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+        remappable = sorted(
+            [
+                i
+                for i in all_clusters
+                if i.get("status", "active") in ("active", "declining", "new")
+            ],
+            key=lambda i: i.get("created_at", ""),
+        )
+
+        # Build id_map: {old_id: new_id} — only for clusters that actually need to move
+        id_map: dict[int, int] = {}
+        for new_id, item in enumerate(remappable):
+            old_id = int(item["cluster_id"])
+            if old_id != new_id:
+                id_map[old_id] = new_id
+
+        if not id_map:
+            logger.debug("RENUMBER_CLUSTERS no changes needed")
+            return 0
+
+        logger.info(f"RENUMBER_CLUSTERS remapping {len(id_map)} cluster IDs")
+
+        # Update narrative-clusters (PK change = delete + put)
+        for item in remappable:
+            old_id = int(item["cluster_id"])
+            if old_id not in id_map:
+                continue
+            new_id = id_map[old_id]
+            new_item = dict(item)
+            new_item["cluster_id"] = _dec(new_id)
+            self._clusters_table.delete_item(Key={"cluster_id": _dec(old_id)})
+            self._clusters_table.put_item(Item=new_item)
+            logger.debug(
+                f"RENUMBER cluster {old_id} → {new_id} [{item.get('cluster_label', '?')}]"
+            )
+
+        # Update youtube-videos
+        old_ids_dec = {_dec(old_id) for old_id in id_map}
+        video_scan_kwargs: dict = {
+            "ProjectionExpression": "PartitionKey, SortKey, cluster_id",
+            "FilterExpression": boto3.dynamodb.conditions.Attr("cluster_id").exists(),
+        }
+        while True:
+            resp = self._videos_table.scan(**video_scan_kwargs)
+            for item in resp["Items"]:
+                if item.get("cluster_id") in old_ids_dec:
+                    new_id = id_map[int(item["cluster_id"])]
+                    self._videos_table.update_item(
+                        Key={
+                            "PartitionKey": item["PartitionKey"],
+                            "SortKey": item["SortKey"],
+                        },
+                        UpdateExpression="SET cluster_id = :cid",
+                        ExpressionAttributeValues={":cid": _dec(new_id)},
+                    )
+            if "LastEvaluatedKey" not in resp:
+                break
+            video_scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+        # Update articles
+        article_scan_kwargs: dict = {
+            "ProjectionExpression": "article_id, cluster_id",
+        }
+        while True:
+            resp = articles_table.scan(**article_scan_kwargs)
+            for item in resp["Items"]:
+                if item.get("cluster_id") in old_ids_dec:
+                    new_id = id_map[int(item["cluster_id"])]
+                    articles_table.update_item(
+                        Key={"article_id": item["article_id"]},
+                        UpdateExpression="SET cluster_id = :cid",
+                        ExpressionAttributeValues={":cid": _dec(new_id)},
+                    )
+            if "LastEvaluatedKey" not in resp:
+                break
+            article_scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+        logger.info(f"RENUMBER_COMPLETE remapped={len(id_map)}")
+        return len(id_map)
 
     # ── Freshness helpers ────────────────────────────────────────────────────
 
@@ -521,6 +665,12 @@ class ClusteringService:
                         f"FRESHNESS_CHECK current_week={current_week} "
                         f"stale_clusters={stale_ids}"
                     )
+
+            # 11. Purge inactive clusters and their articles
+            self._purge_inactive_clusters(existing_clusters)
+
+            # 12. Renumber all remaining clusters to sequential IDs
+            self._renumber_clusters()
 
         real_clusters = {k: v for k, v in cluster_info.items() if k != -1}
         noise_info = cluster_info.get(-1, {})

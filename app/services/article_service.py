@@ -189,8 +189,6 @@ class ArticleService:
 
         video_count = week_slice.get("video_count", cluster.get("video_count", 0))
         view_count = week_slice.get("view_count", cluster.get("total_views", 0))
-        video_count = week_slice.get("video_count", cluster.get("video_count", 0))
-        view_count = week_slice.get("view_count", cluster.get("total_views", 0))
         breaking_count = week_slice.get(
             "breaking_count", cluster.get("breaking_count", 0)
         )

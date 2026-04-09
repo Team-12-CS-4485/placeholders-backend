@@ -158,6 +158,8 @@ class GeminiService:
             or "UNAVAILABLE" in exc_str
             or "INTERNAL" in exc_str
             or "overloaded" in exc_str.lower()
+            or "disconnected" in exc_str.lower()
+            or "without sending a response" in exc_str.lower()
             or status in (500, 503)
         ):
             return True, "server_error"
