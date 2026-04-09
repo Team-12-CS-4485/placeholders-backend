@@ -44,7 +44,7 @@ jobs:
           commit_message: "style: auto-format with black"
 
       - name: Test with pytest
-        run: pytest tests/ -m "not live"
+        run: pytest tests/
 
   build-docker:
     needs: lint-and-test
