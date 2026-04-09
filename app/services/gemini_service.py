@@ -102,7 +102,9 @@ class GeminiService:
 
         self.api_keys = api_keys or [settings.genai_api_key]
         self.current_key_index = 0
-        self.client = client or genai.Client(api_key=self.api_keys[0])
+        self.client = client or genai.Client(
+            api_key=self.api_keys[0], http_options={"timeout": 60_000}
+        )
         self.fail_on_exhaustion = fail_on_exhaustion
 
         self._chunker = chunker or get_default_chunker(
@@ -130,7 +132,7 @@ class GeminiService:
             return False
         self.current_key_index = next_index
         new_key = self.api_keys[self.current_key_index]
-        self.client = genai.Client(api_key=new_key)
+        self.client = genai.Client(api_key=new_key, http_options={"timeout": 60_000})
         logger.warning(
             f"API_KEY_ROTATED key_index={self.current_key_index}/{len(self.api_keys)-1}"
         )
@@ -211,7 +213,9 @@ class GeminiService:
                         "ALL_KEYS_EXHAUSTED resetting to key 0 and waiting 60s"
                     )
                     self.current_key_index = 0
-                    self.client = genai.Client(api_key=self.api_keys[0])
+                    self.client = genai.Client(
+                        api_key=self.api_keys[0], http_options={"timeout": 60_000}
+                    )
                     time.sleep(60)
                     continue
 
@@ -260,7 +264,9 @@ class GeminiService:
                         "ALL_KEYS_EXHAUSTED (vision) resetting to key 0 and waiting 60s"
                     )
                     self.current_key_index = 0
-                    self.client = genai.Client(api_key=self.api_keys[0])
+                    self.client = genai.Client(
+                        api_key=self.api_keys[0], http_options={"timeout": 60_000}
+                    )
                     time.sleep(60)
                     continue
 

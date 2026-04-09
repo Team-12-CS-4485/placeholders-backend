@@ -121,6 +121,7 @@ class ArticleService:
         wk: str,
         gemini_service: GeminiService,
         force: bool,
+        existing_set: set,
     ) -> dict:
         """
         Generate and persist one article for a (cluster, week) combination.
@@ -132,7 +133,7 @@ class ArticleService:
         wk_num = _week_number(wk)
         label = cluster.get("cluster_label", f"Cluster {cid}")
 
-        if not force and self._dynamo.article_exists(cid, wk_num):
+        if not force and (cid, wk_num) in existing_set:
             logger.debug(f"ARTICLE_SKIP cluster={cid} week={wk} (already exists)")
             return {"status": "skipped", "week": wk}
 
@@ -394,6 +395,14 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
             )
         )
 
+        # Load existing articles once — avoids N full-table scans (one per cluster×week).
+        # Build a set of (cluster_id, week_number) pairs for O(1) existence checks.
+        existing_articles = self._dynamo.get_articles(limit=10_000)
+        existing_set: set[tuple[int, int]] = {
+            (a["cluster_id"], a["week_number"]) for a in existing_articles
+        }
+        logger.info(f"ARTICLES_EXISTING_LOADED count={len(existing_set)}")
+
         generated = 0
         skipped = 0
         failed = 0
@@ -413,7 +422,7 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
             for c, wd, wk in deduped_jobs:
                 cid = str(int(c.get("cluster_id", -1)))
                 label = c.get("cluster_label", "Unknown")
-                exists = self._dynamo.article_exists(int(cid), wk)
+                exists = (int(cid), _week_number(wk)) in existing_set
                 status = "would_skip" if exists else "would_generate"
                 if exists:
                     would_skip += 1
@@ -474,6 +483,7 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                     wk,
                     worker_services[worker_idx],
                     force,
+                    existing_set,
                 )
                 futures[fut] = (c, week_slice, wk, worker_idx, time.time())
 
@@ -520,7 +530,7 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
                 t0 = time.time()
                 try:
                     result = self._generate_single_article(
-                        c, week_slice, wk, self._gemini, force
+                        c, week_slice, wk, self._gemini, force, existing_set
                     )
                     per_cluster[key] = result
                     if result["status"] == "generated":

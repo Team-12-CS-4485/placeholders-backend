@@ -1,5 +1,6 @@
 # Lean API server requirements for Render deployment
 fastapi>=0.115.0
+slowapi>=0.5.7
 uvicorn[standard]>=0.30.0
 python-dotenv>=1.0.0
 boto3==1.34.0

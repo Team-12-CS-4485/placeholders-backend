@@ -131,7 +131,7 @@ class PipelineService:
         source_key: str,
         intelligence: dict,
         chunk_count: int,
-    ) -> None:
+    ) -> bool:
         """
         Write Gemini intelligence fields to the existing DynamoDB video item.
         Only writes fields that have real values — never writes None or empty strings
@@ -201,7 +201,7 @@ class PipelineService:
         values[":ts"] = datetime.now(timezone.utc).isoformat()
 
         if not set_parts:
-            return
+            return True
 
         try:
             self._videos_table.update_item(
@@ -214,8 +214,10 @@ class PipelineService:
                 f"DYNAMO_INTEL_WRITTEN videoId={video_id} "
                 f"fields={list(names.values())}"
             )
+            return True
         except Exception as exc:
             self.logger.error(f"DYNAMO_INTEL_FAILED videoId={video_id} error={exc}")
+            return False
 
     # ── DynamoDB: thumbnail write ─────────────────────────────────────────────
 
@@ -224,7 +226,7 @@ class PipelineService:
         channel: str,
         video_id: str,
         thumbnail: dict,
-    ) -> None:
+    ) -> bool:
         """
         Write Gemini vision thumbnail fields to the existing DynamoDB video item.
 
@@ -239,7 +241,7 @@ class PipelineService:
         """
         if _thumbnail_is_empty(thumbnail):
             self.logger.info(f"THUMBNAIL_SKIP_EMPTY videoId={video_id}")
-            return
+            return True
 
         set_parts = []
         names = {}
@@ -270,7 +272,7 @@ class PipelineService:
             values[":tins"] = str(thumbnail["thumbnail_insight"])
 
         if not set_parts:
-            return
+            return True
 
         try:
             self._videos_table.update_item(
@@ -284,8 +286,10 @@ class PipelineService:
                 f"tone={thumbnail.get('thumbnail_tone')} "
                 f"score={thumbnail.get('thumbnail_clickbait_score')}"
             )
+            return True
         except Exception as exc:
             self.logger.error(f"DYNAMO_THUMBNAIL_FAILED videoId={video_id} error={exc}")
+            return False
 
     # ── Per-video worker ──────────────────────────────────────────────────────
 
@@ -339,6 +343,8 @@ class PipelineService:
                     "chunks_stored": len(existing),
                     "intelligence": None,
                     "thumbnail": None,
+                    "dynamo_intel_ok": True,
+                    "dynamo_thumb_ok": True,
                     "error": None,
                 }
         except Exception:
@@ -376,6 +382,8 @@ class PipelineService:
                 "chunks_stored": 0,
                 "intelligence": None,
                 "thumbnail": None,
+                "dynamo_intel_ok": True,
+                "dynamo_thumb_ok": True,
                 "error": "Gemini returned empty intelligence (503)",
             }
 
@@ -388,7 +396,7 @@ class PipelineService:
         )
 
         # Step 3: Write intelligence to DynamoDB
-        self._write_intelligence_to_dynamodb(
+        intel_ok = self._write_intelligence_to_dynamodb(
             channel=channel,
             video_id=video_id,
             source_key=source_key,
@@ -401,8 +409,9 @@ class PipelineService:
             self.logger.warning(
                 f"THUMBNAIL_EMPTY videoId={video_id} — skipping thumbnail write"
             )
+            thumb_ok = True
         else:
-            self._write_thumbnail_to_dynamodb(
+            thumb_ok = self._write_thumbnail_to_dynamodb(
                 channel=channel,
                 video_id=video_id,
                 thumbnail=thumbnail,
@@ -419,6 +428,8 @@ class PipelineService:
             "chunks_stored": 0,  # filled in after Qdrant upsert
             "intelligence": intelligence,
             "thumbnail": thumbnail,
+            "dynamo_intel_ok": intel_ok,
+            "dynamo_thumb_ok": thumb_ok,
             "error": None,
         }
 
@@ -777,6 +788,18 @@ class PipelineService:
             # ── sync_missing ──────────────────────────────────────────────────
             self._run_sync_missing()
 
+            failed_dynamo_writes = [
+                vid
+                for vid, r in gemini_results.items()
+                if not r.get("dynamo_intel_ok", True)
+                or not r.get("dynamo_thumb_ok", True)
+            ]
+            if failed_dynamo_writes:
+                self.logger.error(
+                    f"DYNAMO_WRITE_FAILURES count={len(failed_dynamo_writes)} "
+                    f"video_ids={failed_dynamo_writes}"
+                )
+
             result_summary = {
                 "prefix": use_prefix,
                 "object_limit": use_limit,
@@ -785,12 +808,14 @@ class PipelineService:
                 "videos_indexed": analyzed_videos,
                 "total_chunks_stored": total_chunks_stored,
                 "failed_videos": failed_video_ids,
+                "failed_dynamo_writes": failed_dynamo_writes,
                 "results": object_results,
             }
             self.logger.info(
                 f"INGEST_COMPLETE videos={total_videos} "
                 f"succeeded={analyzed_videos} "
                 f"failed={len(failed_video_ids)} "
+                f"dynamo_write_failures={len(failed_dynamo_writes)} "
                 f"retried={len(retry_queue)} "
                 f"chunks_stored={total_chunks_stored} "
                 f"elapsed_s={time.time() - _start:.1f}"

@@ -13,10 +13,11 @@ All write endpoints accept dry_run=true to preview without writing.
 
 import threading
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from app.core.cache import invalidate_all
 from app.core.logging import get_logger
+from app.core.rate_limit import limiter
 
 logger = get_logger(__name__)
 
@@ -93,7 +94,8 @@ def _run_full_pipeline_background(request: PipelineRunRequest, job_id: str) -> N
 
 
 @router.post("/run", response_model=JobSubmitResponse)
-def run_full_pipeline(request: PipelineRunRequest):
+@limiter.limit("2/minute")
+def run_full_pipeline(http_request: Request, request: PipelineRunRequest):
     """
     Starts the full pipeline in the background:
     1. Ingest — S3 → chunk → Gemini (10 parallel workers) → embed → Qdrant
@@ -130,7 +132,8 @@ def run_full_pipeline(request: PipelineRunRequest):
 
 
 @router.post("/ingest", response_model=JobSubmitResponse)
-def run_ingest(request: PipelineRunRequest):
+@limiter.limit("5/minute")
+def run_ingest(http_request: Request, request: PipelineRunRequest):
     """
     Ingest only — S3 → chunk → Gemini (10 parallel workers) → DynamoDB → Qdrant.
     Returns immediately with a job_id. Poll GET /api/pipeline/jobs/{job_id} for status.

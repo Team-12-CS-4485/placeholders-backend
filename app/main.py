@@ -22,6 +22,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.endpoints.trends import router as trends_router, weeks_router
 from app.api.endpoints.pipeline import router as pipeline_router
@@ -31,10 +34,14 @@ from app.api.endpoints.search import router as search_router
 from app.api.endpoints.stats import router as stats_router
 from app.api.endpoints.articles import router as articles_router
 from app.core.logging import get_logger, request_id_var
+from app.core.rate_limit import limiter
 
 app = FastAPI(title="Placeholders Backend API")
 logger = get_logger(__name__)
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
