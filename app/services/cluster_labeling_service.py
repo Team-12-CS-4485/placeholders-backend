@@ -57,7 +57,7 @@ class ClusterLabelingService:
 
     # ── TF-IDF + Gemini labeling ────────────────────────────────────────────
 
-    def label_clusters(self, video_ids, labels, meta_map):
+    def label_clusters(self, video_ids, labels, meta_map, dry_run=False):
         cluster_members: dict[int, list[str]] = {}
         for vid, label in zip(video_ids, labels):
             cluster_members.setdefault(int(label), []).append(vid)
@@ -210,11 +210,25 @@ class ClusterLabelingService:
             tfidf_labels[cid] = chosen
             used.add(chosen)
 
-        # ── Gemini enrichment per cluster ──
+        # ── Gemini enrichment per cluster (skipped in dry_run) ──
         cluster_labels: dict[int, str] = dict(tfidf_labels)
         cluster_narratives: dict[int, dict] = {}
 
-        for cid in real_cids:
+        if dry_run:
+            for cid in real_cids:
+                cluster_narratives[cid] = {
+                    "headline": "[Gemini would generate a newspaper headline]",
+                    "summary": "[Gemini would generate a one-sentence summary with stats]",
+                }
+                for wd in cluster_stats[cid]["week_data"]:
+                    wd["week_overview"] = (
+                        "[Gemini would generate a 2-sentence week overview]"
+                    )
+            logger.info(
+                f"LABEL_DRY_RUN skipping Gemini — using TF-IDF labels for {len(real_cids)} clusters"
+            )
+
+        for cid in real_cids if not dry_run else []:
             top_topics = [t[0] for t in cluster_topic_counts[cid].most_common(5)]
             claims = cluster_claims.get(cid, [])
             titles = cluster_titles.get(cid, [])
@@ -393,7 +407,7 @@ class ClusterLabelingService:
                 "week_data": stats["week_data"],
                 "top_claims": cluster_claims.get(cid, []),
             }
-            logger.info(
+            logger.debug(
                 f"CLUSTER_LABELED id={cid} "
                 f"label={cluster_labels[cid]!r} videos={len(vids)}"
             )
@@ -422,7 +436,7 @@ class ClusterLabelingService:
             if "LastEvaluatedKey" not in resp:
                 break
             scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
-        logger.info(f"STABLE_MATCH_LOADED existing_clusters={len(existing)}")
+        logger.debug(f"STABLE_MATCH_LOADED existing_clusters={len(existing)}")
         return existing
 
     def embed_cluster_description(self, label: str, topics: list[str]) -> list[float]:
@@ -501,20 +515,23 @@ class ClusterLabelingService:
             id_map[new_cid] = old_cid
             used_new.add(new_cid)
             used_old.add(old_cid)
-            logger.info(
+            logger.debug(
                 f"STABLE_MATCH hdbscan={new_cid} → stable={old_cid} "
                 f"sim={sim:.2f} "
                 f"label={existing_clusters[old_cid]['label']!r}"
             )
 
-        # Assign new IDs for unmatched new clusters
-        max_existing_id = max(existing_clusters.keys()) if existing_clusters else -1
-        next_id = max(max_existing_id, max(id_map.values(), default=-1)) + 1
+        # Assign new IDs for unmatched new clusters — fill lowest available gap
+        all_taken = set(existing_clusters.keys())
         new_ids = []
+        next_id = 0
         for new_cid in real_new:
             if new_cid not in id_map:
+                while next_id in all_taken:
+                    next_id += 1
                 id_map[new_cid] = next_id
                 new_ids.append(next_id)
+                all_taken.add(next_id)
                 logger.info(
                     f"STABLE_NEW_CLUSTER hdbscan={new_cid} "
                     f"→ stable={next_id} "

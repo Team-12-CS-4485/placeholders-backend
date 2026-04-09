@@ -83,6 +83,12 @@ THUMBNAIL_TONE_OPTIONS = (
 )
 
 
+class KeysExhaustedError(Exception):
+    """Raised when all keys in a worker's pool are rate-limited."""
+
+    pass
+
+
 class GeminiService:
 
     def __init__(
@@ -90,12 +96,16 @@ class GeminiService:
         client=None,
         chunker: Optional[SemanticChunker] = None,
         api_keys=None,
+        fail_on_exhaustion: bool = False,
     ):
         self.model_id = settings.gemini_model_id
 
         self.api_keys = api_keys or [settings.genai_api_key]
         self.current_key_index = 0
-        self.client = client or genai.Client(api_key=self.api_keys[0])
+        self.client = client or genai.Client(
+            api_key=self.api_keys[0], http_options={"timeout": 60_000}
+        )
+        self.fail_on_exhaustion = fail_on_exhaustion
 
         self._chunker = chunker or get_default_chunker(
             model_name=settings.embedding_model_id
@@ -122,7 +132,7 @@ class GeminiService:
             return False
         self.current_key_index = next_index
         new_key = self.api_keys[self.current_key_index]
-        self.client = genai.Client(api_key=new_key)
+        self.client = genai.Client(api_key=new_key, http_options={"timeout": 60_000})
         logger.warning(
             f"API_KEY_ROTATED key_index={self.current_key_index}/{len(self.api_keys)-1}"
         )
@@ -150,6 +160,8 @@ class GeminiService:
             or "UNAVAILABLE" in exc_str
             or "INTERNAL" in exc_str
             or "overloaded" in exc_str.lower()
+            or "disconnected" in exc_str.lower()
+            or "without sending a response" in exc_str.lower()
             or status in (500, 503)
         ):
             return True, "server_error"
@@ -174,7 +186,7 @@ class GeminiService:
                 time.sleep(0.5)  # pace RPM across keys
                 usage = getattr(response, "usage_metadata", None)
                 if usage:
-                    logger.info(
+                    logger.debug(
                         f"GEMINI_TOKENS in={usage.prompt_token_count}"
                         f" out={usage.candidates_token_count}"
                         f" total={usage.total_token_count}"
@@ -193,11 +205,17 @@ class GeminiService:
                             f"GEMINI_KEY_ROTATED attempt={attempt+1} retrying immediately"
                         )
                         continue
+                    if self.fail_on_exhaustion:
+                        raise KeysExhaustedError(
+                            f"All {len(self.api_keys)} keys exhausted for this worker"
+                        )
                     logger.warning(
                         "ALL_KEYS_EXHAUSTED resetting to key 0 and waiting 60s"
                     )
                     self.current_key_index = 0
-                    self.client = genai.Client(api_key=self.api_keys[0])
+                    self.client = genai.Client(
+                        api_key=self.api_keys[0], http_options={"timeout": 60_000}
+                    )
                     time.sleep(60)
                     continue
 
@@ -238,11 +256,17 @@ class GeminiService:
                             f"retrying immediately"
                         )
                         continue
+                    if self.fail_on_exhaustion:
+                        raise KeysExhaustedError(
+                            f"All {len(self.api_keys)} keys exhausted for this worker"
+                        )
                     logger.warning(
                         "ALL_KEYS_EXHAUSTED (vision) resetting to key 0 and waiting 60s"
                     )
                     self.current_key_index = 0
-                    self.client = genai.Client(api_key=self.api_keys[0])
+                    self.client = genai.Client(
+                        api_key=self.api_keys[0], http_options={"timeout": 60_000}
+                    )
                     time.sleep(60)
                     continue
 

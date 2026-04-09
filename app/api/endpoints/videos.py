@@ -24,6 +24,24 @@ def list_videos(
         ) from exc
 
 
+@router.get("/by-channel", response_model=VideoListResponse)
+def get_videos_by_channel(
+    channel_name: str = Query(..., min_length=1),
+    limit: int = Query(default=20, ge=1, le=100),
+    cursor: Optional[str] = Query(default=None),
+):
+    try:
+        service = DynamoService()
+        return service.get_videos_by_channel(
+            channel_name=channel_name, limit=limit, cursor=cursor
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch videos for channel '{channel_name}': {exc}",
+        ) from exc
+
+
 @router.get("/by-id", response_model=VideoDetailItem)
 def get_video_by_id(
     video_id: str = Query(..., min_length=1),

@@ -25,20 +25,24 @@ Usage:
 from __future__ import annotations
 
 import json
-import logging
 import re
+import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.services.dynamo_service import DynamoService
-from app.services.gemini_service import GeminiService
+from app.services.gemini_service import GeminiService, KeysExhaustedError
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _WEEK_RE = re.compile(r"week(\d+)", re.IGNORECASE)
+
+NUM_WORKERS = 10
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -91,6 +95,81 @@ class ArticleService:
     ):
         self._dynamo = dynamo_service or DynamoService()
         self._gemini = gemini_service or GeminiService(api_keys=settings.genai_api_keys)
+
+    # ── Worker helpers ────────────────────────────────────────────────────────
+
+    def _make_worker_gemini_services(self) -> list[GeminiService]:
+        """Split all API keys into NUM_WORKERS groups of ~3 keys each."""
+        keys = self._gemini.api_keys
+        group_size = max(1, len(keys) // NUM_WORKERS)
+        services = []
+        for i in range(0, len(keys), group_size):
+            services.append(
+                GeminiService(
+                    api_keys=keys[i : i + group_size],
+                    fail_on_exhaustion=True,
+                )
+            )
+            if len(services) == NUM_WORKERS:
+                break
+        return services
+
+    def _generate_single_article(
+        self,
+        cluster: dict,
+        week_slice: dict,
+        wk: str,
+        gemini_service: GeminiService,
+        force: bool,
+        existing_set: set,
+    ) -> dict:
+        """
+        Generate and persist one article for a (cluster, week) combination.
+
+        Returns { status: "generated"|"skipped", article_id?, week, headline? }.
+        Raises KeysExhaustedError if the worker's key pool is exhausted.
+        """
+        cid = int(cluster.get("cluster_id", -1))
+        wk_num = _week_number(wk)
+        label = cluster.get("cluster_label", f"Cluster {cid}")
+
+        if not force and (cid, wk_num) in existing_set:
+            logger.debug(f"ARTICLE_SKIP cluster={cid} week={wk} (already exists)")
+            return {"status": "skipped", "week": wk}
+
+        if force:
+            self._dynamo.delete_articles(cid, wk_num)
+
+        video_titles = self._dynamo.get_video_titles_for_cluster(cid)
+        prompt = self._build_prompt(cluster, wk, week_slice, video_titles)
+        raw = gemini_service._gemini(prompt)
+        headline, overview, body = self._parse_response(raw)
+
+        now = datetime.now(timezone.utc).isoformat()
+        article_id = f"article-{uuid.uuid4().hex[:8]}"
+
+        self._dynamo.save_article(
+            {
+                "article_id": article_id,
+                "cluster_id": _dec(cid),
+                "cluster_label": label,
+                "week": wk,
+                "week_number": _dec(wk_num),
+                "title": headline,
+                "overview": overview,
+                "body": body,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+
+        logger.info(f"ARTICLE_GENERATED cluster={cid} week={wk} id={article_id}")
+        return {
+            "status": "generated",
+            "article_id": article_id,
+            "week": wk,
+            "headline": headline,
+        }
 
     # ── Prompt builder ────────────────────────────────────────────────────────
 
@@ -316,6 +395,14 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
             )
         )
 
+        # Load existing articles once — avoids N full-table scans (one per cluster×week).
+        # Build a set of (cluster_id, week_number) pairs for O(1) existence checks.
+        existing_articles = self._dynamo.get_articles(limit=10_000)
+        existing_set: set[tuple[int, int]] = {
+            (a["cluster_id"], a["week_number"]) for a in existing_articles
+        }
+        logger.info(f"ARTICLES_EXISTING_LOADED count={len(existing_set)}")
+
         generated = 0
         skipped = 0
         failed = 0
@@ -324,87 +411,148 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
 
         if dry_run:
             logger.info(
-                f"ARTICLE_DRY_RUN jobs={len(deduped_jobs)} " "— skipping generation"
+                f"ARTICLE_DRY_RUN jobs={len(deduped_jobs)} — skipping generation"
             )
             weeks_seen = {wk for _, _, wk in deduped_jobs}
+
+            # Build per-cluster preview — check which articles already exist
+            dry_per_cluster: dict[str, dict] = {}
+            would_generate = 0
+            would_skip = 0
+            for c, wd, wk in deduped_jobs:
+                cid = str(int(c.get("cluster_id", -1)))
+                label = c.get("cluster_label", "Unknown")
+                exists = (int(cid), _week_number(wk)) in existing_set
+                status = "would_skip" if exists else "would_generate"
+                if exists:
+                    would_skip += 1
+                else:
+                    would_generate += 1
+
+                dry_per_cluster.setdefault(
+                    cid,
+                    {
+                        "cluster_label": label,
+                        "weeks": {},
+                    },
+                )
+                dry_per_cluster[cid]["weeks"][wk] = {
+                    "status": status,
+                    "video_count": wd.get("video_count", 0),
+                    "view_count": wd.get("view_count", 0),
+                    "simulated_structure": (
+                        None
+                        if exists
+                        else {
+                            "title": f"[Gemini would generate headline for '{label}' in {wk}]",
+                            "overview": "[Gemini would generate 2-3 sentence overview with key stats]",
+                            "body": f"[Gemini would generate 400-600 word article covering {wd.get('video_count', 0)} videos across {wk}]",
+                        }
+                    ),
+                }
+
             return {
                 "articles_generated": 0,
-                "articles_skipped": len(deduped_jobs),
+                "articles_would_generate": would_generate,
+                "articles_would_skip": would_skip,
                 "articles_failed": 0,
                 "weeks_processed": sorted(weeks_seen, key=_week_number),
-                "per_cluster": {},
+                "per_cluster": dry_per_cluster,
                 "dry_run": True,
             }
 
-        for c, week_slice, wk in deduped_jobs:
-            cid = int(c.get("cluster_id", -1))
-            wk_num = _week_number(wk)
-            label = c.get("cluster_label", f"Cluster {cid}")
-            weeks_seen.add(wk)
+        _start = time.time()
+        worker_services = self._make_worker_gemini_services()
+        retry_jobs: list[tuple[dict, dict, str]] = []
 
-            logger.info(f"ARTICLE_JOB cluster={cid} week={wk} " f"label={label!r}")
+        new_jobs = [(c, wd, wk) for c, wd, wk in deduped_jobs]
+        logger.info(
+            f"ARTICLES_START jobs={len(new_jobs)} skipping={len(deduped_jobs) - len(new_jobs)} workers={NUM_WORKERS}"
+        )
 
-            if not force and self._dynamo.article_exists(cid, wk_num):
-                logger.info(f"ARTICLE_SKIP cluster={cid} week={wk} " "(already exists)")
-                skipped += 1
-                per_cluster[f"{cid}:{wk}"] = {
-                    "status": "skipped",
-                    "week": wk,
-                }
-                continue
+        with ThreadPoolExecutor(max_workers=NUM_WORKERS) as pool:
+            futures = {}
+            for i, (c, week_slice, wk) in enumerate(deduped_jobs):
+                worker_idx = i % NUM_WORKERS
+                cid = int(c.get("cluster_id", -1))
+                logger.info(f"WORKER_START worker={worker_idx} cluster={cid} week={wk}")
+                fut = pool.submit(
+                    self._generate_single_article,
+                    c,
+                    week_slice,
+                    wk,
+                    worker_services[worker_idx],
+                    force,
+                    existing_set,
+                )
+                futures[fut] = (c, week_slice, wk, worker_idx, time.time())
 
-            if force:
-                self._dynamo.delete_articles(cid, wk_num)
+            for future in as_completed(futures):
+                c, week_slice, wk, worker_idx, t0 = futures[future]
+                cid = int(c.get("cluster_id", -1))
+                key = f"{cid}:{wk}"
+                weeks_seen.add(wk)
+                elapsed_ms = int((time.time() - t0) * 1000)
 
-            video_titles = self._dynamo.get_video_titles_for_cluster(cid)
-
-            try:
-                prompt = self._build_prompt(c, wk, week_slice, video_titles)
-                raw = self._gemini._gemini(prompt)
-                headline, overview, body = self._parse_response(raw)
-
-                now = datetime.now(timezone.utc).isoformat()
-                article_id = f"article-{uuid.uuid4().hex[:8]}"
-
-                self._dynamo.save_article(
-                    {
-                        "article_id": article_id,
-                        "cluster_id": _dec(cid),
-                        "cluster_label": label,
+                try:
+                    result = future.result()
+                    per_cluster[key] = result
+                    if result["status"] == "generated":
+                        generated += 1
+                        logger.info(
+                            f"WORKER_COMPLETE worker={worker_idx} cluster={cid} week={wk} elapsed_ms={elapsed_ms}"
+                        )
+                    else:
+                        skipped += 1
+                except KeysExhaustedError:
+                    retry_jobs.append((c, week_slice, wk))
+                    logger.warning(
+                        f"WORKER_RETRY worker={worker_idx} cluster={cid} week={wk} reason=keys_exhausted"
+                    )
+                except Exception as exc:
+                    failed += 1
+                    per_cluster[key] = {
+                        "status": "failed",
                         "week": wk,
-                        "week_number": _dec(wk_num),
-                        "title": headline,
-                        "overview": overview,
-                        "body": body,
-                        "created_at": now,
-                        "updated_at": now,
+                        "error": str(exc),
                     }
-                )
+                    logger.error(
+                        f"WORKER_FAILED worker={worker_idx} cluster={cid} week={wk} error={exc}"
+                    )
 
-                generated += 1
-                per_cluster[f"{cid}:{wk}"] = {
-                    "status": "generated",
-                    "article_id": article_id,
-                    "week": wk,
-                    "headline": headline,
-                }
-                logger.info(
-                    f"ARTICLE_GENERATED cluster={cid} week={wk} " f"id={article_id}"
-                )
-
-            except Exception as exc:
-                failed += 1
-                per_cluster[f"{cid}:{wk}"] = {
-                    "status": "failed",
-                    "week": wk,
-                    "error": str(exc),
-                }
-                logger.error(f"ARTICLE_FAILED cluster={cid} week={wk} " f"error={exc}")
+        # Retry pass — sequential, full key pool (fail_on_exhaustion=False)
+        if retry_jobs:
+            logger.info(f"RETRY_START jobs={len(retry_jobs)}")
+            for c, week_slice, wk in retry_jobs:
+                cid = int(c.get("cluster_id", -1))
+                key = f"{cid}:{wk}"
+                weeks_seen.add(wk)
+                t0 = time.time()
+                try:
+                    result = self._generate_single_article(
+                        c, week_slice, wk, self._gemini, force, existing_set
+                    )
+                    per_cluster[key] = result
+                    if result["status"] == "generated":
+                        generated += 1
+                        logger.info(
+                            f"RETRY_COMPLETE cluster={cid} week={wk} elapsed_ms={int((time.time()-t0)*1000)}"
+                        )
+                    else:
+                        skipped += 1
+                except Exception as exc:
+                    failed += 1
+                    per_cluster[key] = {
+                        "status": "failed",
+                        "week": wk,
+                        "error": str(exc),
+                    }
+                    logger.error(f"RETRY_FAILED cluster={cid} week={wk} error={exc}")
 
         weeks_processed = sorted(weeks_seen, key=_week_number)
         logger.info(
-            f"ARTICLE_RUN_COMPLETE generated={generated} "
-            f"skipped={skipped} failed={failed}"
+            f"ARTICLES_COMPLETE generated={generated} skipped={skipped} "
+            f"failed={failed} retried={len(retry_jobs)} elapsed_s={time.time() - _start:.1f}"
         )
 
         return {

@@ -318,7 +318,7 @@ class StorageService:
                         "video_count": len(videos),
                     }
                 )
-                logger.info(f"S3_LOAD key={key} videos={len(videos)}")
+                logger.debug(f"S3_LOAD key={key} videos={len(videos)}")
             except (ClientError, json.JSONDecodeError, UnicodeDecodeError) as exc:
                 results.append(
                     {

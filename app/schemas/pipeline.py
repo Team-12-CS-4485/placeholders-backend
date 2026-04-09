@@ -66,12 +66,33 @@ class FullPipelineResponse(BaseModel):
     articles: ArticlesSummary
 
 
+# ── Job response models ───────────────────────────────────────────────────────
+
+
+class JobSubmitResponse(BaseModel):
+    job_id: Optional[str]
+    status: str  # "running" | "complete"
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    status: str  # "running" | "complete" | "failed"
+    progress: int
+    total: int
+    errors: list[str]
+    failed_videos: list[str]
+    started_at: str
+    completed_at: Optional[str]
+    result: Optional[dict]
+
+
 # ── Search response models ────────────────────────────────────────────────────
 
 
 class SearchHit(BaseModel):
     id: str
     score: float
+    video_id: str
     transcript_key: str
     source_key: str
     channel: str

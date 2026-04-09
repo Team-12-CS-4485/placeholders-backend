@@ -1,5 +1,6 @@
 # Full requirements for local development and testing
 fastapi>=0.115.0
+slowapi==0.1.9
 uvicorn[standard]>=0.30.0
 python-dotenv>=1.0.0
 boto3==1.34.0
