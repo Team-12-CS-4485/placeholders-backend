@@ -9,6 +9,8 @@ venv/
 .claude/
 
 # Generated output files
+graphify-out/
+
 transcript_analysis*
 claim_analysis_*
 cluster_summary*

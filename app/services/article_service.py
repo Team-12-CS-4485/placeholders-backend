@@ -25,7 +25,6 @@ Usage:
 from __future__ import annotations
 
 import json
-import logging
 import re
 import time
 import uuid
@@ -35,10 +34,11 @@ from decimal import Decimal
 from typing import Optional
 
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.services.dynamo_service import DynamoService
 from app.services.gemini_service import GeminiService, KeysExhaustedError
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _WEEK_RE = re.compile(r"week(\d+)", re.IGNORECASE)
 
@@ -506,7 +506,7 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
         weeks_processed = sorted(weeks_seen, key=_week_number)
         logger.info(
             f"ARTICLES_COMPLETE generated={generated} skipped={skipped} "
-            f"failed={failed} elapsed_s={time.time() - _start:.1f}"
+            f"failed={failed} retried={len(retry_jobs)} elapsed_s={time.time() - _start:.1f}"
         )
 
         return {
