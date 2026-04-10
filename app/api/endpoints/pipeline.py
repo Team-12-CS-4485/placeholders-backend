@@ -95,7 +95,7 @@ def _run_full_pipeline_background(request: PipelineRunRequest, job_id: str) -> N
 
 @router.post("/run", response_model=JobSubmitResponse)
 @limiter.limit("2/minute")
-def run_full_pipeline(http_request: Request, request: PipelineRunRequest):
+def run_full_pipeline(request: Request, body: PipelineRunRequest):
     """
     Starts the full pipeline in the background:
     1. Ingest — S3 → chunk → Gemini (10 parallel workers) → embed → Qdrant
@@ -106,11 +106,11 @@ def run_full_pipeline(http_request: Request, request: PipelineRunRequest):
     Returns immediately with a job_id. Poll GET /api/pipeline/jobs/{job_id} for status.
     dry_run=true runs synchronously (no Gemini calls).
     """
-    if request.dry_run:
+    if body.dry_run:
         try:
             PipelineService().run_s3_transcript_analysis(
-                prefix=request.prefix,
-                limit=request.limit,
+                prefix=body.prefix,
+                limit=body.limit,
                 dry_run=True,
             )
             ClusteringService().run_clustering(dry_run=True)
@@ -125,7 +125,7 @@ def run_full_pipeline(http_request: Request, request: PipelineRunRequest):
     job_id = job_service.create_job()
     threading.Thread(
         target=_run_full_pipeline_background,
-        args=(request, job_id),
+        args=(body, job_id),
         daemon=True,
     ).start()
     return {"job_id": job_id, "status": "running"}
@@ -133,17 +133,17 @@ def run_full_pipeline(http_request: Request, request: PipelineRunRequest):
 
 @router.post("/ingest", response_model=JobSubmitResponse)
 @limiter.limit("5/minute")
-def run_ingest(http_request: Request, request: PipelineRunRequest):
+def run_ingest(request: Request, body: PipelineRunRequest):
     """
     Ingest only — S3 → chunk → Gemini (10 parallel workers) → DynamoDB → Qdrant.
     Returns immediately with a job_id. Poll GET /api/pipeline/jobs/{job_id} for status.
     dry_run=true runs synchronously (no Gemini calls, fast).
     """
-    if request.dry_run:
+    if body.dry_run:
         try:
             result = PipelineService().run_s3_transcript_analysis(
-                prefix=request.prefix,
-                limit=request.limit,
+                prefix=body.prefix,
+                limit=body.limit,
                 dry_run=True,
             )
             return {"job_id": None, "status": "complete"}
@@ -155,7 +155,7 @@ def run_ingest(http_request: Request, request: PipelineRunRequest):
     job_id = job_service.create_job()
     threading.Thread(
         target=_run_ingest_background,
-        args=(request, job_id),
+        args=(body, job_id),
         daemon=True,
     ).start()
     return {"job_id": job_id, "status": "running"}
