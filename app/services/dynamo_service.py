@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+from datetime import date
 from decimal import Decimal
 from typing import Optional
 
@@ -514,6 +515,20 @@ class DynamoService:
 
     # ── Articles ────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _week_start_date(week_number: int) -> str:
+        """
+        Return the ISO date of the Monday that starts a project week.
+        Project week N = ISO week (N + 9) of 2026.
+        e.g. week1 → 2026-03-02, week6 → 2026-04-06
+        Returns "" for invalid week numbers.
+        """
+        try:
+            iso_week = week_number + 9
+            return date.fromisocalendar(2026, iso_week, 1).isoformat()
+        except Exception:
+            return ""
+
     def _articles_table(self):
         return self._dynamodb.Table("articles")
 
@@ -596,12 +611,14 @@ class DynamoService:
 
             for raw in resp.get("Items", []):
                 item = self._deserialize(raw)
+                wn = int(item.get("week_number", 0))
                 items.append(
                     {
                         "article_id": item.get("article_id", ""),
                         "cluster_id": int(item.get("cluster_id", 0)),
                         "cluster_label": item.get("cluster_label", ""),
-                        "week_number": int(item.get("week_number", 0)),
+                        "week_number": wn,
+                        "week_start_date": self._week_start_date(wn),
                         "title": item.get("title", ""),
                         "overview": item.get("overview", ""),
                         "created_at": item.get("created_at", ""),
@@ -630,11 +647,13 @@ class DynamoService:
             return None
 
         item = self._deserialize(item)
+        wn = int(item.get("week_number", 0))
         return {
             "article_id": item.get("article_id", ""),
             "cluster_id": int(item.get("cluster_id", 0)),
             "cluster_label": item.get("cluster_label", ""),
-            "week_number": int(item.get("week_number", 0)),
+            "week_number": wn,
+            "week_start_date": self._week_start_date(wn),
             "title": item.get("title", ""),
             "overview": item.get("overview", ""),
             "body": item.get("body", ""),

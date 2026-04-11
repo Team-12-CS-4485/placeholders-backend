@@ -238,6 +238,16 @@ class ClaimAnalysisService:
         return round(1.0 - (total / pairs if pairs else 0), 3)
 
     @staticmethod
+    def _risk_level(score: float) -> str:
+        """Map a risk score to a display tier."""
+        if score >= 0.80:
+            return "high"
+        elif score >= 0.55:
+            return "medium"
+        else:
+            return "low"
+
+    @staticmethod
     def _compute_risk_score(
         claim_type: str,
         sentiment: str = "neutral",
@@ -250,27 +260,30 @@ class ClaimAnalysisService:
         """
         Formula-based claim risk score (0–1).
         Base scores:
-        - unique (single source): 0.7
+        - unique (single source): 0.55 — unverified but not inherently dangerous;
+          requires additional negative signals to reach HIGH tier (≥0.80)
         - debated (2 sources, different framing): 0.4 + divergence boost
         - consensus (3+ sources agree): decreases with more sources
         Modifiers:
-        - +0.1 if negative creator sentiment
-        - +0.05 if clickbait_score >= 7 (sensationalized thumbnail)
-        - +0.05 if public sentiment is negative (audience agrees it's bad)
+        - +0.15 if negative creator sentiment (raised from 0.10 so genuine
+          negative-sentiment unique claims can still reach HIGH)
+        - +0.10 if clickbait_score >= 8 (sensationalized thumbnail; threshold
+          raised from 7 to reduce false positives on news-style thumbnails)
+        - +0.05 if public sentiment is negative (audience trust signal)
         - -0.05 if public sentiment is positive (audience trust signal)
         """
         if claim_type == "unique":
-            score = 0.7
+            score = 0.55
         elif claim_type == "debated":
             score = 0.4 + (framing_divergence * 0.3)
         else:  # consensus
             score = max(0.05, 0.2 - (source_count * 0.02))
 
         if sentiment == "negative":
-            score += 0.1
+            score += 0.15
 
-        if clickbait_score >= 7:
-            score += 0.05
+        if clickbait_score >= 8:
+            score += 0.10
 
         if public_sentiment == "negative":
             score += 0.05
@@ -307,6 +320,7 @@ class ClaimAnalysisService:
                         "video_ids": [c["video_id"] for c in group_claims],
                         "transcript_excerpt": representative["transcript_excerpt"],
                         "risk_score": risk_score,
+                        "risk_level": self._risk_level(risk_score),
                     }
                 )
             elif len(channels) >= 2:
@@ -337,6 +351,7 @@ class ClaimAnalysisService:
                         "source_count": len(channels),
                         "framing_divergence": divergence,
                         "risk_score": risk_score,
+                        "risk_level": self._risk_level(risk_score),
                     }
                 )
             elif len(channels) == 1 and len(group_indices) == 1:
@@ -355,6 +370,7 @@ class ClaimAnalysisService:
                         "video_title": representative["video_title"],
                         "transcript_excerpt": representative["transcript_excerpt"],
                         "risk_score": risk_score,
+                        "risk_level": self._risk_level(risk_score),
                     }
                 )
 
@@ -492,27 +508,27 @@ class ClaimAnalysisService:
 
         for cid, claims in cluster_claims.items():
             if len(claims) < 2:
-                small = {
-                    "consensus": [],
-                    "debated": [],
-                    "unique": [
+                small_unique = []
+                for c in claims[:max_per_type]:
+                    rs = self._compute_risk_score(
+                        "unique",
+                        sentiment=c["sentiment"],
+                        clickbait_score=c.get("clickbait_score", 0),
+                        public_sentiment=c.get("public_sentiment", "neutral"),
+                        public_sentiment_score=c.get("public_sentiment_score", 0.0),
+                    )
+                    small_unique.append(
                         {
                             "claim": c["claim"],
                             "channel": c["channel"],
                             "video_id": c["video_id"],
                             "video_title": c["video_title"],
                             "transcript_excerpt": c["transcript_excerpt"],
-                            "risk_score": self._compute_risk_score(
-                                "unique",
-                                sentiment=c["sentiment"],
-                                clickbait_score=c.get("clickbait_score", 0),
-                                public_sentiment=c.get("public_sentiment", "neutral"),
-                                public_sentiment_score=c.get("public_sentiment_score", 0.0),
-                            ),
+                            "risk_score": rs,
+                            "risk_level": self._risk_level(rs),
                         }
-                        for c in claims[:max_per_type]
-                    ],
-                }
+                    )
+                small = {"consensus": [], "debated": [], "unique": small_unique}
                 cluster_results[cid] = small
                 cluster_all_classified[cid] = small
                 continue
