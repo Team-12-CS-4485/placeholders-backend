@@ -161,7 +161,9 @@ Return ONLY valid JSON, no markdown:
 # ── Main backfill logic ────────────────────────────────────────────────────────
 
 
-def _fetch_existing_week_headlines(dynamo_svc: DynamoService, cluster_id: int, weeks: list[dict]) -> dict[str, str]:
+def _fetch_existing_week_headlines(
+    dynamo_svc: DynamoService, cluster_id: int, weeks: list[dict]
+) -> dict[str, str]:
     """
     Returns {week_name: existing_headline} from cluster-weeks table.
     Falls back to week_data embedded headlines if cluster-weeks has no entry.
@@ -185,7 +187,9 @@ def _fetch_existing_week_headlines(dynamo_svc: DynamoService, cluster_id: int, w
     return existing
 
 
-def run_backfill(cluster_id_filter: int | None, dry_run: bool, compare: bool = False) -> None:
+def run_backfill(
+    cluster_id_filter: int | None, dry_run: bool, compare: bool = False
+) -> None:
     dynamodb = boto3.resource("dynamodb", region_name=REGION)
     clusters_table = dynamodb.Table("narrative-clusters")
     dynamo_svc = DynamoService(dynamodb)
@@ -211,7 +215,11 @@ def run_backfill(cluster_id_filter: int | None, dry_run: bool, compare: bool = F
             print(f"Cluster {cluster_id_filter} not found.")
             return
 
-    mode_label = "COMPARE (Gemini ON, no writes)" if compare else ("DRY-RUN (no Gemini, no writes)" if dry_run else "LIVE")
+    mode_label = (
+        "COMPARE (Gemini ON, no writes)"
+        if compare
+        else ("DRY-RUN (no Gemini, no writes)" if dry_run else "LIVE")
+    )
     print(f"Mode: {mode_label}")
     print(f"Processing {len(all_clusters)} cluster(s)...\n")
 
@@ -240,7 +248,11 @@ def run_backfill(cluster_id_filter: int | None, dry_run: bool, compare: bool = F
         )
 
         # Fetch existing headlines for comparison
-        existing_headlines = _fetch_existing_week_headlines(dynamo_svc, cluster_id, weeks) if compare else {}
+        existing_headlines = (
+            _fetch_existing_week_headlines(dynamo_svc, cluster_id, weeks)
+            if compare
+            else {}
+        )
 
         prior_headlines: list[dict] = []
         latest_result: dict | None = None
@@ -292,15 +304,17 @@ def run_backfill(cluster_id_filter: int | None, dry_run: bool, compare: bool = F
                 old_headline = existing_headlines.get(week_name, "")
                 changed = old_headline.strip().lower() != new_headline.strip().lower()
                 is_continuing = new_headline.lower().startswith("continuing:")
-                report_rows.append({
-                    "cluster_id": cluster_id,
-                    "cluster_label": cluster_label,
-                    "week": week_name,
-                    "old": old_headline,
-                    "new": new_headline,
-                    "changed": changed,
-                    "continuing": is_continuing,
-                })
+                report_rows.append(
+                    {
+                        "cluster_id": cluster_id,
+                        "cluster_label": cluster_label,
+                        "week": week_name,
+                        "old": old_headline,
+                        "new": new_headline,
+                        "changed": changed,
+                        "continuing": is_continuing,
+                    }
+                )
                 marker = "~" if not changed else ("C" if is_continuing else "✓")
                 print(f"  {week_name} [{marker}]")
                 print(f"    OLD: {old_headline or '(none)'}")

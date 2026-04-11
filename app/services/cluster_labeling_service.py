@@ -322,7 +322,11 @@ class ClusterLabelingService:
             latest_week_section = ""
             if latest_week and (latest_titles or latest_claims):
                 current_wd = next(
-                    (wd for wd in cluster_stats[cid]["week_data"] if wd["week"] == latest_week),
+                    (
+                        wd
+                        for wd in cluster_stats[cid]["week_data"]
+                        if wd["week"] == latest_week
+                    ),
                     {},
                 )
                 week_stats = (

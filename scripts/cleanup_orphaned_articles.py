@@ -75,7 +75,10 @@ def main(apply: bool) -> None:
         return
 
     print(f"\nFound {len(orphans)} orphaned article(s):\n")
-    for a in sorted(orphans, key=lambda x: (int(x.get("cluster_id", 0)), int(x.get("week_number", 0)))):
+    for a in sorted(
+        orphans,
+        key=lambda x: (int(x.get("cluster_id", 0)), int(x.get("week_number", 0))),
+    ):
         print(
             f"  article_id={a['article_id']}  "
             f"cluster={int(a.get('cluster_id', 0))}  "
@@ -92,7 +95,9 @@ def main(apply: bool) -> None:
     for a in orphans:
         try:
             articles_table.delete_item(Key={"article_id": a["article_id"]})
-            print(f"  DELETED {a['article_id']}  cluster={int(a.get('cluster_id', 0))}  week={int(a.get('week_number', 0))}")
+            print(
+                f"  DELETED {a['article_id']}  cluster={int(a.get('cluster_id', 0))}  week={int(a.get('week_number', 0))}"
+            )
             deleted += 1
         except Exception as exc:
             print(f"  ERROR {a['article_id']}: {exc}")
