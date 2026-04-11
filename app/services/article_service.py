@@ -140,7 +140,7 @@ class ArticleService:
         if force:
             self._dynamo.delete_articles(cid, wk_num)
 
-        video_titles = self._dynamo.get_video_titles_for_cluster(cid)
+        video_titles = self._dynamo.get_video_titles_for_cluster(cid, week=wk)
         prompt = self._build_prompt(cluster, wk, week_slice, video_titles)
         raw = gemini_service._gemini(prompt)
         headline, overview, body = self._parse_response(raw)
@@ -240,7 +240,8 @@ class ArticleService:
         prompt = f"""You are a senior journalist writing analytical \
 news articles for a digital media platform.
 
-Generate a structured news article about the following story cluster.
+Write a news article covering what happened with this story DURING {week} ONLY.
+Do not recap the full history — focus on what was new or developing this specific week.
 
 ═══════════════════════════════════════
 STORY TOPIC:  {label}
@@ -248,17 +249,14 @@ CATEGORY:     {category}
 WEEK:         {week}
 ═══════════════════════════════════════
 
-COVERAGE METRICS
-  Channels covering this story: {len(channels)}  |  Videos: {video_count}  |  Views: {view_str}
-  Breaking reports: {breaking_count}
+THIS WEEK'S COVERAGE
+  Channels covering this story: {len(channels)}  |  Videos this week: {video_count}  |  Views: {view_str}
+  Breaking reports this week: {breaking_count}
   Sentiment this week: {sentiment_str}
   Channels: {", ".join(channels[:8])}
 
-KEY TOPICS:  {", ".join(top_topics)}
-
-EDITORIAL CONTEXT (do NOT copy verbatim)
-  Headline: {narrative_headline}
-  Summary:  {narrative_summary}
+THIS WEEK'S VIDEO TITLES (what was actually published this week)
+{chr(10).join(f"  - {t}" for t in video_titles) or "  (not available)"}
 
 ═══════════════════════════════════════
 VERIFIED FACTS  (confirmed by multiple sources)
@@ -268,23 +266,25 @@ VERIFIED FACTS  (confirmed by multiple sources)
 {chr(10).join(debated_lines)}
 ═══════════════════════════════════════
 
-REPRESENTATIVE VIDEO TITLES (for context only)
-{chr(10).join(f"  - {t}" for t in video_titles) or "  (not available)"}
+ONGOING STORY CONTEXT (background only — do NOT re-report this as new)
+  {narrative_headline}
+  {narrative_summary}
 
 ═══════════════════════════════════════
 WRITING INSTRUCTIONS
-1. Open with the single most newsworthy development — no filler openers.
+1. Open with the single most newsworthy development FROM THIS WEEK — no filler openers.
 2. Synthesise the verified facts into a coherent narrative (do not bullet-point them).
 3. Where sources diverge, acknowledge the different framings in one sentence.
 4. Include at least one specific number or statistic in the body.
-5. Close with a single forward-looking sentence about implications or what to watch.
+5. Close with a single forward-looking sentence about what to watch next.
 6. Tone: authoritative, neutral, past tense where describing events.
 7. Length: 400–600 words in the body.
+8. The headline must reflect what was NEW this week, not the overall story arc.
 
 Return ONLY a valid JSON object with exactly these keys (no markdown fences):
 {{
-  "headline": "<compelling 8–15 word headline — different from the editorial context headline>",
-  "overview": "<one concise sentence summary that includes a specific number or stat>",
+  "headline": "<compelling 8–15 word headline about what happened THIS WEEK specifically>",
+  "overview": "<one concise sentence summary of this week's developments with a specific stat>",
   "body": "<full article text, prose paragraphs, no bullet points>"
 }}"""
 

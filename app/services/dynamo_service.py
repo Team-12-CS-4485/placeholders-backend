@@ -37,6 +37,7 @@ class DynamoService:
         )
         self._videos_table = self._dynamodb.Table(settings.dynamodb_table)
         self._clusters_table = self._dynamodb.Table("narrative-clusters")
+        self._cluster_weeks_table = self._dynamodb.Table("cluster-weeks")
 
     # ── Decimal / type normalisation ─────────────────────────────────────────
 
@@ -343,25 +344,171 @@ class DynamoService:
     # ── Video titles by cluster ─────────────────────────────────────────────
 
     def get_video_titles_for_cluster(
-        self, cluster_id: int, limit: int = 6
+        self, cluster_id: int, week: str | None = None, limit: int = 6
     ) -> list[str]:
         """
         Pull video titles from youtube-videos via the cluster-index GSI.
+        If week is provided, filters to only that week's videos.
         Returns empty list gracefully if the GSI doesn't exist.
         """
         try:
-            resp = self._videos_table.query(
-                IndexName="cluster-index",
-                KeyConditionExpression=Key("cluster_id").eq(Decimal(str(cluster_id))),
-                ProjectionExpression="title",
-                Limit=limit,
-            )
-            return [
-                item["title"] for item in resp.get("Items", []) if item.get("title")
-            ]
+            kwargs: dict = {
+                "IndexName": "cluster-index",
+                "KeyConditionExpression": Key("cluster_id").eq(
+                    Decimal(str(cluster_id))
+                ),
+                "ProjectionExpression": "#t, #wk",
+                "ExpressionAttributeNames": {"#t": "title", "#wk": "week"},
+            }
+            if week:
+                kwargs["FilterExpression"] = Attr("week").eq(week)
+            else:
+                kwargs["Limit"] = limit
+
+            items = []
+            while True:
+                resp = self._videos_table.query(**kwargs)
+                items.extend(resp.get("Items", []))
+                if not week or "LastEvaluatedKey" not in resp:
+                    break
+                kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+            titles = [item["title"] for item in items if item.get("title")]
+            return titles[:limit]
         except Exception as exc:
             logger.warning(
                 f"DYNAMO_VIDEO_TITLES_WARN cluster={cluster_id} " f"error={exc}"
+            )
+            return []
+
+    def get_clusters_for_week(self, week: str) -> list[dict]:
+        """
+        Scan cluster-weeks for all items matching a given week.
+        Returns deserialized items (cluster_id, narrative_headline, etc.).
+        """
+        try:
+            items = []
+            scan_kwargs: dict = {"FilterExpression": Attr("week").eq(week)}
+            while True:
+                resp = self._cluster_weeks_table.scan(**scan_kwargs)
+                for raw in resp.get("Items", []):
+                    items.append(self._deserialize(raw))
+                if "LastEvaluatedKey" not in resp:
+                    break
+                scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+            logger.debug(f"CLUSTER_WEEKS_SCAN week={week} found={len(items)}")
+            return items
+        except Exception as exc:
+            logger.warning(f"CLUSTER_WEEKS_SCAN_WARN week={week} error={exc}")
+            return []
+
+    def get_video_data_for_cluster(
+        self, cluster_id: int, week: str, limit: int = 10
+    ) -> list[dict]:
+        """
+        Pull title + key_claims for videos in a given cluster+week via cluster-index GSI.
+        Returns up to `limit` results as [{"title": ..., "key_claims": [...]}].
+        """
+        try:
+            kwargs: dict = {
+                "IndexName": "cluster-index",
+                "KeyConditionExpression": Key("cluster_id").eq(
+                    Decimal(str(cluster_id))
+                ),
+                "FilterExpression": Attr("week").eq(week),
+                "ProjectionExpression": "#t, key_claims, #wk",
+                "ExpressionAttributeNames": {"#t": "title", "#wk": "week"},
+            }
+            items = []
+            while True:
+                resp = self._videos_table.query(**kwargs)
+                items.extend(resp.get("Items", []))
+                if "LastEvaluatedKey" not in resp:
+                    break
+                kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+            results = []
+            for item in items[:limit]:
+                results.append(
+                    {
+                        "title": item.get("title", ""),
+                        "key_claims": list(item.get("key_claims", [])),
+                    }
+                )
+            return results
+        except Exception as exc:
+            logger.warning(
+                f"DYNAMO_VIDEO_DATA_WARN cluster={cluster_id} week={week} error={exc}"
+            )
+            return []
+
+    def save_cluster_week_snapshot(
+        self, cluster_id: int, week: str, data: dict
+    ) -> None:
+        """
+        Idempotent put_item for a cluster+week snapshot into cluster-weeks table.
+        All numeric values are coerced to Decimal; None values are stripped.
+        """
+        item: dict = {
+            "cluster_id": Decimal(str(cluster_id)),
+            "week": week,
+        }
+        for k, v in data.items():
+            if v is None:
+                continue
+            if isinstance(v, float):
+                item[k] = Decimal(str(round(v, 4)))
+            elif isinstance(v, int) and not isinstance(v, bool):
+                item[k] = Decimal(str(v))
+            else:
+                item[k] = v
+        try:
+            self._cluster_weeks_table.put_item(Item=item)
+        except Exception as exc:
+            logger.warning(
+                f"CLUSTER_WEEK_SAVE_WARN cluster={cluster_id} week={week} error={exc}"
+            )
+
+    def get_cluster_week_headlines(
+        self, cluster_id: int, last_n: int = 4
+    ) -> list[dict]:
+        """
+        Query cluster-weeks for all weeks of a given cluster_id.
+        Returns the last `last_n` entries sorted oldest → newest as
+        [{"week": "week3", "headline": "..."}].
+        """
+        try:
+            kwargs: dict = {
+                "KeyConditionExpression": Key("cluster_id").eq(
+                    Decimal(str(cluster_id))
+                ),
+                "ProjectionExpression": "#wk, narrative_headline",
+                "ExpressionAttributeNames": {"#wk": "week"},
+            }
+            items = []
+            while True:
+                resp = self._cluster_weeks_table.query(**kwargs)
+                items.extend(resp.get("Items", []))
+                if "LastEvaluatedKey" not in resp:
+                    break
+                kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+            # Sort by week number
+            def _week_num(item):
+                wk = item.get("week", "")
+                return (
+                    int(wk[4:]) if wk.startswith("week") and wk[4:].isdigit() else 9999
+                )
+
+            items.sort(key=_week_num)
+            return [
+                {"week": i["week"], "headline": i.get("narrative_headline", "")}
+                for i in items
+                if i.get("narrative_headline")
+            ][-last_n:]
+        except Exception as exc:
+            logger.warning(
+                f"CLUSTER_WEEK_HEADLINES_WARN cluster={cluster_id} error={exc}"
             )
             return []
 

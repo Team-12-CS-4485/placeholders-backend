@@ -33,6 +33,7 @@ from botocore.exceptions import ClientError
 REGION = os.getenv("AWS_REGION", "us-east-2")
 YOUTUBE_VIDEOS_TABLE = os.getenv("DYNAMODB_TABLE", "youtube-videos")
 NARRATIVE_CLUSTERS_TABLE = "narrative-clusters"
+CLUSTER_WEEKS_TABLE = "cluster-weeks"
 
 
 def get_clients():
@@ -198,7 +199,43 @@ def _wait_for_table(client, table_name, timeout=120):
     raise TimeoutError(f"Table '{table_name}' did not become ACTIVE within {timeout}s")
 
 
-# ── Step 3: Verify ────────────────────────────────────────────────────────────
+# ── Step 3: Create cluster-weeks table ───────────────────────────────────────
+
+
+def create_cluster_weeks_table(client):
+    """
+    Create the cluster-weeks table.
+    - Partition key: cluster_id (Number)
+    - Sort key:      week (String)
+    - PAY_PER_REQUEST billing
+    """
+    print(f"\nCreating table '{CLUSTER_WEEKS_TABLE}'...")
+
+    try:
+        client.create_table(
+            TableName=CLUSTER_WEEKS_TABLE,
+            KeySchema=[
+                {"AttributeName": "cluster_id", "KeyType": "HASH"},
+                {"AttributeName": "week", "KeyType": "RANGE"},
+            ],
+            AttributeDefinitions=[
+                {"AttributeName": "cluster_id", "AttributeType": "N"},
+                {"AttributeName": "week", "AttributeType": "S"},
+            ],
+            BillingMode="PAY_PER_REQUEST",
+        )
+        print(f"  Table creation initiated. Waiting for ACTIVE status...")
+        _wait_for_table(client, CLUSTER_WEEKS_TABLE)
+        print(f"  Table '{CLUSTER_WEEKS_TABLE}' is ACTIVE")
+
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ResourceInUseException":
+            print(f"  Table '{CLUSTER_WEEKS_TABLE}' already exists")
+        else:
+            raise
+
+
+# ── Step 4: Verify ────────────────────────────────────────────────────────────
 
 
 def verify_tables(client):
@@ -252,6 +289,28 @@ def verify_tables(client):
         else:
             print(f"  ERROR: {e}")
 
+    print()
+
+    # cluster-weeks
+    try:
+        desc = client.describe_table(TableName=CLUSTER_WEEKS_TABLE)
+        table = desc["Table"]
+        print(f"Table: {CLUSTER_WEEKS_TABLE}")
+        print(f"  Status: {table['TableStatus']}")
+        print(f"  Items: {table.get('ItemCount', 'unknown')}")
+        print(f"  Key: {_format_key_schema(table['KeySchema'])}")
+        print(
+            f"  Billing: {table.get('BillingModeSummary', {}).get('BillingMode', 'unknown')}"
+        )
+        print(f"  GSIs: none")
+
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ResourceNotFoundException":
+            print(f"Table: {CLUSTER_WEEKS_TABLE}")
+            print(f"  Status: DOES NOT EXIST")
+        else:
+            print(f"  ERROR: {e}")
+
 
 def _format_key_schema(key_schema):
     parts = []
@@ -297,7 +356,11 @@ def main():
     print(f"\nStep 2: Creating {NARRATIVE_CLUSTERS_TABLE}")
     create_narrative_clusters_table(client)
 
-    # Step 3: Verify
+    # Step 3: Create cluster-weeks
+    print(f"\nStep 3: Creating {CLUSTER_WEEKS_TABLE}")
+    create_cluster_weeks_table(client)
+
+    # Step 4: Verify
     verify_tables(client)
 
     print("\n=== Migration Complete ===")

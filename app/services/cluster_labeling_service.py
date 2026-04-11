@@ -57,7 +57,15 @@ class ClusterLabelingService:
 
     # ── TF-IDF + Gemini labeling ────────────────────────────────────────────
 
-    def label_clusters(self, video_ids, labels, meta_map, dry_run=False):
+    def label_clusters(
+        self,
+        video_ids,
+        labels,
+        meta_map,
+        dry_run=False,
+        existing_clusters=None,
+        cluster_weeks_table=None,
+    ):
         cluster_members: dict[int, list[str]] = {}
         for vid, label in zip(video_ids, labels):
             cluster_members.setdefault(int(label), []).append(vid)
@@ -149,6 +157,25 @@ class ClusterLabelingService:
             )
             sentiment_divergence = dominant_creator != dominant_public
 
+            # Extract latest week's titles and claims for the Gemini prompt
+            latest_week_name = max(
+                (w for w in week_buckets if w.startswith("week") and w[4:].isdigit()),
+                key=lambda w: int(w[4:]),
+                default=None,
+            )
+            if latest_week_name and latest_week_name in week_buckets:
+                latest_vids = week_buckets[latest_week_name]
+                latest_titles = [v["title"] for v in latest_vids if v.get("title")][:5]
+                latest_claims = list(
+                    dict.fromkeys(
+                        c for v in latest_vids for c in v.get("key_claims", [])
+                    )
+                )[:5]
+            else:
+                latest_week_name = None
+                latest_titles = []
+                latest_claims = []
+
             cluster_topic_counts[cid] = tc
             cluster_claims[cid] = list(dict.fromkeys(claims))[:5]
             cluster_titles[cid] = titles[:5]
@@ -165,6 +192,9 @@ class ClusterLabelingService:
                 "likes": likes,
                 "comments": comments,
                 "week_data": week_data,
+                "latest_week": latest_week_name,
+                "latest_titles": latest_titles,
+                "latest_claims": latest_claims,
             }
 
         # ── TF-IDF scoring (kept as fallback) ──
@@ -210,9 +240,28 @@ class ClusterLabelingService:
             tfidf_labels[cid] = chosen
             used.add(chosen)
 
+        # ── Preliminary stable match for prior-headline lookup ──
+        # Runs before Gemini so we can fetch prior week headlines from cluster-weeks.
+        # The real stable match still runs in clustering_service.py after label_clusters returns.
+        preliminary_id_map: dict[int, int] = {}
+        if existing_clusters:
+            tfidf_cluster_info = {
+                cid: {
+                    "label": tfidf_labels[cid],
+                    "top_topics": [
+                        t[0] for t in cluster_topic_counts[cid].most_common(5)
+                    ],
+                }
+                for cid in real_cids
+            }
+            preliminary_id_map, _, _ = self.match_to_existing_clusters(
+                tfidf_cluster_info, existing_clusters
+            )
+
         # ── Gemini enrichment per cluster (skipped in dry_run) ──
         cluster_labels: dict[int, str] = dict(tfidf_labels)
         cluster_narratives: dict[int, dict] = {}
+        dupe_retried_cids: set[int] = set()
 
         if dry_run:
             for cid in real_cids:
@@ -237,6 +286,19 @@ class ClusterLabelingService:
                 if cluster_stats[cid]["sentiments"]
                 else "neutral"
             )
+            latest_week = cluster_stats[cid]["latest_week"]
+            latest_titles = cluster_stats[cid]["latest_titles"]
+            latest_claims = cluster_stats[cid]["latest_claims"]
+
+            # Look up prior headlines for this cluster from cluster-weeks
+            from app.services.dynamo_service import DynamoService
+
+            stable_cid = preliminary_id_map.get(cid)
+            prior_headlines: list[dict] = []
+            if stable_cid is not None:
+                prior_headlines = DynamoService().get_cluster_week_headlines(
+                    stable_cid, last_n=4
+                )
 
             # Build a compact week context to pass into the prompt
             week_context = []
@@ -257,6 +319,25 @@ class ClusterLabelingService:
                     }
                 )
 
+            latest_week_section = ""
+            if latest_week and (latest_titles or latest_claims):
+                latest_week_section = f"""
+    MOST RECENT WEEK ({latest_week}) — weight this most heavily for the headline and summary:
+    Titles: {latest_titles}
+    Claims: {latest_claims}"""
+
+            prior_headlines_section = ""
+            if prior_headlines:
+                lines = "\n".join(
+                    f'- {p["week"]}: "{p["headline"]}"' for p in prior_headlines
+                )
+                prior_headlines_section = f"""
+    PRIOR HEADLINES FOR THIS CLUSTER (do NOT repeat or rephrase any of these):
+    {lines}
+
+    The new headline MUST describe a different angle or development than all of the above.
+    If no new development exists, prefix with "Week N: " and describe what continued."""
+
             prompt = f"""You are a news editor writing narrative labels for topic clusters.
     Given these topics, claims, and video titles from a cluster of YouTube videos, generate:
 
@@ -265,17 +346,18 @@ class ClusterLabelingService:
     TOO SPECIFIC: "Starmer Warned Over Mandelson Ties", "The Collapse Of Olaplex"
     GOOD: "US-Iran Military Escalation", "UK Epstein Political Scandal", "England Squad Overhaul", "Olaplex Market Value Crisis", "Aviation Safety Funding Crisis"
     If topics seem unrelated, focus on the dominant theme.
-    2. headline: A full newspaper headline, 8-14 words
-    3. summary: One sentence, include a specific stat or data point if available from the claims
+    2. headline: A full newspaper headline, 8-14 words. Must reflect the LATEST developments, not the full story history.
+    3. summary: One sentence focused on the most recent angle, include a specific stat or data point if available.
     4. week_overviews: For each week listed in the week data below, write a 2-sentence plain-English
        overview of what was happening with this story that week. Sentence 1: the main development or
        focus of coverage. Sentence 2: scale or sentiment context (e.g. how many outlets covered it,
        whether coverage was growing or fading, the dominant tone). Only write overviews for weeks
        that have video_count > 0; set the value to "" for weeks with no coverage.
-
-    Topics: {top_topics}
-    Claims: {claims}
-    Video titles: {titles}
+    {latest_week_section}
+    {prior_headlines_section}
+    All topics (for label only): {top_topics}
+    Historical claims (background): {claims}
+    Historical video titles (background): {titles}
     Dominant sentiment: {dominant_sentiment}
     Week data: {week_context}
 
@@ -302,6 +384,20 @@ class ClusterLabelingService:
                         raw = re.sub(r"\s*```$", "", raw)
 
                     parsed = json.loads(raw)
+
+                    # Verbatim dupe check — retry once if headline matches a prior week
+                    new_hl = parsed.get("headline", "").strip().lower()
+                    recent = [
+                        p["headline"].strip().lower() for p in prior_headlines[-2:]
+                    ]
+                    if new_hl in recent and cid not in dupe_retried_cids:
+                        dupe_retried_cids.add(cid)
+                        prompt += (
+                            "\n\nIMPORTANT: Your previous attempt returned the exact same "
+                            "headline as a prior week. You MUST write something completely different."
+                        )
+                        continue
+
                     cluster_labels[cid] = parsed.get("label", tfidf_labels[cid])
                     cluster_narratives[cid] = {
                         "headline": parsed.get("headline"),

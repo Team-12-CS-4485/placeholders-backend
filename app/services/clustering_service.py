@@ -327,11 +327,10 @@ class ClusteringService:
 
     def _purge_inactive_clusters(self, existing_clusters: dict) -> int:
         """
-        Delete clusters with status='inactive' from narrative-clusters and
-        remove their associated articles from the articles table.
+        Delete clusters with status='inactive' from narrative-clusters.
+        Articles are permanent historical records and are NOT deleted.
         Called once per pipeline run after decline marking.
         """
-        articles_table = self._dynamodb.Table("articles")
         inactive_ids = [
             cid
             for cid, info in existing_clusters.items()
@@ -339,21 +338,6 @@ class ClusteringService:
         ]
         if not inactive_ids:
             return 0
-
-        # Delete articles for inactive clusters
-        articles_deleted = 0
-        scan_kwargs: dict = {
-            "ProjectionExpression": "article_id, cluster_id",
-        }
-        while True:
-            resp = articles_table.scan(**scan_kwargs)
-            for item in resp["Items"]:
-                if int(item.get("cluster_id", -1)) in inactive_ids:
-                    articles_table.delete_item(Key={"article_id": item["article_id"]})
-                    articles_deleted += 1
-            if "LastEvaluatedKey" not in resp:
-                break
-            scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
 
         # Delete the cluster records
         for cid in inactive_ids:
@@ -363,10 +347,52 @@ class ClusteringService:
                 f"label={existing_clusters[cid].get('label', '?')!r}"
             )
 
-        logger.info(
-            f"CLUSTER_PURGE inactive={len(inactive_ids)} articles_deleted={articles_deleted}"
-        )
+        logger.info(f"CLUSTER_PURGE inactive={len(inactive_ids)}")
         return len(inactive_ids)
+
+    def _write_cluster_week_snapshots(
+        self, cluster_info: dict, current_week: str
+    ) -> int:
+        """Write per-week headline/summary snapshots to the cluster-weeks table."""
+        from app.services.dynamo_service import DynamoService
+
+        dynamo_svc = DynamoService(self._dynamodb)
+        written = 0
+        for cid, info in cluster_info.items():
+            if cid == -1:
+                continue
+            wd = next(
+                (w for w in info.get("week_data", []) if w["week"] == current_week),
+                None,
+            )
+            if not wd:
+                continue
+            week_sentiments = wd.get("sentiment_breakdown", {})
+            dominant_sentiment = (
+                max(week_sentiments, key=week_sentiments.get)
+                if week_sentiments
+                else "neutral"
+            )
+            dynamo_svc.save_cluster_week_snapshot(
+                cid,
+                current_week,
+                {
+                    "narrative_headline": info.get("narrative_headline"),
+                    "narrative_summary": info.get("narrative_summary"),
+                    "week_overview": wd.get("week_overview", ""),
+                    "top_claims": info.get("top_claims", []),
+                    "top_topics": info.get("top_topics", []),
+                    "video_count": wd.get("video_count", 0),
+                    "channel_count": wd.get("channel_count", 0),
+                    "view_count": wd.get("view_count", 0),
+                    "breaking_count": wd.get("breaking_count", 0),
+                    "dominant_sentiment": dominant_sentiment,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            written += 1
+        logger.info(f"CLUSTER_WEEK_SNAPSHOTS written={written} week={current_week}")
+        return written
 
     def _write_cluster_summaries(
         self, cluster_info, existing_clusters=None, new_ids=None
@@ -609,15 +635,22 @@ class ClusteringService:
             matrix, min_cluster_size, min_samples, umap_components, umap_neighbors
         )
 
-        # 5. Label (via ClusterLabelingService — uses HDBSCAN labels as temporary IDs)
-        cluster_info = self._labeling_service.label_clusters(
-            video_ids, labels, filtered_meta, dry_run=dry_run
-        )
-
-        # 6. Stable cluster matching — remap HDBSCAN IDs to stable IDs
+        # 5a. Load existing clusters (needed for preliminary stable match inside label_clusters)
         existing_clusters = self._labeling_service.load_existing_clusters(
             self._clusters_table
         )
+
+        # 5b. Label (preliminary stable match runs inside, Gemini uses prior headlines)
+        cluster_info = self._labeling_service.label_clusters(
+            video_ids,
+            labels,
+            filtered_meta,
+            dry_run=dry_run,
+            existing_clusters=existing_clusters,
+            cluster_weeks_table=self._dynamodb.Table("cluster-weeks"),
+        )
+
+        # 6. Real stable cluster matching — remap HDBSCAN IDs to stable IDs (unchanged)
         id_map, new_ids, declined_ids = (
             self._labeling_service.match_to_existing_clusters(
                 cluster_info, existing_clusters
@@ -636,6 +669,8 @@ class ClusteringService:
             clusters_written = 0
             declined_count = 0
         else:
+            current_week = self._detect_current_week(cluster_info)
+
             # 7. Write to DynamoDB youtube-videos (with stable IDs)
             videos_updated = self._write_clusters_to_dynamodb(
                 video_ids, stable_labels, probabilities, cluster_info, filtered_meta
@@ -644,6 +679,10 @@ class ClusteringService:
             clusters_written = self._write_cluster_summaries(
                 cluster_info, existing_clusters, new_ids
             )
+            # 8b. Write per-week snapshots to cluster-weeks
+            if current_week:
+                self._write_cluster_week_snapshots(cluster_info, current_week)
+
             # 9. Mark declined clusters (active→declining→inactive)
             declined_count = self._mark_declined_clusters(
                 declined_ids, existing_clusters
@@ -651,7 +690,6 @@ class ClusteringService:
 
             # 10. Freshness check — clusters with no videos in the current week
             #     are also candidates for declining, even if HDBSCAN still matches them
-            current_week = self._detect_current_week(cluster_info)
             if current_week:
                 stale_ids = self._find_stale_clusters(
                     cluster_info, existing_clusters, current_week, declined_ids

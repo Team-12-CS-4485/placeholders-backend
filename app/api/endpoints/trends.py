@@ -21,6 +21,7 @@ from app.schemas.trend import (
     TrendSentiment,
     TrendClaims,
     WeeksResponse,
+    WeekNarrativesResponse,
 )
 from app.services.trend_service import TrendService
 
@@ -86,3 +87,13 @@ def get_trend_detail(cluster_id: int):
 def get_weeks():
     """List all available weeks with aggregate stats across all clusters."""
     return get_cached("weeks", ttl=300, fetch_fn=lambda: TrendService().get_weeks())
+
+
+@weeks_router.get("/{week}", response_model=WeekNarrativesResponse)
+def get_week_narratives(week: str):
+    """All clusters active in a given week with their per-week unique headlines."""
+    return get_cached(
+        f"week_narratives:{week}",
+        ttl=300,
+        fetch_fn=lambda: TrendService().get_week_narratives(week),
+    )
