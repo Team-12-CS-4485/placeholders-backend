@@ -336,7 +336,7 @@ class ClusterLabelingService:
     {lines}
 
     The new headline MUST describe a different angle or development than all of the above.
-    If no new development exists, prefix with "Week N: " and describe what continued."""
+    If no genuinely new development exists, describe what continued — do NOT prefix with "Week N:" or any week label."""
 
             prompt = f"""You are a news editor writing narrative labels for topic clusters.
     Given these topics, claims, and video titles from a cluster of YouTube videos, generate:

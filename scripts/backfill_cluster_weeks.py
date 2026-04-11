@@ -154,6 +154,7 @@ KEY CLAIMS THIS WEEK: {claims}
 STATS: {wd.get("video_count", 0)} videos, {wd.get("view_count", 0)} views, dominant sentiment: {dominant_sentiment}
 CLUSTER TOPICS: {top_topics}
 {prior_section}
+Do NOT start the headline with "Week N:" or any week prefix — the week is already known from context.
 Return ONLY valid JSON, no markdown:
 {{"headline": "...", "summary": "...", "week_overview": "2 sentences: main development this week. Scale/sentiment context."}}"""
 
