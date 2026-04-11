@@ -592,3 +592,39 @@ class TrendService:
 
         logger.info(f"WEEKS_SUMMARY weeks={len(weeks)}")
         return {"weeks": weeks, "total": len(weeks)}
+
+    def get_week_narratives(self, week: str) -> dict:
+        """
+        Return all clusters active in a given week with their per-week headlines
+        from the cluster-weeks table.
+        """
+        if week.isdigit():
+            week = f"week{week}"
+
+        week_items = self.dynamo_service.get_clusters_for_week(week)
+        if not week_items:
+            return {"week": week, "narratives": [], "total": 0}
+
+        # Build cluster_label lookup from narrative-clusters (include inactive for archive)
+        all_clusters = self.dynamo_service.get_all_clusters(include_inactive=True)
+        label_map = {c["cluster_id"]: c.get("cluster_label", "") for c in all_clusters}
+
+        narratives = []
+        for item in sorted(week_items, key=lambda x: int(x.get("cluster_id", 0))):
+            cid = int(item.get("cluster_id", 0))
+            narratives.append({
+                "cluster_id": cid,
+                "cluster_label": label_map.get(cid, f"Cluster {cid}"),
+                "narrative_headline": item.get("narrative_headline"),
+                "narrative_summary": item.get("narrative_summary"),
+                "week_overview": item.get("week_overview"),
+                "top_topics": list(item.get("top_topics") or []),
+                "top_claims": list(item.get("top_claims") or []),
+                "video_count": int(item.get("video_count") or 0),
+                "view_count": int(item.get("view_count") or 0),
+                "breaking_count": int(item.get("breaking_count") or 0),
+                "dominant_sentiment": item.get("dominant_sentiment", "neutral"),
+            })
+
+        logger.info(f"WEEK_NARRATIVES week={week} clusters={len(narratives)}")
+        return {"week": week, "narratives": narratives, "total": len(narratives)}

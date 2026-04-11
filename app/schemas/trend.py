@@ -180,3 +180,26 @@ class WeekSummary(BaseModel):
 class WeeksResponse(BaseModel):
     weeks: list[WeekSummary]
     total: int
+
+
+# ── GET /api/weeks/{week} ─────────────────────────────────────────────────────
+
+
+class WeekNarrativeItem(BaseModel):
+    cluster_id: int
+    cluster_label: str
+    narrative_headline: Optional[str] = None
+    narrative_summary: Optional[str] = None
+    week_overview: Optional[str] = None
+    top_topics: list[str] = []
+    top_claims: list[str] = []
+    video_count: int = 0
+    view_count: int = 0
+    breaking_count: int = 0
+    dominant_sentiment: str = "neutral"
+
+
+class WeekNarrativesResponse(BaseModel):
+    week: str
+    narratives: list[WeekNarrativeItem]
+    total: int
