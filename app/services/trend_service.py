@@ -612,19 +612,21 @@ class TrendService:
         narratives = []
         for item in sorted(week_items, key=lambda x: int(x.get("cluster_id", 0))):
             cid = int(item.get("cluster_id", 0))
-            narratives.append({
-                "cluster_id": cid,
-                "cluster_label": label_map.get(cid, f"Cluster {cid}"),
-                "narrative_headline": item.get("narrative_headline"),
-                "narrative_summary": item.get("narrative_summary"),
-                "week_overview": item.get("week_overview"),
-                "top_topics": list(item.get("top_topics") or []),
-                "top_claims": list(item.get("top_claims") or []),
-                "video_count": int(item.get("video_count") or 0),
-                "view_count": int(item.get("view_count") or 0),
-                "breaking_count": int(item.get("breaking_count") or 0),
-                "dominant_sentiment": item.get("dominant_sentiment", "neutral"),
-            })
+            narratives.append(
+                {
+                    "cluster_id": cid,
+                    "cluster_label": label_map.get(cid, f"Cluster {cid}"),
+                    "narrative_headline": item.get("narrative_headline"),
+                    "narrative_summary": item.get("narrative_summary"),
+                    "week_overview": item.get("week_overview"),
+                    "top_topics": list(item.get("top_topics") or []),
+                    "top_claims": list(item.get("top_claims") or []),
+                    "video_count": int(item.get("video_count") or 0),
+                    "view_count": int(item.get("view_count") or 0),
+                    "breaking_count": int(item.get("breaking_count") or 0),
+                    "dominant_sentiment": item.get("dominant_sentiment", "neutral"),
+                }
+            )
 
         logger.info(f"WEEK_NARRATIVES week={week} clusters={len(narratives)}")
         return {"week": week, "narratives": narratives, "total": len(narratives)}

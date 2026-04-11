@@ -42,6 +42,7 @@ REGION = os.getenv("AWS_REGION", "us-east-2")
 
 # ── Gemini helpers ─────────────────────────────────────────────────────────────
 
+
 class GeminiClient:
     def __init__(self):
         self._keys = settings.genai_api_keys
@@ -108,7 +109,9 @@ class GeminiClient:
                 is_bad_json = isinstance(exc, (json.JSONDecodeError, ValueError))
                 if is_bad_json:
                     wait = min(5 * (attempt + 1), 20)
-                    print(f"  [bad/empty response, waiting {wait}s, attempt {attempt + 1}]")
+                    print(
+                        f"  [bad/empty response, waiting {wait}s, attempt {attempt + 1}]"
+                    )
                     time.sleep(wait)
                     continue
 
@@ -119,6 +122,7 @@ class GeminiClient:
 
 
 # ── Prompt builder ─────────────────────────────────────────────────────────────
+
 
 def build_backfill_prompt(
     cluster_label: str,
@@ -131,9 +135,7 @@ def build_backfill_prompt(
 ) -> str:
     week_sentiments = wd.get("sentiment_breakdown", {})
     dominant_sentiment = (
-        max(week_sentiments, key=week_sentiments.get)
-        if week_sentiments
-        else "neutral"
+        max(week_sentiments, key=week_sentiments.get) if week_sentiments else "neutral"
     )
 
     prior_section = ""
@@ -158,6 +160,7 @@ Return ONLY valid JSON, no markdown:
 
 # ── Main backfill logic ────────────────────────────────────────────────────────
 
+
 def run_backfill(cluster_id_filter: int | None, dry_run: bool) -> None:
     dynamodb = boto3.resource("dynamodb", region_name=REGION)
     clusters_table = dynamodb.Table("narrative-clusters")
@@ -175,7 +178,9 @@ def run_backfill(cluster_id_filter: int | None, dry_run: bool) -> None:
         scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
 
     if cluster_id_filter is not None:
-        all_clusters = [c for c in all_clusters if int(c["cluster_id"]) == cluster_id_filter]
+        all_clusters = [
+            c for c in all_clusters if int(c["cluster_id"]) == cluster_id_filter
+        ]
         if not all_clusters:
             print(f"Cluster {cluster_id_filter} not found.")
             return
@@ -196,7 +201,11 @@ def run_backfill(cluster_id_filter: int | None, dry_run: bool) -> None:
 
         weeks = sorted(
             week_data,
-            key=lambda w: int(w["week"][4:]) if w["week"].startswith("week") and w["week"][4:].isdigit() else 9999,
+            key=lambda w: (
+                int(w["week"][4:])
+                if w["week"].startswith("week") and w["week"][4:].isdigit()
+                else 9999
+            ),
         )
 
         prior_headlines: list[dict] = []
@@ -207,9 +216,13 @@ def run_backfill(cluster_id_filter: int | None, dry_run: bool) -> None:
             week_name = wd["week"]
 
             # Pull actual video data for this cluster+week
-            videos = dynamo_svc.get_video_data_for_cluster(cluster_id, week_name, limit=6)
+            videos = dynamo_svc.get_video_data_for_cluster(
+                cluster_id, week_name, limit=6
+            )
             titles = [v["title"] for v in videos if v.get("title")][:6]
-            claims = list(dict.fromkeys(c for v in videos for c in v.get("key_claims", [])))[:6]
+            claims = list(
+                dict.fromkeys(c for v in videos for c in v.get("key_claims", []))
+            )[:6]
 
             # Build prior headlines block
             prior_block = "\n".join(
@@ -223,7 +236,9 @@ def run_backfill(cluster_id_filter: int | None, dry_run: bool) -> None:
             if dry_run:
                 print(f"  {week_name}: [dry-run, would call Gemini]")
                 print(f"    prompt snippet: {prompt[:120].strip()}...")
-                prior_headlines.append({"week": week_name, "headline": f"[dry-run {week_name}]"})
+                prior_headlines.append(
+                    {"week": week_name, "headline": f"[dry-run {week_name}]"}
+                )
                 continue
 
             result = gemini.generate(prompt)
@@ -244,21 +259,27 @@ def run_backfill(cluster_id_filter: int | None, dry_run: bool) -> None:
                 if week_sentiments
                 else "neutral"
             )
-            dynamo_svc.save_cluster_week_snapshot(cluster_id, week_name, {
-                "narrative_headline": result.get("headline", ""),
-                "narrative_summary": result.get("summary", ""),
-                "week_overview": result.get("week_overview", ""),
-                "top_claims": claims,
-                "top_topics": top_topics,
-                "video_count": wd.get("video_count", 0),
-                "channel_count": wd.get("channel_count", 0),
-                "view_count": wd.get("view_count", 0),
-                "breaking_count": wd.get("breaking_count", 0),
-                "dominant_sentiment": dominant_sentiment,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            })
+            dynamo_svc.save_cluster_week_snapshot(
+                cluster_id,
+                week_name,
+                {
+                    "narrative_headline": result.get("headline", ""),
+                    "narrative_summary": result.get("summary", ""),
+                    "week_overview": result.get("week_overview", ""),
+                    "top_claims": claims,
+                    "top_topics": top_topics,
+                    "video_count": wd.get("video_count", 0),
+                    "channel_count": wd.get("channel_count", 0),
+                    "view_count": wd.get("view_count", 0),
+                    "breaking_count": wd.get("breaking_count", 0),
+                    "dominant_sentiment": dominant_sentiment,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
 
-            prior_headlines.append({"week": week_name, "headline": result.get("headline", "")})
+            prior_headlines.append(
+                {"week": week_name, "headline": result.get("headline", "")}
+            )
             latest_result = result
             latest_week_name = week_name
             print(f"  {week_name}: {result.get('headline', '')}")
@@ -280,8 +301,11 @@ def run_backfill(cluster_id_filter: int | None, dry_run: bool) -> None:
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Backfill cluster-weeks table for weeks 1-6")
+    parser = argparse.ArgumentParser(
+        description="Backfill cluster-weeks table for weeks 1-6"
+    )
     parser.add_argument(
         "--cluster-id",
         type=int,

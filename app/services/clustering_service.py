@@ -355,6 +355,7 @@ class ClusteringService:
     ) -> int:
         """Write per-week headline/summary snapshots to the cluster-weeks table."""
         from app.services.dynamo_service import DynamoService
+
         dynamo_svc = DynamoService(self._dynamodb)
         written = 0
         for cid, info in cluster_info.items():
@@ -372,19 +373,23 @@ class ClusteringService:
                 if week_sentiments
                 else "neutral"
             )
-            dynamo_svc.save_cluster_week_snapshot(cid, current_week, {
-                "narrative_headline": info.get("narrative_headline"),
-                "narrative_summary": info.get("narrative_summary"),
-                "week_overview": wd.get("week_overview", ""),
-                "top_claims": info.get("top_claims", []),
-                "top_topics": info.get("top_topics", []),
-                "video_count": wd.get("video_count", 0),
-                "channel_count": wd.get("channel_count", 0),
-                "view_count": wd.get("view_count", 0),
-                "breaking_count": wd.get("breaking_count", 0),
-                "dominant_sentiment": dominant_sentiment,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            })
+            dynamo_svc.save_cluster_week_snapshot(
+                cid,
+                current_week,
+                {
+                    "narrative_headline": info.get("narrative_headline"),
+                    "narrative_summary": info.get("narrative_summary"),
+                    "week_overview": wd.get("week_overview", ""),
+                    "top_claims": info.get("top_claims", []),
+                    "top_topics": info.get("top_topics", []),
+                    "video_count": wd.get("video_count", 0),
+                    "channel_count": wd.get("channel_count", 0),
+                    "view_count": wd.get("view_count", 0),
+                    "breaking_count": wd.get("breaking_count", 0),
+                    "dominant_sentiment": dominant_sentiment,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
             written += 1
         logger.info(f"CLUSTER_WEEK_SNAPSHOTS written={written} week={current_week}")
         return written
@@ -637,7 +642,10 @@ class ClusteringService:
 
         # 5b. Label (preliminary stable match runs inside, Gemini uses prior headlines)
         cluster_info = self._labeling_service.label_clusters(
-            video_ids, labels, filtered_meta, dry_run=dry_run,
+            video_ids,
+            labels,
+            filtered_meta,
+            dry_run=dry_run,
             existing_clusters=existing_clusters,
             cluster_weeks_table=self._dynamodb.Table("cluster-weeks"),
         )

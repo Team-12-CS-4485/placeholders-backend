@@ -248,7 +248,9 @@ class ClusterLabelingService:
             tfidf_cluster_info = {
                 cid: {
                     "label": tfidf_labels[cid],
-                    "top_topics": [t[0] for t in cluster_topic_counts[cid].most_common(5)],
+                    "top_topics": [
+                        t[0] for t in cluster_topic_counts[cid].most_common(5)
+                    ],
                 }
                 for cid in real_cids
             }
@@ -290,6 +292,7 @@ class ClusterLabelingService:
 
             # Look up prior headlines for this cluster from cluster-weeks
             from app.services.dynamo_service import DynamoService
+
             stable_cid = preliminary_id_map.get(cid)
             prior_headlines: list[dict] = []
             if stable_cid is not None:
@@ -384,7 +387,9 @@ class ClusterLabelingService:
 
                     # Verbatim dupe check — retry once if headline matches a prior week
                     new_hl = parsed.get("headline", "").strip().lower()
-                    recent = [p["headline"].strip().lower() for p in prior_headlines[-2:]]
+                    recent = [
+                        p["headline"].strip().lower() for p in prior_headlines[-2:]
+                    ]
                     if new_hl in recent and cid not in dupe_retried_cids:
                         dupe_retried_cids.add(cid)
                         prompt += (

@@ -354,7 +354,9 @@ class DynamoService:
         try:
             kwargs: dict = {
                 "IndexName": "cluster-index",
-                "KeyConditionExpression": Key("cluster_id").eq(Decimal(str(cluster_id))),
+                "KeyConditionExpression": Key("cluster_id").eq(
+                    Decimal(str(cluster_id))
+                ),
                 "ProjectionExpression": "#t, #wk",
                 "ExpressionAttributeNames": {"#t": "title", "#wk": "week"},
             }
@@ -410,7 +412,9 @@ class DynamoService:
         try:
             kwargs: dict = {
                 "IndexName": "cluster-index",
-                "KeyConditionExpression": Key("cluster_id").eq(Decimal(str(cluster_id))),
+                "KeyConditionExpression": Key("cluster_id").eq(
+                    Decimal(str(cluster_id))
+                ),
                 "FilterExpression": Attr("week").eq(week),
                 "ProjectionExpression": "#t, key_claims, #wk",
                 "ExpressionAttributeNames": {"#t": "title", "#wk": "week"},
@@ -425,10 +429,12 @@ class DynamoService:
 
             results = []
             for item in items[:limit]:
-                results.append({
-                    "title": item.get("title", ""),
-                    "key_claims": list(item.get("key_claims", [])),
-                })
+                results.append(
+                    {
+                        "title": item.get("title", ""),
+                        "key_claims": list(item.get("key_claims", [])),
+                    }
+                )
             return results
         except Exception as exc:
             logger.warning(
@@ -473,7 +479,9 @@ class DynamoService:
         """
         try:
             kwargs: dict = {
-                "KeyConditionExpression": Key("cluster_id").eq(Decimal(str(cluster_id))),
+                "KeyConditionExpression": Key("cluster_id").eq(
+                    Decimal(str(cluster_id))
+                ),
                 "ProjectionExpression": "#wk, narrative_headline",
                 "ExpressionAttributeNames": {"#wk": "week"},
             }
@@ -488,7 +496,9 @@ class DynamoService:
             # Sort by week number
             def _week_num(item):
                 wk = item.get("week", "")
-                return int(wk[4:]) if wk.startswith("week") and wk[4:].isdigit() else 9999
+                return (
+                    int(wk[4:]) if wk.startswith("week") and wk[4:].isdigit() else 9999
+                )
 
             items.sort(key=_week_num)
             return [
