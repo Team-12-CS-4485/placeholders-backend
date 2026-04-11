@@ -56,9 +56,7 @@ def delete_cluster(dynamodb, cluster_id: int, dry_run: bool) -> None:
 
     # ── 2. cluster-weeks ─────────────────────────────────────────────────────
     cw_items = []
-    scan_kwargs: dict = {
-        "KeyConditionExpression": Key("cluster_id").eq(cid_dec)
-    }
+    scan_kwargs: dict = {"KeyConditionExpression": Key("cluster_id").eq(cid_dec)}
     while True:
         r = cluster_weeks_table.query(**scan_kwargs)
         cw_items.extend(r.get("Items", []))
@@ -97,7 +95,9 @@ def delete_cluster(dynamodb, cluster_id: int, dry_run: bool) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Delete clusters and all associated data")
+    parser = argparse.ArgumentParser(
+        description="Delete clusters and all associated data"
+    )
     parser.add_argument("--cluster-ids", nargs="+", type=int, required=True)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
