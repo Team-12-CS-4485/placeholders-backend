@@ -470,6 +470,38 @@ class DynamoService:
                 f"CLUSTER_WEEK_SAVE_WARN cluster={cluster_id} week={week} error={exc}"
             )
 
+    def get_all_cluster_week_headlines(self, cluster_id: int) -> dict[str, str]:
+        """
+        Query cluster-weeks for all weeks of a given cluster.
+        Returns {week_name: narrative_headline} for every week that has a headline.
+        Used to enrich week_data in detail responses.
+        """
+        try:
+            kwargs: dict = {
+                "KeyConditionExpression": Key("cluster_id").eq(
+                    Decimal(str(cluster_id))
+                ),
+                "ProjectionExpression": "#wk, narrative_headline",
+                "ExpressionAttributeNames": {"#wk": "week"},
+            }
+            items = []
+            while True:
+                resp = self._cluster_weeks_table.query(**kwargs)
+                items.extend(resp.get("Items", []))
+                if "LastEvaluatedKey" not in resp:
+                    break
+                kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+            return {
+                i["week"]: i.get("narrative_headline", "")
+                for i in items
+                if i.get("narrative_headline")
+            }
+        except Exception as exc:
+            logger.warning(
+                f"CLUSTER_WEEK_ALL_HEADLINES_WARN cluster={cluster_id} error={exc}"
+            )
+            return {}
+
     def get_cluster_week_headlines(
         self, cluster_id: int, last_n: int = 4
     ) -> list[dict]:

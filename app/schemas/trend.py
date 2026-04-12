@@ -18,6 +18,8 @@ class WeekData(BaseModel):
     view_count: int
     breaking_count: int
     sentiment_breakdown: dict[str, int]
+    narrative_headline: Optional[str] = None
+    week_overview: Optional[str] = None
 
 
 # ── Claims schemas ────────────────────────────────────────────────────────────
