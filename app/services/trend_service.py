@@ -378,7 +378,12 @@ class TrendService:
         c = self._find_cluster(cluster_id)
         week_headlines = self.dynamo_service.get_all_cluster_week_headlines(cluster_id)
         week_data = [
-            {**wd, "narrative_headline": week_headlines.get(wd["week"], wd.get("narrative_headline", ""))}
+            {
+                **wd,
+                "narrative_headline": week_headlines.get(
+                    wd["week"], wd.get("narrative_headline", "")
+                ),
+            }
             for wd in c["week_data"]
         ]
         return {
@@ -498,7 +503,12 @@ class TrendService:
         c = self._find_cluster(cluster_id)
         week_headlines = self.dynamo_service.get_all_cluster_week_headlines(cluster_id)
         week_data = [
-            {**wd, "narrative_headline": week_headlines.get(wd["week"], wd.get("narrative_headline", ""))}
+            {
+                **wd,
+                "narrative_headline": week_headlines.get(
+                    wd["week"], wd.get("narrative_headline", "")
+                ),
+            }
             for wd in c["week_data"]
         ]
         return {
