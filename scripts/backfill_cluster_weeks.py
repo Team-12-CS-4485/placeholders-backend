@@ -145,7 +145,7 @@ PRIOR HEADLINES FOR THIS CLUSTER (do NOT repeat or rephrase any of these):
 {prior_block}
 
 The new headline MUST describe a different angle or development than all of the above.
-If no genuinely new development exists, prefix with "Week N: " and describe what continued."""
+If no genuinely new development exists this week, start the headline with "Continuing:" and describe what is ongoing."""
 
     return f"""You are a news editor. Given YouTube video data for cluster "{cluster_label}" during {week_name}, write a narrative headline and summary covering ONLY this week's developments.
 
@@ -161,11 +161,41 @@ Return ONLY valid JSON, no markdown:
 # ── Main backfill logic ────────────────────────────────────────────────────────
 
 
-def run_backfill(cluster_id_filter: int | None, dry_run: bool) -> None:
+def _fetch_existing_week_headlines(
+    dynamo_svc: DynamoService, cluster_id: int, weeks: list[dict]
+) -> dict[str, str]:
+    """
+    Returns {week_name: existing_headline} from cluster-weeks table.
+    Falls back to week_data embedded headlines if cluster-weeks has no entry.
+    """
+    existing: dict[str, str] = {}
+    # Try cluster-weeks first
+    try:
+        rows = dynamo_svc.get_cluster_week_headlines(cluster_id, last_n=20)
+        for row in rows:
+            existing[row["week"]] = row["headline"]
+    except Exception:
+        pass
+
+    # For weeks not in cluster-weeks, fall back to narrative_headline on the cluster record
+    # (same value is stored per-week in week_data as week_overview context — not ideal but best we have)
+    for wd in weeks:
+        wn = wd["week"]
+        if wn not in existing:
+            existing[wn] = wd.get("narrative_headline", "")
+
+    return existing
+
+
+def run_backfill(
+    cluster_id_filter: int | None, dry_run: bool, compare: bool = False
+) -> None:
     dynamodb = boto3.resource("dynamodb", region_name=REGION)
     clusters_table = dynamodb.Table("narrative-clusters")
     dynamo_svc = DynamoService(dynamodb)
     gemini = GeminiClient()
+
+    no_write = compare  # compare mode calls Gemini but skips all DynamoDB writes
 
     # Scan all clusters (include inactive so we backfill their history too)
     all_clusters = []
@@ -185,7 +215,16 @@ def run_backfill(cluster_id_filter: int | None, dry_run: bool) -> None:
             print(f"Cluster {cluster_id_filter} not found.")
             return
 
-    print(f"Backfilling {len(all_clusters)} cluster(s)...\n")
+    mode_label = (
+        "COMPARE (Gemini ON, no writes)"
+        if compare
+        else ("DRY-RUN (no Gemini, no writes)" if dry_run else "LIVE")
+    )
+    print(f"Mode: {mode_label}")
+    print(f"Processing {len(all_clusters)} cluster(s)...\n")
+
+    # Comparison report accumulator
+    report_rows: list[dict] = []
 
     for cluster in all_clusters:
         cluster_id = int(cluster["cluster_id"])
@@ -206,6 +245,13 @@ def run_backfill(cluster_id_filter: int | None, dry_run: bool) -> None:
                 if w["week"].startswith("week") and w["week"][4:].isdigit()
                 else 9999
             ),
+        )
+
+        # Fetch existing headlines for comparison
+        existing_headlines = (
+            _fetch_existing_week_headlines(dynamo_svc, cluster_id, weeks)
+            if compare
+            else {}
         )
 
         prior_headlines: list[dict] = []
@@ -252,40 +298,60 @@ def run_backfill(cluster_id_filter: int | None, dry_run: bool) -> None:
                 )
                 result = gemini.generate(retry_prompt)
 
-            # Write to cluster-weeks (idempotent)
-            week_sentiments = wd.get("sentiment_breakdown", {})
-            dominant_sentiment = (
-                max(week_sentiments, key=week_sentiments.get)
-                if week_sentiments
-                else "neutral"
-            )
-            dynamo_svc.save_cluster_week_snapshot(
-                cluster_id,
-                week_name,
-                {
-                    "narrative_headline": result.get("headline", ""),
-                    "narrative_summary": result.get("summary", ""),
-                    "week_overview": result.get("week_overview", ""),
-                    "top_claims": claims,
-                    "top_topics": top_topics,
-                    "video_count": wd.get("video_count", 0),
-                    "channel_count": wd.get("channel_count", 0),
-                    "view_count": wd.get("view_count", 0),
-                    "breaking_count": wd.get("breaking_count", 0),
-                    "dominant_sentiment": dominant_sentiment,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                },
-            )
+            new_headline = result.get("headline", "")
 
-            prior_headlines.append(
-                {"week": week_name, "headline": result.get("headline", "")}
-            )
+            if compare:
+                old_headline = existing_headlines.get(week_name, "")
+                changed = old_headline.strip().lower() != new_headline.strip().lower()
+                is_continuing = new_headline.lower().startswith("continuing:")
+                report_rows.append(
+                    {
+                        "cluster_id": cluster_id,
+                        "cluster_label": cluster_label,
+                        "week": week_name,
+                        "old": old_headline,
+                        "new": new_headline,
+                        "changed": changed,
+                        "continuing": is_continuing,
+                    }
+                )
+                marker = "~" if not changed else ("C" if is_continuing else "✓")
+                print(f"  {week_name} [{marker}]")
+                print(f"    OLD: {old_headline or '(none)'}")
+                print(f"    NEW: {new_headline}")
+            else:
+                # Write to cluster-weeks (idempotent)
+                week_sentiments = wd.get("sentiment_breakdown", {})
+                dominant_sentiment = (
+                    max(week_sentiments, key=week_sentiments.get)
+                    if week_sentiments
+                    else "neutral"
+                )
+                dynamo_svc.save_cluster_week_snapshot(
+                    cluster_id,
+                    week_name,
+                    {
+                        "narrative_headline": new_headline,
+                        "narrative_summary": result.get("summary", ""),
+                        "week_overview": result.get("week_overview", ""),
+                        "top_claims": claims,
+                        "top_topics": top_topics,
+                        "video_count": wd.get("video_count", 0),
+                        "channel_count": wd.get("channel_count", 0),
+                        "view_count": wd.get("view_count", 0),
+                        "breaking_count": wd.get("breaking_count", 0),
+                        "dominant_sentiment": dominant_sentiment,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+                print(f"  {week_name}: {new_headline}")
+
+            prior_headlines.append({"week": week_name, "headline": new_headline})
             latest_result = result
             latest_week_name = week_name
-            print(f"  {week_name}: {result.get('headline', '')}")
 
         # Patch narrative-clusters with the latest week's headline
-        if not dry_run and latest_result and latest_week_name:
+        if not dry_run and not no_write and latest_result and latest_week_name:
             clusters_table.update_item(
                 Key={"cluster_id": Decimal(str(cluster_id))},
                 UpdateExpression="SET narrative_headline = :h, narrative_summary = :s",
@@ -297,6 +363,40 @@ def run_backfill(cluster_id_filter: int | None, dry_run: bool) -> None:
             print(f"  → patched narrative-clusters with {latest_week_name} headline")
 
         print()
+
+    # ── Print comparison summary ───────────────────────────────────────────────
+    if compare and report_rows:
+        total = len(report_rows)
+        changed = sum(1 for r in report_rows if r["changed"])
+        continuing = sum(1 for r in report_rows if r["continuing"])
+        unchanged = total - changed
+
+        print("=" * 70)
+        print("COMPARISON SUMMARY")
+        print("=" * 70)
+        print(f"  Total week slots:   {total}")
+        print(f"  Changed:            {changed}  ({100*changed//total}%)")
+        print(f"  Unchanged:          {unchanged}  ({100*unchanged//total}%)")
+        print(f"  'Continuing:' used: {continuing}")
+        print()
+
+        # Show unchanged (potential problem cases)
+        if unchanged:
+            print("── UNCHANGED (same headline, may indicate stale output) ──")
+            for r in report_rows:
+                if not r["changed"]:
+                    print(f"  [{r['cluster_id']}] {r['cluster_label']} / {r['week']}")
+                    print(f"    {r['old']}")
+            print()
+
+        # Show continuing headlines
+        if continuing:
+            print("── CONTINUING headlines ──")
+            for r in report_rows:
+                if r["continuing"]:
+                    print(f"  [{r['cluster_id']}] {r['cluster_label']} / {r['week']}")
+                    print(f"    {r['new']}")
+            print()
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
@@ -317,8 +417,13 @@ def main():
         action="store_true",
         help="Print prompts without calling Gemini or writing to DynamoDB",
     )
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="Call Gemini and print old vs new headlines side-by-side — no DynamoDB writes",
+    )
     args = parser.parse_args()
-    run_backfill(args.cluster_id, args.dry_run)
+    run_backfill(args.cluster_id, args.dry_run, compare=args.compare)
 
 
 if __name__ == "__main__":

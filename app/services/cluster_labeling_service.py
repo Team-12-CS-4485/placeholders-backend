@@ -321,10 +321,23 @@ class ClusterLabelingService:
 
             latest_week_section = ""
             if latest_week and (latest_titles or latest_claims):
+                current_wd = next(
+                    (
+                        wd
+                        for wd in cluster_stats[cid]["week_data"]
+                        if wd["week"] == latest_week
+                    ),
+                    {},
+                )
+                week_stats = (
+                    f"{current_wd.get('video_count', 0)} videos, "
+                    f"{current_wd.get('view_count', 0):,} views"
+                )
                 latest_week_section = f"""
-    MOST RECENT WEEK ({latest_week}) — weight this most heavily for the headline and summary:
+    THIS WEEK'S COVERAGE ({latest_week}) — write the headline and summary from THESE ONLY:
     Titles: {latest_titles}
-    Claims: {latest_claims}"""
+    Claims: {latest_claims}
+    Stats: {week_stats}"""
 
             prior_headlines_section = ""
             if prior_headlines:
@@ -336,18 +349,18 @@ class ClusterLabelingService:
     {lines}
 
     The new headline MUST describe a different angle or development than all of the above.
-    If no new development exists, prefix with "Week N: " and describe what continued."""
+    If no genuinely new development exists this week, start the headline with "Continuing:" and describe what is ongoing."""
 
             prompt = f"""You are a news editor writing narrative labels for topic clusters.
-    Given these topics, claims, and video titles from a cluster of YouTube videos, generate:
+    Given topics, claims, and video titles from a YouTube cluster, generate:
 
     1. label: A 3-6 word desk label in Title Case. NOT a headline or sentence — no verbs, no articles like "The". Think of it as a category tag on a news desk.
     TOO BROAD: "Oil Markets", "Middle East Conflict"
     TOO SPECIFIC: "Starmer Warned Over Mandelson Ties", "The Collapse Of Olaplex"
     GOOD: "US-Iran Military Escalation", "UK Epstein Political Scandal", "England Squad Overhaul", "Olaplex Market Value Crisis", "Aviation Safety Funding Crisis"
     If topics seem unrelated, focus on the dominant theme.
-    2. headline: A full newspaper headline, 8-14 words. Must reflect the LATEST developments, not the full story history.
-    3. summary: One sentence focused on the most recent angle, include a specific stat or data point if available.
+    2. headline: A full newspaper headline, 8-14 words. Base it ONLY on this week's titles and claims — do not summarise the full story history.
+    3. summary: One sentence focused on this week's angle, include a specific stat or data point if available.
     4. week_overviews: For each week listed in the week data below, write a 2-sentence plain-English
        overview of what was happening with this story that week. Sentence 1: the main development or
        focus of coverage. Sentence 2: scale or sentiment context (e.g. how many outlets covered it,
@@ -356,10 +369,8 @@ class ClusterLabelingService:
     {latest_week_section}
     {prior_headlines_section}
     All topics (for label only): {top_topics}
-    Historical claims (background): {claims}
-    Historical video titles (background): {titles}
     Dominant sentiment: {dominant_sentiment}
-    Week data: {week_context}
+    Week data (for week_overviews): {week_context}
 
     Return ONLY valid JSON, no markdown:
     {{"label": "...", "headline": "...", "summary": "...", "week_overviews": {{"week1": "...", "week2": "..."}}}}"""  # noqa: E501

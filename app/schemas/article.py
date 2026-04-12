@@ -15,6 +15,7 @@ class ArticleListItem(BaseModel):
     cluster_id: int
     cluster_label: str
     week_number: int
+    week_start_date: str = ""
     title: str
     overview: str
     created_at: str

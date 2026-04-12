@@ -572,12 +572,32 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
         week_number: Optional[int] = None,
         limit: int = 100,
     ) -> list[dict]:
-        """List articles. Optionally filter by cluster_id / week_number."""
-        return self._dynamo.get_articles(
+        """List articles. Optionally filter by cluster_id / week_number.
+
+        Article titles are overridden with the per-week narrative_headline from
+        cluster-weeks so the frontend shows the same headline everywhere.
+        """
+        articles = self._dynamo.get_articles(
             cluster_id=cluster_id,
             week_number=week_number,
             limit=limit,
         )
+
+        # Batch-fetch cluster-weeks headlines for all unique cluster IDs
+        unique_cids = {a["cluster_id"] for a in articles}
+        week_headline_map: dict[int, dict[str, str]] = {}
+        for cid in unique_cids:
+            week_headline_map[cid] = self._dynamo.get_all_cluster_week_headlines(cid)
+
+        # Substitute title with cluster-weeks headline where available
+        for article in articles:
+            cid = article["cluster_id"]
+            week = article.get("week", f"week{article.get('week_number', '')}")
+            headline = week_headline_map.get(cid, {}).get(week)
+            if headline:
+                article["title"] = headline
+
+        return articles
 
     def get_article_by_id(self, article_id: str) -> Optional[dict]:
         """Fetch a single article (including body) by article_id."""

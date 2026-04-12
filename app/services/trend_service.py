@@ -376,6 +376,16 @@ class TrendService:
     def get_trend_detail(self, cluster_id: int) -> dict:
         """Full detail for a single cluster (everything except claims)."""
         c = self._find_cluster(cluster_id)
+        week_headlines = self.dynamo_service.get_all_cluster_week_headlines(cluster_id)
+        week_data = [
+            {
+                **wd,
+                "narrative_headline": week_headlines.get(
+                    wd["week"], wd.get("narrative_headline", "")
+                ),
+            }
+            for wd in c["week_data"]
+        ]
         return {
             "cluster_id": c["cluster_id"],
             "label": c["label"],
@@ -399,7 +409,7 @@ class TrendService:
             "avg_public_sentiment_score": c["avg_public_sentiment_score"],
             "sentiment_divergence": c["sentiment_divergence"],
             "channels": c["channels"],
-            "week_data": c["week_data"],
+            "week_data": week_data,
             "top_claims": c["top_claims"],
             "top_topics": c["top_topics"],
             "creator_risk": c.get("creator_risk", []),
@@ -491,6 +501,16 @@ class TrendService:
     def get_narrative_detail(self, cluster_id: int) -> dict:
         """Full narrative detail — story fields + channels + week presence, no metrics."""
         c = self._find_cluster(cluster_id)
+        week_headlines = self.dynamo_service.get_all_cluster_week_headlines(cluster_id)
+        week_data = [
+            {
+                **wd,
+                "narrative_headline": week_headlines.get(
+                    wd["week"], wd.get("narrative_headline", "")
+                ),
+            }
+            for wd in c["week_data"]
+        ]
         return {
             "cluster_id": c["cluster_id"],
             "label": c["label"],
@@ -504,7 +524,7 @@ class TrendService:
             "breaking_count": c["breaking_count"],
             "dominant_sentiment": c["dominant_sentiment"],
             "channels": c["channels"],
-            "week_data": c["week_data"],
+            "week_data": week_data,
             "creator_risk": c.get("creator_risk", []),
             "avg_clickbait_rating": c.get("avg_clickbait_rating"),
             "thumbnail_tone_breakdown": c.get("thumbnail_tone_breakdown", {}),
