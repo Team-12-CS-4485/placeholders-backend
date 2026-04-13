@@ -33,9 +33,7 @@ from app.core.config import settings
 REGION = os.getenv("AWS_REGION", "us-east-2")
 QDRANT_SCROLL_BATCH = 250
 ENTITY_MARKERS = ("&gt;", "&lt;", "&amp;", "&quot;", "&apos;", "&#")
-VTT_RE = re.compile(
-    r"^\s*Kind:\s*captions\s+Language:\s*[a-zA-Z-]+\s*", re.IGNORECASE
-)
+VTT_RE = re.compile(r"^\s*Kind:\s*captions\s+Language:\s*[a-zA-Z-]+\s*", re.IGNORECASE)
 
 
 def clean_text(text: str) -> str:
@@ -52,6 +50,7 @@ def is_dirty(text: str) -> bool:
 
 
 # ── 1. youtube-videos transcripts ────────────────────────────────────────────
+
 
 def backfill_videos(table, dry_run: bool):
     print("\n── youtube-videos (transcript field) ──")
@@ -85,7 +84,9 @@ def backfill_videos(table, dry_run: bool):
 
     success = failed = 0
     for i, item in enumerate(to_fix):
-        print(f"  [{i+1}/{len(to_fix)}] {item['channel']}/{item['video_id']}...", end=" ")
+        print(
+            f"  [{i+1}/{len(to_fix)}] {item['channel']}/{item['video_id']}...", end=" "
+        )
         try:
             table.update_item(
                 Key={"PartitionKey": item["channel"], "SortKey": item["video_id"]},
@@ -104,13 +105,12 @@ def backfill_videos(table, dry_run: bool):
 
 # ── 2. narrative-clusters classified_claims excerpts ─────────────────────────
 
+
 def backfill_clusters(clusters_table, dry_run: bool):
     print("\n── narrative-clusters (classified_claims excerpts) ──")
     to_fix = []
 
-    resp = clusters_table.scan(
-        ProjectionExpression="cluster_id, classified_claims"
-    )
+    resp = clusters_table.scan(ProjectionExpression="cluster_id, classified_claims")
     for item in resp.get("Items", []):
         cid = item["cluster_id"]
         claims = item.get("classified_claims")
@@ -160,6 +160,7 @@ def backfill_clusters(clusters_table, dry_run: bool):
 
 
 # ── 3. Qdrant chunk text ──────────────────────────────────────────────────────
+
 
 def backfill_qdrant(client: QdrantClient, collection: str, dry_run: bool):
     print("\n── Qdrant (chunk text field) ──")
@@ -214,6 +215,7 @@ def backfill_qdrant(client: QdrantClient, collection: str, dry_run: bool):
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser()
