@@ -11,6 +11,7 @@ Handles all AWS S3 interactions for the pipeline:
 - DynamoDB join for fresh view/like/comment counts
 """
 
+import html
 import json
 import re
 from typing import Optional
@@ -204,7 +205,7 @@ class StorageService:
         return json.loads(body)
 
     def _clean_transcript(self, text):
-        cleaned = text.strip()
+        cleaned = html.unescape(text.strip())
         cleaned = re.sub(
             r"^\s*Kind:\s*captions\s+Language:\s*[a-zA-Z-]+\s*",
             "",
