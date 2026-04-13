@@ -10,6 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.core.cache import invalidate_all
 from app.schemas.article import (
     ArticleGenerationRequest,
     ArticleGenerationSummary,
@@ -39,6 +40,8 @@ def generate_articles(request: ArticleGenerationRequest):
             cluster_id=request.cluster_id,
             dry_run=request.dry_run,
         )
+        if not request.dry_run:
+            invalidate_all()
         return {
             "articles_generated": result["articles_generated"],
             "articles_skipped": result["articles_skipped"],

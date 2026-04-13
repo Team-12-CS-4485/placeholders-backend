@@ -121,7 +121,8 @@ class ClusteringService:
             "ProjectionExpression": "PartitionKey, SortKey, channel, topics, category, "
             "sentiment, is_breaking, viewCount, likeCount, commentCount, "
             "title, publishedAt, #wk, source_key, key_claims, "
-            "public_sentiment, public_sentiment_score",
+            "public_sentiment, public_sentiment_score, "
+            "thumbnail_clickbait_score, thumbnail_tone",
             "ExpressionAttributeNames": {"#wk": "week"},
         }
 
@@ -147,6 +148,10 @@ class ClusteringService:
                         "public_sentiment_score": float(
                             item.get("public_sentiment_score") or 0
                         ),
+                        "thumbnail_clickbait_score": float(
+                            item.get("thumbnail_clickbait_score") or 0
+                        ),
+                        "thumbnail_tone": item.get("thumbnail_tone", ""),
                     }
             if "LastEvaluatedKey" not in resp:
                 break
@@ -440,6 +445,10 @@ class ClusteringService:
                 "total_comments": _dec(info["total_comments"]),
                 "narrative_headline": info.get("narrative_headline"),
                 "narrative_summary": info.get("narrative_summary"),
+                "avg_clickbait_rating": _dec(info.get("avg_clickbait_rating", 0.0)),
+                "thumbnail_tone_breakdown": _clean_for_dynamo(
+                    info.get("thumbnail_tone_breakdown", {})
+                ),
                 # week_data now carries week_overview on each entry
                 "week_data": _clean_for_dynamo(info["week_data"]),
                 "top_claims": info["top_claims"],

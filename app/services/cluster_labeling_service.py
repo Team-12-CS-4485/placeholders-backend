@@ -82,6 +82,8 @@ class ClusterLabelingService:
             sentiments = Counter()
             public_sentiments = Counter()
             public_sentiment_scores = []
+            thumbnail_clickbait_scores = []
+            thumbnail_tones: Counter = Counter()
             breaking = views = likes = comments = 0
             claims = []
             titles = []
@@ -96,6 +98,12 @@ class ClusterLabelingService:
                 sentiments[m.get("sentiment", "neutral")] += 1
                 public_sentiments[m.get("public_sentiment", "neutral")] += 1
                 public_sentiment_scores.append(m.get("public_sentiment_score", 0.0))
+                score = m.get("thumbnail_clickbait_score", 0.0)
+                if score:
+                    thumbnail_clickbait_scores.append(float(score))
+                tone = m.get("thumbnail_tone", "")
+                if tone:
+                    thumbnail_tones[tone] += 1
                 if m.get("is_breaking"):
                     breaking += 1
                 views += m.get("view_count", 0)
@@ -157,6 +165,16 @@ class ClusterLabelingService:
             )
             sentiment_divergence = dominant_creator != dominant_public
 
+            avg_clickbait = (
+                round(
+                    sum(thumbnail_clickbait_scores) / len(thumbnail_clickbait_scores),
+                    3,
+                )
+                if thumbnail_clickbait_scores
+                else 0.0
+            )
+            thumbnail_tone_breakdown = dict(thumbnail_tones)
+
             # Extract latest week's titles and claims for the Gemini prompt
             latest_week_name = max(
                 (w for w in week_buckets if w.startswith("week") and w[4:].isdigit()),
@@ -187,6 +205,8 @@ class ClusterLabelingService:
                 "public_sentiments": public_sentiments,
                 "avg_public_sentiment_score": avg_public_score,
                 "sentiment_divergence": sentiment_divergence,
+                "avg_clickbait_rating": avg_clickbait,
+                "thumbnail_tone_breakdown": thumbnail_tone_breakdown,
                 "breaking": breaking,
                 "views": views,
                 "likes": likes,
@@ -263,6 +283,10 @@ class ClusterLabelingService:
         cluster_narratives: dict[int, dict] = {}
         dupe_retried_cids: set[int] = set()
 
+        from app.services.dynamo_service import DynamoService
+
+        _dynamo_svc = DynamoService()
+
         if dry_run:
             for cid in real_cids:
                 cluster_narratives[cid] = {
@@ -291,12 +315,10 @@ class ClusterLabelingService:
             latest_claims = cluster_stats[cid]["latest_claims"]
 
             # Look up prior headlines for this cluster from cluster-weeks
-            from app.services.dynamo_service import DynamoService
-
             stable_cid = preliminary_id_map.get(cid)
             prior_headlines: list[dict] = []
             if stable_cid is not None:
-                prior_headlines = DynamoService().get_cluster_week_headlines(
+                prior_headlines = _dynamo_svc.get_cluster_week_headlines(
                     stable_cid, last_n=4
                 )
 
@@ -506,6 +528,8 @@ class ClusterLabelingService:
                     else "neutral"
                 ),
                 "sentiment_divergence": stats["sentiment_divergence"],
+                "avg_clickbait_rating": stats["avg_clickbait_rating"],
+                "thumbnail_tone_breakdown": stats["thumbnail_tone_breakdown"],
                 "breaking_count": stats["breaking"],
                 "total_views": stats["views"],
                 "total_likes": stats["likes"],
