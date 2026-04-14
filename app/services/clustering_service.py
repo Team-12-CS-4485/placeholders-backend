@@ -562,6 +562,42 @@ class ClusteringService:
                 break
             article_scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
 
+        # Update cluster-weeks (composite PK = cluster_id + week → delete + put)
+        cluster_weeks_table = self._dynamodb.Table("cluster-weeks")
+        cw_scan_kwargs: dict = {
+            "ProjectionExpression": "cluster_id, #wk",
+            "ExpressionAttributeNames": {"#wk": "week"},
+        }
+        cw_items_to_remap = []
+        while True:
+            resp = cluster_weeks_table.scan(**cw_scan_kwargs)
+            for item in resp["Items"]:
+                if item.get("cluster_id") in old_ids_dec:
+                    cw_items_to_remap.append(item)
+            if "LastEvaluatedKey" not in resp:
+                break
+            cw_scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+        for stub in cw_items_to_remap:
+            old_cid = int(stub["cluster_id"])
+            week = stub["week"]
+            new_id = id_map[old_cid]
+            full = cluster_weeks_table.get_item(
+                Key={"cluster_id": _dec(old_cid), "week": week}
+            ).get("Item")
+            if not full:
+                continue
+            cluster_weeks_table.delete_item(
+                Key={"cluster_id": _dec(old_cid), "week": week}
+            )
+            new_full = dict(full)
+            new_full["cluster_id"] = _dec(new_id)
+            cluster_weeks_table.put_item(Item=new_full)
+            logger.debug(f"RENUMBER cluster-weeks {old_cid} → {new_id} week={week}")
+
+        if cw_items_to_remap:
+            logger.info(f"RENUMBER_CLUSTER_WEEKS remapped={len(cw_items_to_remap)}")
+
         logger.info(f"RENUMBER_COMPLETE remapped={len(id_map)}")
         return len(id_map)
 
