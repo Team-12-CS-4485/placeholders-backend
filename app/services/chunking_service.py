@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ class SemanticChunker:
 
     _model = None
     _model_name_loaded: Optional[str] = None
+    _load_lock = threading.Lock()
 
     def __init__(
         self,
@@ -55,25 +57,32 @@ class SemanticChunker:
             and SemanticChunker._model_name_loaded == self.model_name
         ):
             return True
-        try:
-            from sentence_transformers import SentenceTransformer
+        with SemanticChunker._load_lock:
+            # Double-check inside lock — another thread may have loaded while we waited
+            if (
+                SemanticChunker._model is not None
+                and SemanticChunker._model_name_loaded == self.model_name
+            ):
+                return True
+            try:
+                from sentence_transformers import SentenceTransformer
 
-            SemanticChunker._model = SentenceTransformer(
-                self.model_name,
-                trust_remote_code=True,
-            )
-            SemanticChunker._model_name_loaded = self.model_name
-            logger.info(f"CHUNKER_READY model={self.model_name}")
-            return True
-        except ImportError as exc:
-            logger.error(
-                f"CHUNKER_LOAD_FAILED sentence-transformers not installed — "
-                f"fix: pip install sentence-transformers | actual_error={exc}"
-            )
-            return False
-        except Exception as exc:
-            logger.error(f"CHUNKER_LOAD_FAILED model={self.model_name} error={exc}")
-            return False
+                SemanticChunker._model = SentenceTransformer(
+                    self.model_name,
+                    trust_remote_code=True,
+                )
+                SemanticChunker._model_name_loaded = self.model_name
+                logger.info(f"CHUNKER_READY model={self.model_name}")
+                return True
+            except ImportError as exc:
+                logger.error(
+                    f"CHUNKER_LOAD_FAILED sentence-transformers not installed — "
+                    f"fix: pip install sentence-transformers | actual_error={exc}"
+                )
+                return False
+            except Exception as exc:
+                logger.error(f"CHUNKER_LOAD_FAILED model={self.model_name} error={exc}")
+                return False
 
     @property
     def model(self):
