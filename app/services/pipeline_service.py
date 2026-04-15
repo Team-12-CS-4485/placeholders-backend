@@ -352,7 +352,9 @@ class PipelineService:
             except Exception:
                 pass
         else:
-            self.logger.info(f"VIDEO_FORCE_REINDEX videoId={video_id} channel={channel}")
+            self.logger.info(
+                f"VIDEO_FORCE_REINDEX videoId={video_id} channel={channel}"
+            )
 
         # Step 1: Chunk
         chunks = self.embedding_service.chunk_text(transcript)
