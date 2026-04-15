@@ -19,6 +19,7 @@ import os
 import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from time import sleep
 
 import boto3
 import yt_dlp
@@ -55,6 +56,51 @@ dynamodb = boto3.resource("dynamodb")
 # Configuration
 S3_BUCKET = os.getenv("S3_BUCKET")
 DYNAMODB_TABLE = os.getenv("DYNAMODB_TABLE")
+
+
+# Browsers to try in order when loading cookies. Falls back to anonymous if none found.
+# yt-dlp supports: brave, chrome, chromium, edge, firefox, opera, safari, vivaldi, whale
+_BROWSER_PRIORITY = ["chrome", "edge", "firefox"]
+_YDL_OPTS_CACHE: dict | None = None
+
+
+def _build_ydl_opts() -> dict:
+    """
+    Build yt-dlp options with browser cookies (Chrome -> Edge -> Firefox in order).
+    Falls back to anonymous requests if no supported browser is found.
+    Result is cached so browser detection only runs once per process.
+    """
+    global _YDL_OPTS_CACHE
+    if _YDL_OPTS_CACHE is not None:
+        return _YDL_OPTS_CACHE
+
+    base_opts = {
+        "skip_download": True,
+        "quiet": True,
+        "no_warnings": True,
+        "writesubtitles": False,
+        "writeautomaticsub": False,
+        "subtitleslangs": ["en", "en-orig"],
+    }
+
+    for browser in _BROWSER_PRIORITY:
+        try:
+            test_opts = {**base_opts, "cookiesfrombrowser": (browser,)}
+            with yt_dlp.YoutubeDL(test_opts) as ydl:
+                ydl.cookiejar  # triggers cookie loading; raises if browser not found
+            logger.info(f"Using cookies from browser: {browser}")
+            base_opts["cookiesfrombrowser"] = (browser,)
+            _YDL_OPTS_CACHE = base_opts
+            return _YDL_OPTS_CACHE
+        except Exception:
+            logger.debug(f"Could not load cookies from {browser}, trying next...")
+
+    logger.warning(
+        "No cookies available. Requests will be anonymous and more likely to be rate-limited. "
+        "Log into YouTube in Chrome, Edge, or Firefox to enable cookie auth."
+    )
+    _YDL_OPTS_CACHE = base_opts
+    return _YDL_OPTS_CACHE
 
 
 def build_client(api_key: str):
@@ -168,53 +214,44 @@ def get_top_comments(youtube, video_id, max_results):
 
 def get_video_transcript(video_id):
     """Fetch transcript using yt-dlp Python API without writing to disk."""
-    import urllib.request
-
     url = f"https://www.youtube.com/watch?v={video_id}"
-    from time import sleep
+    sleep(1)  # Avoid hitting rate limits when processing multiple videos in a loop
 
-    sleep(
-        1
-    )  # Sleep to avoid hitting rate limits on yt-dlp or YouTube when processing multiple videos in a loop
-    ydl_opts = {
-        "skip_download": True,
-        "quiet": True,
-        "writesubtitles": True,
-        "writeautomaticsub": True,
-    }
+    ydl_opts = _build_ydl_opts()
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
+
+            # Get English subtitles (manual first, then auto; check both 'en' and 'en-orig')
+            subtitles = info.get("subtitles") or {}
+            auto_subs = info.get("automatic_captions") or {}
+
+            tracks = (
+                subtitles.get("en")
+                or auto_subs.get("en")
+                or auto_subs.get("en-orig")
+            )
+
+            if not tracks:
+                logger.info(f"[{video_id}] No English subtitle tracks found")
+                return None
+
+            vtt_url = next((t.get("url") for t in tracks if t.get("ext") == "vtt"), None)
+            if not vtt_url:
+                return None
+
+            # Use ydl.urlopen so the VTT download uses the same cookies as extract_info,
+            # avoiding anonymous 429s on the caption CDN request.
+            try:
+                response = ydl.urlopen(vtt_url)
+                vtt_content = response.read().decode("utf-8")
+            except Exception as e:
+                logger.warning(f"[{video_id}] Error downloading VTT: {e}")
+                return None
+
     except Exception as e:
         logger.warning(f"[{video_id}] yt-dlp error fetching transcript: {e}")
-        return None
-
-    # Get English subtitles (manual first, then auto)
-    subtitles = info.get("subtitles") or {}
-    auto_subs = info.get("automatic_captions") or {}
-
-    tracks = subtitles.get("en") or auto_subs.get("en")
-
-    if not tracks:
-        return None
-
-    # Get VTT subtitle URL
-    vtt_url = None
-    for track in tracks:
-        if track.get("ext") == "vtt":
-            vtt_url = track.get("url")
-            break
-
-    if not vtt_url:
-        return None
-
-    try:
-        # Download subtitle content directly
-        with urllib.request.urlopen(vtt_url) as response:
-            vtt_content = response.read().decode("utf-8")
-    except Exception as e:
-        logger.warning(f"[{video_id}] Error downloading VTT: {e}")
         return None
 
     lines = []
@@ -244,7 +281,7 @@ def save_to_s3(channel_name, videos):
     """Save channel data to S3"""
     try:
         timestamp = datetime.now().isoformat()
-        s3_key = f"youtube-data/week6/{channel_name.lower()}.json"
+        s3_key = f"youtube-data/week7/{channel_name.lower()}.json"
 
         payload = {"channel": channel_name, "fetched_at": timestamp, "videos": videos}
 
