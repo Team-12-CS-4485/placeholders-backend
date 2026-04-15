@@ -65,10 +65,10 @@ class SemanticChunker:
             SemanticChunker._model_name_loaded = self.model_name
             logger.info(f"CHUNKER_READY model={self.model_name}")
             return True
-        except ImportError:
+        except ImportError as exc:
             logger.error(
-                "CHUNKER_LOAD_FAILED sentence-transformers not installed — "
-                "fix: pip install sentence-transformers"
+                f"CHUNKER_LOAD_FAILED sentence-transformers not installed — "
+                f"fix: pip install sentence-transformers | actual_error={exc}"
             )
             return False
         except Exception as exc:
