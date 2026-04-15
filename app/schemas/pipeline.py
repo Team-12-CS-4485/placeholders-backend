@@ -12,6 +12,7 @@ class PipelineRunRequest(BaseModel):
     prefix: Optional[str] = None
     limit: Optional[int] = Field(default=None, ge=1, le=50)
     dry_run: bool = False
+    force_reindex: bool = False
 
 
 class DryRunRequest(BaseModel):

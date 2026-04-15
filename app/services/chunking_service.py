@@ -150,6 +150,8 @@ class SemanticChunker:
             show_progress_bar=False,
             normalize_embeddings=True,
             batch_size=64,
+            padding=True,
+            truncation=True,
         )
 
         chunks: list[str] = []

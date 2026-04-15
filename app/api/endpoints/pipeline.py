@@ -100,6 +100,7 @@ def _run_ingest_background(request: PipelineRunRequest, job_id: str) -> None:
             prefix=request.prefix,
             limit=request.limit,
             job_id=job_id,
+            force_reindex=request.force_reindex,
         )
         job_service.complete_job(job_id, result)
     except Exception as exc:
@@ -113,6 +114,7 @@ def _run_full_pipeline_background(request: PipelineRunRequest, job_id: str) -> N
             prefix=request.prefix,
             limit=request.limit,
             job_id=job_id,
+            force_reindex=request.force_reindex,
         )
         ClusteringService().run_clustering()
         ClaimAnalysisService().run_claim_analysis()

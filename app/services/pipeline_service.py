@@ -298,6 +298,7 @@ class PipelineService:
         video: dict,
         source_key: str,
         gemini_service: GeminiService,
+        force_reindex: bool = False,
     ) -> dict:
         """
         Process one video: chunk → Gemini → DynamoDB writes.
@@ -315,40 +316,43 @@ class PipelineService:
         transcript_key = f"{source_key}::{video_id}"
 
         # Already indexed in Qdrant — skip to save Gemini quota
-        try:
-            existing = self.vector_service.client.scroll(
-                collection_name=self.vector_service.collection_name,
-                scroll_filter=models.Filter(
-                    must=[
-                        models.FieldCondition(
-                            key="transcript_index",
-                            match=models.MatchValue(value=video_id),
-                        )
-                    ]
-                ),
-                limit=1,
-            )[0]
-            if existing:
-                self.logger.info(
-                    f"VIDEO_SKIP_ALREADY_INDEXED videoId={video_id} channel={channel}"
-                )
-                return {
-                    "video_id": video_id,
-                    "transcript_key": transcript_key,
-                    "source_key": source_key,
-                    "channel": channel,
-                    "status": "skipped",
-                    "chunks": [],
-                    "chunk_count": len(existing),
-                    "chunks_stored": len(existing),
-                    "intelligence": None,
-                    "thumbnail": None,
-                    "dynamo_intel_ok": True,
-                    "dynamo_thumb_ok": True,
-                    "error": None,
-                }
-        except Exception:
-            pass
+        if not force_reindex:
+            try:
+                existing = self.vector_service.client.scroll(
+                    collection_name=self.vector_service.collection_name,
+                    scroll_filter=models.Filter(
+                        must=[
+                            models.FieldCondition(
+                                key="transcript_index",
+                                match=models.MatchValue(value=video_id),
+                            )
+                        ]
+                    ),
+                    limit=1,
+                )[0]
+                if existing:
+                    self.logger.info(
+                        f"VIDEO_SKIP_ALREADY_INDEXED videoId={video_id} channel={channel}"
+                    )
+                    return {
+                        "video_id": video_id,
+                        "transcript_key": transcript_key,
+                        "source_key": source_key,
+                        "channel": channel,
+                        "status": "skipped",
+                        "chunks": [],
+                        "chunk_count": len(existing),
+                        "chunks_stored": len(existing),
+                        "intelligence": None,
+                        "thumbnail": None,
+                        "dynamo_intel_ok": True,
+                        "dynamo_thumb_ok": True,
+                        "error": None,
+                    }
+            except Exception:
+                pass
+        else:
+            self.logger.info(f"VIDEO_FORCE_REINDEX videoId={video_id} channel={channel}")
 
         # Step 1: Chunk
         chunks = self.embedding_service.chunk_text(transcript)
@@ -452,7 +456,7 @@ class PipelineService:
     # ── Main pipeline ─────────────────────────────────────────────────────────
 
     def run_s3_transcript_analysis(
-        self, prefix=None, limit=None, dry_run=False, job_id=None
+        self, prefix=None, limit=None, dry_run=False, job_id=None, force_reindex=False
     ):
         use_prefix = prefix if prefix is not None else settings.s3_prefix
         use_limit = limit if limit is not None else settings.s3_object_limit
@@ -654,6 +658,7 @@ class PipelineService:
                         video,
                         source_key,
                         worker_services[worker_idx],
+                        force_reindex,
                     )
                     futures[fut] = (video, source_key, worker_idx, time.time())
 
@@ -709,7 +714,7 @@ class PipelineService:
                     t0 = time.time()
                     try:
                         result = self._process_single_video(
-                            video, source_key, self.gemini_service
+                            video, source_key, self.gemini_service, force_reindex
                         )
                         gemini_results[video_id] = result
                         self.logger.info(
