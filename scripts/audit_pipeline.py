@@ -184,7 +184,7 @@ def build_cluster_data(
                 if isinstance(claim, dict):
                     ctype = claim.get("type", "")
                     ctext = claim.get("claim", "")
-                    claim_lines.append(f"  - {ctype}: \"{ctext}\"")
+                    claim_lines.append(f'  - {ctype}: "{ctext}"')
                 else:
                     claim_lines.append(f"  - {claim}")
             if claim_lines:
@@ -378,7 +378,9 @@ def write_context_file(
 def post_github_issue(title: str, body: str) -> str:
     if not GITHUB_TOKEN or not GITHUB_REPO:
         return ""
-    payload = json.dumps({"title": title, "body": body[:65000], "labels": ["audit", "pipeline"]}).encode()
+    payload = json.dumps(
+        {"title": title, "body": body[:65000], "labels": ["audit", "pipeline"]}
+    ).encode()
     req = urllib.request.Request(
         f"https://api.github.com/repos/{GITHUB_REPO}/issues",
         data=payload,
@@ -400,11 +402,19 @@ def post_github_issue(title: str, body: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pipeline-status", default="success", choices=["success", "failed"])
+    parser.add_argument(
+        "--pipeline-status", default="success", choices=["success", "failed"]
+    )
     parser.add_argument("--error", default=None)
     parser.add_argument("--job-id", default=None)
-    parser.add_argument("--out-dir", default=".", help="Directory to write output files")
-    parser.add_argument("--dry-run", action="store_true", help="Skip Claude API + GitHub issue, just print data")
+    parser.add_argument(
+        "--out-dir", default=".", help="Directory to write output files"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Skip Claude API + GitHub issue, just print data",
+    )
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -443,7 +453,9 @@ def main():
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     print("Building cluster data block...")
-    cluster_data = build_cluster_data(clusters, videos_by_cluster, cluster_week_headlines)
+    cluster_data = build_cluster_data(
+        clusters, videos_by_cluster, cluster_week_headlines
+    )
 
     if args.dry_run:
         print("\n--- Cluster data (dry run, no Claude call) ---")

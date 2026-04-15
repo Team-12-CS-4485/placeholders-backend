@@ -49,7 +49,9 @@ from app.core.config import settings
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
 
 
-def _dispatch_pipeline_complete(success: bool, error: str = "", job_id: str = "") -> None:
+def _dispatch_pipeline_complete(
+    success: bool, error: str = "", job_id: str = ""
+) -> None:
     """
     Notifies the audit_pipeline GitHub Actions workflow that the pipeline has finished.
     Requires GITHUB_DISPATCH_TOKEN (PAT with repo scope) and GITHUB_REPO env vars.
@@ -82,7 +84,9 @@ def _dispatch_pipeline_complete(success: bool, error: str = "", job_id: str = ""
             method="POST",
         )
         urllib.request.urlopen(req, timeout=10)
-        logger.info("GITHUB_DISPATCH_SENT status=%s", "success" if success else "failed")
+        logger.info(
+            "GITHUB_DISPATCH_SENT status=%s", "success" if success else "failed"
+        )
     except Exception as exc:
         logger.warning(f"GITHUB_DISPATCH_FAILED error={exc}")
 
