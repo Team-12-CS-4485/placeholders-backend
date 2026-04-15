@@ -16,3 +16,4 @@ transcript_analysis*
 claim_analysis_*
 cluster_summary*
 *.log
+scripts/fetch_audit.sh

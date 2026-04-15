@@ -460,6 +460,9 @@ def main():
     if args.dry_run:
         print("\n--- Cluster data (dry run, no Claude call) ---")
         print(cluster_data)
+        dry_path = out_dir / "cluster_data.txt"
+        dry_path.write_text(cluster_data)
+        print(f"\nCluster data written → {dry_path}")
         return
 
     print("Calling Claude for review...")
