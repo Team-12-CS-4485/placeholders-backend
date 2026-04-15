@@ -123,12 +123,13 @@ class SemanticChunker:
         else:
             prefixed = texts
 
-        vectors = self.model.encode(
-            prefixed,
-            show_progress_bar=False,
-            normalize_embeddings=True,
-            batch_size=32,
-        )
+        with SemanticChunker._load_lock:
+            vectors = self.model.encode(
+                prefixed,
+                show_progress_bar=False,
+                normalize_embeddings=True,
+                batch_size=32,
+            )
         return [v.tolist() for v in vectors]
 
     def _semantic_chunk(self, text: str) -> list[str]:
@@ -145,14 +146,13 @@ class SemanticChunker:
             if self.use_nomic_prefix
             else sentences
         )
-        embeddings = self.model.encode(
-            prefixed,
-            show_progress_bar=False,
-            normalize_embeddings=True,
-            batch_size=64,
-            padding=True,
-            truncation=True,
-        )
+        with SemanticChunker._load_lock:
+            embeddings = self.model.encode(
+                prefixed,
+                show_progress_bar=False,
+                normalize_embeddings=True,
+                batch_size=64,
+            )
 
         chunks: list[str] = []
         current: list[str] = [sentences[0]]
