@@ -228,16 +228,16 @@ def get_video_transcript(video_id):
             auto_subs = info.get("automatic_captions") or {}
 
             tracks = (
-                subtitles.get("en")
-                or auto_subs.get("en")
-                or auto_subs.get("en-orig")
+                subtitles.get("en") or auto_subs.get("en") or auto_subs.get("en-orig")
             )
 
             if not tracks:
                 logger.info(f"[{video_id}] No English subtitle tracks found")
                 return None
 
-            vtt_url = next((t.get("url") for t in tracks if t.get("ext") == "vtt"), None)
+            vtt_url = next(
+                (t.get("url") for t in tracks if t.get("ext") == "vtt"), None
+            )
             if not vtt_url:
                 return None
 
