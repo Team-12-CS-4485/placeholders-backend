@@ -90,6 +90,22 @@ Single video detail including transcript and top comments.
 
 ---
 
+### `GET /api/videos/by-channel`
+
+Paginated list of videos filtered by channel name. Uses a DynamoDB key query (faster than a filtered scan).
+
+**Query Parameters**
+
+| Parameter      | Type   | Required | Description |
+|----------------|--------|----------|-------------|
+| `channel_name` | string | Yes      | Exact channel name (PartitionKey) |
+| `limit`        | int    | No       | Max results (1–100, default 20) |
+| `cursor`       | string | No       | Pagination token from previous response |
+
+**Response** — same shape as `GET /api/videos`
+
+---
+
 ## Narratives
 
 ### `GET /api/narratives`
@@ -350,6 +366,37 @@ All available weeks with aggregate stats. Drives the Archives view.
 ```
 
 Weeks are sorted chronologically (`week1` → `week2` → ...).
+
+---
+
+### `GET /api/weeks/{week}`
+
+All clusters active in a given week with their per-week unique headlines from the `cluster-weeks` table. Drives the expanded week view in Archives.
+
+**Path Parameter:** `week` — e.g. `week1` or `1`
+
+**Response**
+```json
+{
+  "week": "week2",
+  "narratives": [
+    {
+      "cluster_id": 8,
+      "cluster_label": "Jeffrey Epstein Investigation",
+      "narrative_headline": "Epstein Files Expose Network of Powerful Connections",
+      "narrative_summary": "Newly unsealed documents link Epstein to 36 public figures.",
+      "week_overview": "Coverage focused on newly released court documents...",
+      "top_topics": ["epstein", "government", "scandal"],
+      "top_claims": ["Documents released by court order"],
+      "video_count": 6,
+      "view_count": 310000,
+      "breaking_count": 1,
+      "dominant_sentiment": "negative"
+    }
+  ],
+  "total": 10
+}
+```
 
 ---
 
