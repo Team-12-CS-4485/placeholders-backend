@@ -85,3 +85,4 @@ jobs:
           service: ${{ secrets.GCP_SERVICE }}
           region: ${{ secrets.GCP_REGION }}
           image: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/cloud-run-source-deploy/${{ secrets.GCP_SERVICE }}:${{ github.sha }}
+          flags: --min-instances=1
