@@ -1,0 +1,92 @@
+name: Pipeline Audit
+
+on:
+  # Triggered automatically when pipeline_service calls GitHub dispatch API
+  repository_dispatch:
+    types: [pipeline-complete]
+
+  # Manual trigger from the Actions tab — useful for on-demand reviews
+  workflow_dispatch:
+    inputs:
+      pipeline_status:
+        description: "Pipeline status (success or failed)"
+        required: false
+        default: "success"
+      error:
+        description: "Error message (if failed)"
+        required: false
+        default: ""
+      job_id:
+        description: "Pipeline job ID (optional)"
+        required: false
+        default: ""
+
+permissions:
+  issues: write   # needed to create GitHub issues
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install boto3 python-dotenv anthropic
+
+      - name: Resolve inputs
+        id: inputs
+        run: |
+          # Prefer repository_dispatch payload, fall back to workflow_dispatch inputs
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "status=${{ github.event.client_payload.status }}" >> $GITHUB_OUTPUT
+            echo "error=${{ github.event.client_payload.error }}" >> $GITHUB_OUTPUT
+            echo "job_id=${{ github.event.client_payload.job_id }}" >> $GITHUB_OUTPUT
+          else
+            echo "status=${{ github.event.inputs.pipeline_status || 'success' }}" >> $GITHUB_OUTPUT
+            echo "error=${{ github.event.inputs.error || '' }}" >> $GITHUB_OUTPUT
+            echo "job_id=${{ github.event.inputs.job_id || '' }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run audit
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-2' }}
+          DYNAMODB_TABLE: ${{ vars.DYNAMODB_TABLE || 'youtube-videos' }}
+        run: |
+          ARGS="--pipeline-status ${{ steps.inputs.outputs.status }} --out-dir audit-output --dry-run"
+
+          if [ -n "${{ steps.inputs.outputs.error }}" ]; then
+            ARGS="$ARGS --error \"${{ steps.inputs.outputs.error }}\""
+          fi
+
+          if [ -n "${{ steps.inputs.outputs.job_id }}" ]; then
+            ARGS="$ARGS --job-id ${{ steps.inputs.outputs.job_id }}"
+          fi
+
+          python scripts/audit_pipeline.py $ARGS
+
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: audit-${{ github.run_number }}
+          path: audit-output/
+          retention-days: 30
+
+      - name: Print report to job summary
+        if: always()
+        run: |
+          if [ -f audit-output/audit_report.md ]; then
+            cat audit-output/audit_report.md >> $GITHUB_STEP_SUMMARY
+          fi
