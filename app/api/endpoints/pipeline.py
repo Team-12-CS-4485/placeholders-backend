@@ -11,7 +11,10 @@ All write endpoints accept dry_run=true to preview without writing.
 /ingest and /run with dry_run=true run synchronously (no Gemini calls, fast).
 """
 
+import json
+import os
 import threading
+import urllib.request
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -44,6 +47,44 @@ from app.services import job_service
 from app.core.config import settings
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
+
+
+def _dispatch_pipeline_complete(success: bool, error: str = "", job_id: str = "") -> None:
+    """
+    Notifies the audit_pipeline GitHub Actions workflow that the pipeline has finished.
+    Requires GITHUB_DISPATCH_TOKEN (PAT with repo scope) and GITHUB_REPO env vars.
+    Fire-and-forget — never raises, so it can't break the pipeline.
+    """
+    token = os.getenv("GITHUB_DISPATCH_TOKEN", "")
+    repo = os.getenv("GITHUB_REPO", "")
+    if not token or not repo:
+        return
+    try:
+        payload = json.dumps(
+            {
+                "event_type": "pipeline-complete",
+                "client_payload": {
+                    "status": "success" if success else "failed",
+                    "error": error,
+                    "job_id": job_id,
+                },
+            }
+        ).encode()
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{repo}/dispatches",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=10)
+        logger.info("GITHUB_DISPATCH_SENT status=%s", "success" if success else "failed")
+    except Exception as exc:
+        logger.warning(f"GITHUB_DISPATCH_FAILED error={exc}")
 
 
 # ── Background workers ────────────────────────────────────────────────────────
@@ -85,9 +126,11 @@ def _run_full_pipeline_background(request: PipelineRunRequest, job_id: str) -> N
                 "articles": article_result,
             },
         )
+        _dispatch_pipeline_complete(success=True, job_id=job_id)
     except Exception as exc:
         logger.error(f"PIPELINE_BACKGROUND_FATAL error={exc}")
         job_service.fail_job(job_id, str(exc))
+        _dispatch_pipeline_complete(success=False, error=str(exc), job_id=job_id)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
