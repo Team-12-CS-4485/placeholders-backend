@@ -53,13 +53,18 @@ def purge_narrative_clusters(table, dry_run):
 
 
 def purge_cluster_weeks(table, dry_run):
-    items = _scan_all(table, ProjectionExpression="cluster_id, #wk",
-                      ExpressionAttributeNames={"#wk": "week"})
+    items = _scan_all(
+        table,
+        ProjectionExpression="cluster_id, #wk",
+        ExpressionAttributeNames={"#wk": "week"},
+    )
     logger.info(f"cluster-weeks: {len(items)} rows to delete")
     if not dry_run:
         with table.batch_writer() as batch:
             for item in items:
-                batch.delete_item(Key={"cluster_id": item["cluster_id"], "week": item["week"]})
+                batch.delete_item(
+                    Key={"cluster_id": item["cluster_id"], "week": item["week"]}
+                )
         logger.info("cluster-weeks: done")
     return len(items)
 
@@ -113,12 +118,8 @@ def main():
     counts["narrative-clusters"] = purge_narrative_clusters(
         ddb.Table("narrative-clusters"), dry_run
     )
-    counts["cluster-weeks"] = purge_cluster_weeks(
-        ddb.Table("cluster-weeks"), dry_run
-    )
-    counts["articles"] = purge_articles(
-        ddb.Table("articles"), dry_run
-    )
+    counts["cluster-weeks"] = purge_cluster_weeks(ddb.Table("cluster-weeks"), dry_run)
+    counts["articles"] = purge_articles(ddb.Table("articles"), dry_run)
     counts["youtube-videos (stripped)"] = strip_video_cluster_fields(
         ddb.Table("youtube-videos"), dry_run
     )

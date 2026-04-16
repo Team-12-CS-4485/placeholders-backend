@@ -145,9 +145,13 @@ class ClusterLabelingService:
                 else 0.0
             )
 
-            dominant_creator = sentiments.most_common(1)[0][0] if sentiments else "neutral"
+            dominant_creator = (
+                sentiments.most_common(1)[0][0] if sentiments else "neutral"
+            )
             dominant_public = (
-                public_sentiments.most_common(1)[0][0] if public_sentiments else "neutral"
+                public_sentiments.most_common(1)[0][0]
+                if public_sentiments
+                else "neutral"
             )
 
             # Latest week's titles and claims for Gemini prompts
@@ -160,7 +164,9 @@ class ClusterLabelingService:
                 latest_vids = week_buckets[latest_week_name]
                 latest_titles = [v["title"] for v in latest_vids if v.get("title")][:5]
                 latest_claims = list(
-                    dict.fromkeys(c for v in latest_vids for c in v.get("key_claims", []))
+                    dict.fromkeys(
+                        c for v in latest_vids for c in v.get("key_claims", [])
+                    )
                 )[:5]
             else:
                 latest_week_name = None
@@ -328,7 +334,7 @@ class ClusterLabelingService:
             titles = info.get("latest_titles", [])[:2]
             titles_str = "; ".join(f'"{t}"' for t in titles) if titles else "none"
             new_sections.append(
-                f'  Cluster {hdbscan_id}: topics=[{topics}] | titles=[{titles_str}]'
+                f"  Cluster {hdbscan_id}: topics=[{topics}] | titles=[{titles_str}]"
             )
 
         # Existing thread descriptions — registry label + prior headlines
@@ -473,13 +479,17 @@ Return ONLY valid JSON, no markdown:
         if dry_run:
             for cid in real_cids:
                 cluster_info[cid]["label"] = f"Cluster {cid}"
-                cluster_info[cid]["narrative_headline"] = "[Gemini would generate a newspaper headline]"
-                cluster_info[cid]["narrative_summary"] = "[Gemini would generate a one-sentence summary with stats]"
+                cluster_info[cid][
+                    "narrative_headline"
+                ] = "[Gemini would generate a newspaper headline]"
+                cluster_info[cid][
+                    "narrative_summary"
+                ] = "[Gemini would generate a one-sentence summary with stats]"
                 for wd in cluster_info[cid]["week_data"]:
-                    wd["week_overview"] = "[Gemini would generate a 2-sentence week overview]"
-            logger.info(
-                f"LABEL_DRY_RUN skipping Gemini for {len(real_cids)} clusters"
-            )
+                    wd["week_overview"] = (
+                        "[Gemini would generate a 2-sentence week overview]"
+                    )
+            logger.info(f"LABEL_DRY_RUN skipping Gemini for {len(real_cids)} clusters")
             return cluster_info
 
         for cid in real_cids:

@@ -18,6 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from dotenv import load_dotenv
+
 load_dotenv()
 
 import boto3
@@ -70,7 +71,9 @@ def main():
         headline = headline_map.get((cid, week))
 
         if not headline:
-            print(f"  [MISSING] cluster={cid} week={week} article={article['article_id']}")
+            print(
+                f"  [MISSING] cluster={cid} week={week} article={article['article_id']}"
+            )
             missing += 1
             continue
 
@@ -88,7 +91,9 @@ def main():
             )
         updated += 1
 
-    print(f"\nUpdated: {updated}  Skipped (already correct): {skipped}  Missing headline: {missing}")
+    print(
+        f"\nUpdated: {updated}  Skipped (already correct): {skipped}  Missing headline: {missing}"
+    )
     if args.dry_run:
         print("Dry run — no writes made.")
 

@@ -294,9 +294,7 @@ class ClusteringService:
                 purity < soft_min_purity and n_cats > max_categories_at_soft
             )
             if incoherent:
-                mask = np.array(
-                    [i for i, lb in enumerate(labels) if int(lb) == lid]
-                )
+                mask = np.array([i for i, lb in enumerate(labels) if int(lb) == lid])
                 labels[mask] = -1
                 logger.info(
                     f"COHERENCE_FILTER cluster={lid} size={n} "
@@ -481,7 +479,9 @@ class ClusteringService:
                     "sentiment_breakdown": week_sentiments,
                     "dominant_public_sentiment": dominant_public_sentiment,
                     "public_sentiment_breakdown": week_pub_sentiments,
-                    "avg_public_sentiment_score": info.get("avg_public_sentiment_score", 0.0),
+                    "avg_public_sentiment_score": info.get(
+                        "avg_public_sentiment_score", 0.0
+                    ),
                     "sentiment_divergence": info.get("sentiment_divergence", False),
                     "dominant_category": info.get("dominant_category", "Other"),
                 },
@@ -777,7 +777,9 @@ class ClusteringService:
         )
 
         # 4b. Filter incoherent clusters → noise before Gemini labeling
-        labels = self._filter_incoherent_clusters(labels=labels, video_ids=video_ids, meta_map=filtered_meta)
+        labels = self._filter_incoherent_clusters(
+            labels=labels, video_ids=video_ids, meta_map=filtered_meta
+        )
 
         # 5a. Load existing clusters from narrative-clusters registry
         existing_clusters = self._labeling_service.load_existing_clusters(
@@ -786,6 +788,7 @@ class ClusteringService:
 
         # 5b. Build raw cluster stats — pure aggregation, no Gemini
         from app.services.dynamo_service import DynamoService
+
         dynamo_svc = DynamoService(self._dynamodb)
         raw_cluster_info = self._labeling_service.build_cluster_stats(
             video_ids, labels, filtered_meta
@@ -903,7 +906,11 @@ class ClusteringService:
             return dict(
                 sorted(
                     result.items(),
-                    key=lambda kv: int(kv[0][4:]) if kv[0].startswith("week") and kv[0][4:].isdigit() else 0,
+                    key=lambda kv: (
+                        int(kv[0][4:])
+                        if kv[0].startswith("week") and kv[0][4:].isdigit()
+                        else 0
+                    ),
                 )
             )
 

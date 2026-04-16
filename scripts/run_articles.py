@@ -32,11 +32,21 @@ from app.services.article_service import ArticleService
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate articles for all cluster × week combinations")
-    parser.add_argument("--week", default=None, help="Limit to a specific week (e.g. week3 or 3)")
-    parser.add_argument("--cluster-id", type=int, default=None, help="Limit to a single cluster")
-    parser.add_argument("--force", action="store_true", help="Overwrite existing articles")
-    parser.add_argument("--dry-run", action="store_true", help="Preview jobs without calling Gemini")
+    parser = argparse.ArgumentParser(
+        description="Generate articles for all cluster × week combinations"
+    )
+    parser.add_argument(
+        "--week", default=None, help="Limit to a specific week (e.g. week3 or 3)"
+    )
+    parser.add_argument(
+        "--cluster-id", type=int, default=None, help="Limit to a single cluster"
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Overwrite existing articles"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Preview jobs without calling Gemini"
+    )
     args = parser.parse_args()
 
     service = ArticleService()
@@ -54,10 +64,14 @@ def main():
         print(f"Weeks:          {result['weeks_processed']}")
         if result.get("per_cluster"):
             print("\n--- Per Cluster ---")
-            for cid, info in sorted(result["per_cluster"].items(), key=lambda x: int(x[0])):
+            for cid, info in sorted(
+                result["per_cluster"].items(), key=lambda x: int(x[0])
+            ):
                 label = info.get("cluster_label", "?")
                 weeks = info.get("weeks", {})
-                to_gen = [w for w, d in weeks.items() if d["status"] == "would_generate"]
+                to_gen = [
+                    w for w, d in weeks.items() if d["status"] == "would_generate"
+                ]
                 to_skip = [w for w, d in weeks.items() if d["status"] == "would_skip"]
                 print(f"  [{cid}] {label}")
                 if to_gen:

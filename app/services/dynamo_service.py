@@ -474,7 +474,9 @@ class DynamoService:
             expr_values[val_key] = v
 
             if k in protected:
-                update_parts.append(f"{safe_name} = if_not_exists({safe_name}, {val_key})")
+                update_parts.append(
+                    f"{safe_name} = if_not_exists({safe_name}, {val_key})"
+                )
             else:
                 update_parts.append(f"{safe_name} = {val_key}")
 
