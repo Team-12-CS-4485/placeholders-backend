@@ -26,7 +26,7 @@ class Settings:
             "GEMINI_API_KEY", ""
         )
         self.genai_api_keys = [self.genai_api_key]
-        for i in range(2, 31):
+        for i in range(2, 41):
             key = os.getenv(f"GENAI_API_KEY_{i}") or os.getenv(f"GEMINI_API_KEY_{i}")
             if key:
                 self.genai_api_keys.append(key)
