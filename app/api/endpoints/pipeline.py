@@ -224,6 +224,8 @@ def run_cluster(request: DryRunRequest):
     """Cluster only — reads vectors from Qdrant + metadata from DynamoDB, runs UMAP/HDBSCAN."""
     try:
         result = ClusteringService().run_clustering(dry_run=request.dry_run)
+        if not request.dry_run:
+            invalidate_all()
         return {
             "total_videos": result.get("total_videos", 0),
             "cluster_count": result.get("cluster_count", 0),
@@ -242,6 +244,8 @@ def run_claims(request: DryRunRequest):
     """Claim analysis only — reads clustered videos from DynamoDB, classifies claims."""
     try:
         result = ClaimAnalysisService().run_claim_analysis(dry_run=request.dry_run)
+        if not request.dry_run:
+            invalidate_all()
         return {
             "clusters_processed": result.get("clusters_processed", 0),
             "total_patched": result.get("total_written", 0),

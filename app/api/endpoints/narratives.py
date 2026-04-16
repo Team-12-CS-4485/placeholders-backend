@@ -61,9 +61,12 @@ def get_narrative_videos(
     cluster_id: int,
     limit: int = Query(default=20, ge=1, le=100),
     cursor: Optional[str] = Query(default=None),
+    week: Optional[str] = Query(default=None),
 ):
     service = DynamoService()
-    result = service.scan_videos(limit=limit, cursor=cursor, cluster_id=cluster_id)
+    result = service.scan_videos(
+        limit=limit, cursor=cursor, cluster_id=cluster_id, week=week
+    )
     return {
         "cluster_id": cluster_id,
         "items": result["items"],

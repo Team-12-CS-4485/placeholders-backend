@@ -121,7 +121,8 @@ class ClusteringService:
             "ProjectionExpression": "PartitionKey, SortKey, channel, topics, category, "
             "sentiment, is_breaking, viewCount, likeCount, commentCount, "
             "title, publishedAt, #wk, source_key, key_claims, "
-            "public_sentiment, public_sentiment_score",
+            "public_sentiment, public_sentiment_score, "
+            "thumbnail_clickbait_score, thumbnail_tone",
             "ExpressionAttributeNames": {"#wk": "week"},
         }
 
@@ -147,6 +148,10 @@ class ClusteringService:
                         "public_sentiment_score": float(
                             item.get("public_sentiment_score") or 0
                         ),
+                        "thumbnail_clickbait_score": float(
+                            item.get("thumbnail_clickbait_score") or 0
+                        ),
+                        "thumbnail_tone": item.get("thumbnail_tone", ""),
                     }
             if "LastEvaluatedKey" not in resp:
                 break
@@ -440,6 +445,10 @@ class ClusteringService:
                 "total_comments": _dec(info["total_comments"]),
                 "narrative_headline": info.get("narrative_headline"),
                 "narrative_summary": info.get("narrative_summary"),
+                "avg_clickbait_rating": _dec(info.get("avg_clickbait_rating", 0.0)),
+                "thumbnail_tone_breakdown": _clean_for_dynamo(
+                    info.get("thumbnail_tone_breakdown", {})
+                ),
                 # week_data now carries week_overview on each entry
                 "week_data": _clean_for_dynamo(info["week_data"]),
                 "top_claims": info["top_claims"],
@@ -552,6 +561,42 @@ class ClusteringService:
             if "LastEvaluatedKey" not in resp:
                 break
             article_scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+        # Update cluster-weeks (composite PK = cluster_id + week → delete + put)
+        cluster_weeks_table = self._dynamodb.Table("cluster-weeks")
+        cw_scan_kwargs: dict = {
+            "ProjectionExpression": "cluster_id, #wk",
+            "ExpressionAttributeNames": {"#wk": "week"},
+        }
+        cw_items_to_remap = []
+        while True:
+            resp = cluster_weeks_table.scan(**cw_scan_kwargs)
+            for item in resp["Items"]:
+                if item.get("cluster_id") in old_ids_dec:
+                    cw_items_to_remap.append(item)
+            if "LastEvaluatedKey" not in resp:
+                break
+            cw_scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+        for stub in cw_items_to_remap:
+            old_cid = int(stub["cluster_id"])
+            week = stub["week"]
+            new_id = id_map[old_cid]
+            full = cluster_weeks_table.get_item(
+                Key={"cluster_id": _dec(old_cid), "week": week}
+            ).get("Item")
+            if not full:
+                continue
+            cluster_weeks_table.delete_item(
+                Key={"cluster_id": _dec(old_cid), "week": week}
+            )
+            new_full = dict(full)
+            new_full["cluster_id"] = _dec(new_id)
+            cluster_weeks_table.put_item(Item=new_full)
+            logger.debug(f"RENUMBER cluster-weeks {old_cid} → {new_id} week={week}")
+
+        if cw_items_to_remap:
+            logger.info(f"RENUMBER_CLUSTER_WEEKS remapped={len(cw_items_to_remap)}")
 
         logger.info(f"RENUMBER_COMPLETE remapped={len(id_map)}")
         return len(id_map)
