@@ -447,28 +447,67 @@ class DynamoService:
         self, cluster_id: int, week: str, data: dict
     ) -> None:
         """
-        Idempotent put_item for a cluster+week snapshot into cluster-weeks table.
-        All numeric values are coerced to Decimal; None values are stripped.
+        Write a cluster+week snapshot to cluster-weeks using update_item.
+
+        narrative_headline, narrative_summary, and created_at are only set if
+        they do not already exist (if_not_exists) so that manual edits and
+        prior runs are never clobbered. All other fields are always overwritten.
         """
-        item: dict = {
-            "cluster_id": Decimal(str(cluster_id)),
-            "week": week,
-        }
+        # Fields that must never be overwritten once set
+        protected = {"narrative_headline", "narrative_summary", "created_at"}
+
+        update_parts = []
+        expr_names: dict = {}
+        expr_values: dict = {}
+
         for k, v in data.items():
             if v is None:
                 continue
             if isinstance(v, float):
-                item[k] = Decimal(str(round(v, 4)))
+                v = Decimal(str(round(v, 4)))
             elif isinstance(v, int) and not isinstance(v, bool):
-                item[k] = Decimal(str(v))
+                v = Decimal(str(v))
+
+            safe_name = f"#f_{k}"
+            val_key = f":v_{k}"
+            expr_names[safe_name] = k
+            expr_values[val_key] = v
+
+            if k in protected:
+                update_parts.append(f"{safe_name} = if_not_exists({safe_name}, {val_key})")
             else:
-                item[k] = v
+                update_parts.append(f"{safe_name} = {val_key}")
+
+        if not update_parts:
+            return
+
         try:
-            self._cluster_weeks_table.put_item(Item=item)
+            self._cluster_weeks_table.update_item(
+                Key={
+                    "cluster_id": Decimal(str(cluster_id)),
+                    "week": week,
+                },
+                UpdateExpression="SET " + ", ".join(update_parts),
+                ExpressionAttributeNames=expr_names,
+                ExpressionAttributeValues=expr_values,
+            )
         except Exception as exc:
             logger.warning(
                 f"CLUSTER_WEEK_SAVE_WARN cluster={cluster_id} week={week} error={exc}"
             )
+
+    def get_cluster_week_row(self, cluster_id: int, week: str) -> dict | None:
+        """Fetch a single cluster-weeks row by (cluster_id, week)."""
+        try:
+            resp = self._cluster_weeks_table.get_item(
+                Key={"cluster_id": Decimal(str(cluster_id)), "week": week}
+            )
+            return resp.get("Item")
+        except Exception as exc:
+            logger.warning(
+                f"CLUSTER_WEEK_ROW_WARN cluster={cluster_id} week={week} error={exc}"
+            )
+            return None
 
     def get_all_cluster_week_headlines(self, cluster_id: int) -> dict[str, str]:
         """

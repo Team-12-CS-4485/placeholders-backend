@@ -9,10 +9,12 @@ Flow:
 2. Pull metadata from DynamoDB (topics, channel, etc.)
 3. Deduplicate to one representative per video (mean-pool vectors)
 4. UMAP (768d → 15d) + HDBSCAN clustering
-5. Label each cluster (via ClusterLabelingService)
-6. Stable cluster matching (via ClusterLabelingService)
-7. Write cluster_id/label/confidence to DynamoDB youtube-videos
-8. Write cluster summary to DynamoDB narrative-clusters table
+5. Aggregate per-cluster stats (build_cluster_stats — no Gemini)
+6. Fetch prior headlines for all existing story threads
+7. Gemini match — map HDBSCAN IDs to stable story thread IDs (week-1: fast-path)
+8. Gemini label — NEW clusters get fresh prompt; MATCH clusters get prior headlines
+9. Write cluster_id/label/confidence to DynamoDB youtube-videos
+10. Write cluster summary to DynamoDB narrative-clusters table
 
 Labeling and matching logic lives in cluster_labeling_service.py.
 
@@ -111,19 +113,24 @@ class ClusteringService:
 
     # ── Step 2: Pull metadata from DynamoDB ──────────────────────────────────
 
-    def _get_video_metadata(self) -> dict[str, dict]:
+    def _get_video_metadata(self, week: str | None = None) -> dict[str, dict]:
         """
-        Scan DynamoDB for all videos with intelligence data.
+        Scan DynamoDB for videos with intelligence data.
+        If week is provided, only returns videos for that week.
         Returns {video_id: {channel, topics, category, sentiment, ...}}
         """
+        from boto3.dynamodb.conditions import Attr
+
         meta = {}
-        scan_kwargs = {
+        scan_kwargs: dict = {
             "ProjectionExpression": "PartitionKey, SortKey, channel, topics, category, "
             "sentiment, is_breaking, viewCount, likeCount, commentCount, "
             "title, publishedAt, #wk, source_key, key_claims, "
             "public_sentiment, public_sentiment_score",
             "ExpressionAttributeNames": {"#wk": "week"},
         }
+        if week:
+            scan_kwargs["FilterExpression"] = Attr("week").eq(week)
 
         while True:
             resp = self._videos_table.scan(**scan_kwargs)
@@ -152,7 +159,9 @@ class ClusteringService:
                 break
             scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
 
-        logger.debug(f"CLUSTER_DYNAMO_META videos_with_intel={len(meta)}")
+        logger.debug(
+            f"CLUSTER_DYNAMO_META videos_with_intel={len(meta)} week={week or 'all'}"
+        )
         return meta
 
     # ── Step 3: Build video representatives ──────────────────────────────────
@@ -238,6 +247,63 @@ class ClusteringService:
         n_noise = int(np.sum(labels == -1))
         logger.debug(f"HDBSCAN_COMPLETE clusters={n_clusters} noise={n_noise}")
         return labels, probabilities
+
+    # ── Step 4b: Coherence filter ────────────────────────────────────────────
+
+    def _filter_incoherent_clusters(
+        self,
+        video_ids: list[str],
+        labels: np.ndarray,
+        meta_map: dict[str, dict],
+        hard_min_purity: float = 0.35,
+        soft_min_purity: float = 0.55,
+        max_categories_at_soft: int = 3,
+    ) -> np.ndarray:
+        """
+        Reassign incoherent clusters to noise (-1) before Gemini labeling.
+
+        A cluster is incoherent if:
+          - purity < hard_min_purity  (dominant category < 35% of videos), OR
+          - purity < soft_min_purity AND n_distinct_categories > max_categories_at_soft
+
+        purity = dominant_category_count / cluster_size
+
+        Returns a modified copy of labels.
+        """
+        from collections import Counter
+
+        labels = labels.copy()
+
+        # Build {hdbscan_id: [category, ...]}
+        cluster_cats: dict[int, list[str]] = {}
+        for vid, lbl in zip(video_ids, labels):
+            lid = int(lbl)
+            if lid == -1:
+                continue
+            cat = meta_map.get(vid, {}).get("category", "Other")
+            cluster_cats.setdefault(lid, []).append(cat)
+
+        for lid, cats in cluster_cats.items():
+            n = len(cats)
+            counter = Counter(cats)
+            dominant_count = counter.most_common(1)[0][1]
+            purity = dominant_count / n
+            n_cats = len(counter)
+
+            incoherent = purity < hard_min_purity or (
+                purity < soft_min_purity and n_cats > max_categories_at_soft
+            )
+            if incoherent:
+                mask = np.array(
+                    [i for i, lb in enumerate(labels) if int(lb) == lid]
+                )
+                labels[mask] = -1
+                logger.info(
+                    f"COHERENCE_FILTER cluster={lid} size={n} "
+                    f"purity={purity:.2f} n_cats={n_cats} → noise"
+                )
+
+        return labels
 
     # ── Step 6: Write to DynamoDB ────────────────────────────────────────────
 
@@ -353,41 +419,71 @@ class ClusteringService:
     def _write_cluster_week_snapshots(
         self, cluster_info: dict, current_week: str
     ) -> int:
-        """Write per-week headline/summary snapshots to the cluster-weeks table."""
+        """
+        Write per-week snapshots to cluster-weeks.
+
+        cluster-weeks is the primary content table. narrative-clusters is registry-only.
+        All content fields (stats, sentiment, claims, channels) live here keyed by week.
+
+        Since clustering is week-scoped, week_data always has exactly one entry.
+        """
         from app.services.dynamo_service import DynamoService
 
         dynamo_svc = DynamoService(self._dynamodb)
         written = 0
+        now = datetime.now(timezone.utc).isoformat()
+
         for cid, info in cluster_info.items():
             if cid == -1:
                 continue
+            # week_data has exactly one entry when clustering is week-scoped
             wd = next(
                 (w for w in info.get("week_data", []) if w["week"] == current_week),
                 None,
             )
             if not wd:
                 continue
+
             week_sentiments = wd.get("sentiment_breakdown", {})
             dominant_sentiment = (
                 max(week_sentiments, key=week_sentiments.get)
                 if week_sentiments
                 else "neutral"
             )
+            week_pub_sentiments = wd.get("public_sentiment_breakdown", {})
+            dominant_public_sentiment = (
+                max(week_pub_sentiments, key=week_pub_sentiments.get)
+                if week_pub_sentiments
+                else "neutral"
+            )
+
             dynamo_svc.save_cluster_week_snapshot(
                 cid,
                 current_week,
                 {
+                    # if_not_exists — manual edits safe
                     "narrative_headline": info.get("narrative_headline"),
                     "narrative_summary": info.get("narrative_summary"),
+                    "created_at": now,
+                    # always overwritten
+                    "updated_at": now,
                     "week_overview": wd.get("week_overview", ""),
                     "top_claims": info.get("top_claims", []),
                     "top_topics": info.get("top_topics", []),
+                    "channels": info.get("channels", []),
                     "video_count": wd.get("video_count", 0),
                     "channel_count": wd.get("channel_count", 0),
                     "view_count": wd.get("view_count", 0),
                     "breaking_count": wd.get("breaking_count", 0),
+                    "total_likes": info.get("total_likes", 0),
+                    "total_comments": info.get("total_comments", 0),
                     "dominant_sentiment": dominant_sentiment,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "sentiment_breakdown": week_sentiments,
+                    "dominant_public_sentiment": dominant_public_sentiment,
+                    "public_sentiment_breakdown": week_pub_sentiments,
+                    "avg_public_sentiment_score": info.get("avg_public_sentiment_score", 0.0),
+                    "sentiment_divergence": info.get("sentiment_divergence", False),
+                    "dominant_category": info.get("dominant_category", "Other"),
                 },
             )
             written += 1
@@ -398,59 +494,92 @@ class ClusteringService:
         self, cluster_info, existing_clusters=None, new_ids=None
     ):
         """
-        Write cluster summaries to DynamoDB.
-        Preserves created_at for matched (existing) clusters.
-        New clusters get status='new', existing ones stay 'active'.
-        week_data entries include week_overview from the Gemini call.
+        Write narrative-clusters registry entries.
+
+        Writes cluster_label, status, timestamps (registry fields) plus
+        week_data and top_topics so the backfill script can iterate weeks
+        without querying youtube-videos for the week list.
+
+        New clusters: create with status='new', created_at=now.
+        Existing clusters: update label, status, updated_at, week_data, top_topics.
         """
         existing_clusters = existing_clusters or {}
         new_ids = set(new_ids or [])
         written = 0
+        now = datetime.now(timezone.utc).isoformat()
+
         for cid, info in cluster_info.items():
             if cid == -1:
                 continue
-            now = datetime.now(timezone.utc).isoformat()
-            # Preserve created_at if this is an existing cluster
-            old = existing_clusters.get(cid)
-            created_at = old["created_at"] if old and old.get("created_at") else now
 
-            item = {
-                "cluster_id": _dec(cid),
-                "cluster_label": info["label"],
-                "video_count": _dec(info["video_count"]),
-                "channel_count": _dec(info["channel_count"]),
-                "channels": info["channels"],
-                "top_topics": info["top_topics"],
-                "dominant_category": info["dominant_category"],
-                "dominant_sentiment": info["dominant_sentiment"],
-                "sentiment_breakdown": _clean_for_dynamo(info["sentiment_breakdown"]),
-                "public_sentiment_breakdown": _clean_for_dynamo(
-                    info.get("public_sentiment_breakdown", {})
-                ),
-                "avg_public_sentiment_score": _dec(
-                    info.get("avg_public_sentiment_score", 0.0)
-                ),
-                "dominant_public_sentiment": info.get(
-                    "dominant_public_sentiment", "neutral"
-                ),
-                "sentiment_divergence": info.get("sentiment_divergence", False),
-                "breaking_count": _dec(info["breaking_count"]),
-                "total_views": _dec(info["total_views"]),
-                "total_likes": _dec(info["total_likes"]),
-                "total_comments": _dec(info["total_comments"]),
-                "narrative_headline": info.get("narrative_headline"),
-                "narrative_summary": info.get("narrative_summary"),
-                # week_data now carries week_overview on each entry
-                "week_data": _clean_for_dynamo(info["week_data"]),
-                "top_claims": info["top_claims"],
-                "status": "new" if cid in new_ids else "active",
-                "created_at": created_at,
-                "updated_at": now,
-            }
-            self._clusters_table.put_item(Item=item)
+            is_new = cid in new_ids
+            status = "new" if is_new else "active"
+            week_data = _clean_for_dynamo(info.get("week_data", []))
+            top_topics = info.get("top_topics", [])
+            video_count = _dec(info.get("video_count", 0))
+            total_views = _dec(info.get("total_views", 0))
+            channel_count = _dec(info.get("channel_count", 0))
+            dominant_category = info.get("dominant_category", "Other")
+            dominant_sentiment = info.get("dominant_sentiment", "neutral")
+            channels = info.get("channels", [])
+
+            if is_new:
+                self._clusters_table.update_item(
+                    Key={"cluster_id": _dec(cid)},
+                    UpdateExpression=(
+                        "SET cluster_label = :label, #status = :status, "
+                        "created_at = if_not_exists(created_at, :now), "
+                        "updated_at = :now, "
+                        "week_data = :week_data, top_topics = :top_topics, "
+                        "video_count = :vc, total_views = :tv, "
+                        "channel_count = :cc, dominant_category = :dcat, "
+                        "dominant_sentiment = :dsent, channels = :channels"
+                    ),
+                    ExpressionAttributeNames={"#status": "status"},
+                    ExpressionAttributeValues={
+                        ":label": info["label"],
+                        ":status": status,
+                        ":now": now,
+                        ":week_data": week_data,
+                        ":top_topics": top_topics,
+                        ":vc": video_count,
+                        ":tv": total_views,
+                        ":cc": channel_count,
+                        ":dcat": dominant_category,
+                        ":dsent": dominant_sentiment,
+                        ":channels": channels,
+                    },
+                )
+            else:
+                self._clusters_table.update_item(
+                    Key={"cluster_id": _dec(cid)},
+                    UpdateExpression=(
+                        "SET cluster_label = :label, #status = :status, "
+                        "updated_at = :now, "
+                        "week_data = :week_data, top_topics = :top_topics, "
+                        "video_count = :vc, total_views = :tv, "
+                        "channel_count = :cc, dominant_category = :dcat, "
+                        "dominant_sentiment = :dsent, channels = :channels"
+                    ),
+                    ExpressionAttributeNames={"#status": "status"},
+                    ExpressionAttributeValues={
+                        ":label": info["label"],
+                        ":status": status,
+                        ":now": now,
+                        ":week_data": week_data,
+                        ":top_topics": top_topics,
+                        ":vc": video_count,
+                        ":tv": total_views,
+                        ":cc": channel_count,
+                        ":dcat": dominant_category,
+                        ":dsent": dominant_sentiment,
+                        ":channels": channels,
+                    },
+                )
             written += 1
             logger.debug(
-                f"DYNAMO_CLUSTER_SUMMARY cluster={cid} label={info['label']!r}"
+                f"DYNAMO_CLUSTER_REGISTRY cluster={cid} label={info['label']!r} "
+                f"status={status}"
             )
 
         return written
@@ -608,18 +737,30 @@ class ClusteringService:
         umap_components=15,
         umap_neighbors=30,
         dry_run=False,
+        week: str | None = None,
+        verbose=False,
     ):
+        """
+        Run clustering for a specific week's videos only, or all weeks if week=None.
+
+        If week is None, clusters all available videos across all weeks.
+        Passing week="week8" scopes both the DynamoDB scan and Qdrant pull
+        to that week only.
+
+        verbose=True adds titles_by_week to each cluster in the output — a dict
+        of {week: ["[Channel] Title", ...]} for verifying week-over-week coherence.
+        """
         _start = time.time()
 
-        # 1. Vectors from Qdrant
+        # 1. Vectors from Qdrant (all — week filtering happens via meta_map join)
         video_chunks = self._scroll_vectors()
         if not video_chunks:
             return {"clusters": {}, "videos_updated": 0}
 
         logger.info(f"CLUSTER_START total_vectors={len(video_chunks)}")
 
-        # 2. Metadata from DynamoDB
-        meta_map = self._get_video_metadata()
+        # 2. Metadata from DynamoDB — week-scoped if provided
+        meta_map = self._get_video_metadata(week=week)
         if not meta_map:
             return {"clusters": {}, "videos_updated": 0}
 
@@ -635,27 +776,53 @@ class ClusteringService:
             matrix, min_cluster_size, min_samples, umap_components, umap_neighbors
         )
 
-        # 5a. Load existing clusters (needed for preliminary stable match inside label_clusters)
+        # 4b. Filter incoherent clusters → noise before Gemini labeling
+        labels = self._filter_incoherent_clusters(labels=labels, video_ids=video_ids, meta_map=filtered_meta)
+
+        # 5a. Load existing clusters from narrative-clusters registry
         existing_clusters = self._labeling_service.load_existing_clusters(
             self._clusters_table
         )
 
-        # 5b. Label (preliminary stable match runs inside, Gemini uses prior headlines)
-        cluster_info = self._labeling_service.label_clusters(
-            video_ids,
-            labels,
-            filtered_meta,
-            dry_run=dry_run,
-            existing_clusters=existing_clusters,
-            cluster_weeks_table=self._dynamodb.Table("cluster-weeks"),
+        # 5b. Build raw cluster stats — pure aggregation, no Gemini
+        from app.services.dynamo_service import DynamoService
+        dynamo_svc = DynamoService(self._dynamodb)
+        raw_cluster_info = self._labeling_service.build_cluster_stats(
+            video_ids, labels, filtered_meta
         )
 
-        # 6. Real stable cluster matching — remap HDBSCAN IDs to stable IDs (unchanged)
+        # 5c. Fetch prior headlines for all existing clusters (match context)
+        prior_headlines: dict[int, list[dict]] = {}
+        for cid in existing_clusters:
+            headlines = dynamo_svc.get_cluster_week_headlines(cid, last_n=3)
+            if headlines:
+                prior_headlines[cid] = headlines
+
+        # 6. Gemini match — maps HDBSCAN IDs to stable cluster IDs
+        #    Week-1 fast-path: no existing clusters → mint all as NEW, skip Gemini
         id_map, new_ids, declined_ids = (
             self._labeling_service.match_to_existing_clusters(
-                cluster_info, existing_clusters
+                raw_cluster_info, existing_clusters, prior_headlines=prior_headlines
             )
         )
+
+        # 7. Build per-cluster match context for labeling
+        #    MATCH clusters get their prior headlines; NEW clusters get empty list
+        match_results: dict[int, dict] = {}
+        for hdbscan_id in raw_cluster_info:
+            if hdbscan_id == -1:
+                continue
+            stable_id = id_map.get(hdbscan_id)
+            is_new = stable_id in new_ids
+            ph = prior_headlines.get(stable_id, []) if stable_id is not None else []
+            match_results[hdbscan_id] = {"is_new": is_new, "prior_headlines": ph}
+
+        # 8. Gemini labeling — always runs, dry_run only gates DynamoDB writes
+        cluster_info = self._labeling_service.label_clusters(
+            raw_cluster_info, match_results, dry_run=False
+        )
+
+        # 9. Remap HDBSCAN IDs to stable cluster IDs
         cluster_info = self._labeling_service.remap_cluster_info(cluster_info, id_map)
 
         # Remap the per-video labels array to stable IDs
@@ -669,27 +836,30 @@ class ClusteringService:
             clusters_written = 0
             declined_count = 0
         else:
-            current_week = self._detect_current_week(cluster_info)
+            # Use passed week param or fall back to detecting from cluster_info
+            current_week = week or self._detect_current_week(cluster_info)
 
-            # 7. Write to DynamoDB youtube-videos (with stable IDs)
+            # 10. Write cluster_id/label to youtube-videos (stable IDs)
             videos_updated = self._write_clusters_to_dynamodb(
                 video_ids, stable_labels, probabilities, cluster_info, filtered_meta
             )
-            # 8. Write to DynamoDB narrative-clusters (preserving created_at)
+            # 11. Write registry entries to narrative-clusters (label + status only)
             clusters_written = self._write_cluster_summaries(
                 cluster_info, existing_clusters, new_ids
             )
-            # 8b. Write per-week snapshots to cluster-weeks
-            if current_week:
+            # 11b. Write per-week content snapshots to cluster-weeks.
+            # Only runs when week-scoped (week param provided). All-time runs skip
+            # this so the backfill script owns headline generation for all weeks
+            # with proper prior-headline memory context.
+            if week and current_week:
                 self._write_cluster_week_snapshots(cluster_info, current_week)
 
-            # 9. Mark declined clusters (active→declining→inactive)
+            # 12. Mark declined clusters (active→declining→inactive)
             declined_count = self._mark_declined_clusters(
                 declined_ids, existing_clusters
             )
 
-            # 10. Freshness check — clusters with no videos in the current week
-            #     are also candidates for declining, even if HDBSCAN still matches them
+            # 13. Freshness check — active clusters with no videos this week → stale
             if current_week:
                 stale_ids = self._find_stale_clusters(
                     cluster_info, existing_clusters, current_week, declined_ids
@@ -704,11 +874,10 @@ class ClusteringService:
                         f"stale_clusters={stale_ids}"
                     )
 
-            # 11. Purge inactive clusters and their articles
+            # 14. Purge inactive clusters
             self._purge_inactive_clusters(existing_clusters)
-
-            # 12. Renumber all remaining clusters to sequential IDs
-            self._renumber_clusters()
+            # NOTE: _renumber_clusters intentionally removed — stable IDs must not
+            # be reassigned, as cluster-weeks and youtube-videos both reference them.
 
         real_clusters = {k: v for k, v in cluster_info.items() if k != -1}
         noise_info = cluster_info.get(-1, {})
@@ -721,6 +890,22 @@ class ClusteringService:
             f"total_videos={len(video_ids)} "
             f"elapsed_s={time.time() - _start:.1f}"
         )
+
+        def _titles_by_week(info: dict) -> dict[str, list[str]]:
+            result: dict[str, list[str]] = {}
+            for vid in info.get("video_ids", []):
+                meta = filtered_meta.get(vid, {})
+                wk = meta.get("week", "unknown")
+                title = meta.get("title", "")
+                channel = meta.get("channel", "")
+                result.setdefault(wk, []).append(f"[{channel}] {title}")
+            # Sort weeks numerically
+            return dict(
+                sorted(
+                    result.items(),
+                    key=lambda kv: int(kv[0][4:]) if kv[0].startswith("week") and kv[0][4:].isdigit() else 0,
+                )
+            )
 
         return {
             "total_videos": len(video_ids),
@@ -746,6 +931,7 @@ class ClusteringService:
                     "week_data": info["week_data"],
                     "top_claims": info["top_claims"],
                     "is_new": cid in new_ids,
+                    **({"titles_by_week": _titles_by_week(info)} if verbose else {}),
                 }
                 for cid, info in sorted(real_clusters.items())
             },

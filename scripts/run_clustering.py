@@ -52,11 +52,26 @@ def main():
         action="store_true",
         help="Compute clusters but skip all DynamoDB writes",
     )
+    parser.add_argument(
+        "--week",
+        type=str,
+        default=None,
+        help="Scope clustering to a specific week e.g. week1, week2, week3",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Include titles_by_week in output JSON for per-week coherence verification",
+    )
     args = parser.parse_args()
 
     print("=== Narrative Clustering ===\n")
     if args.dry_run:
         print("*** DRY RUN — no DynamoDB writes will occur ***\n")
+    if args.week:
+        print(f"*** Scoped to {args.week} ***\n")
+    else:
+        print("*** All weeks (no week filter) ***\n")
 
     service = ClusteringService()
     summary = service.run_clustering(
@@ -65,6 +80,8 @@ def main():
         umap_components=args.umap_components,
         umap_neighbors=args.umap_neighbors,
         dry_run=args.dry_run,
+        week=args.week,
+        verbose=args.verbose,
     )
 
     print(f"\nTotal videos:     {summary['total_videos']}")
@@ -86,10 +103,17 @@ def main():
             print(f"    Total views: {info['total_views']:,}")
             print(f"    Top claims: {info['top_claims']}")
             print(f"    Weeks: {[w['week'] for w in info['week_data']]}")
+            if "titles_by_week" in info:
+                print("    Titles by week:")
+                for week, titles in info["titles_by_week"].items():
+                    print(f"      {week}:")
+                    for t in titles:
+                        print(f"        {t}")
             print()
 
     # Write summary to file
-    output_path = "cluster_summary.json"
+    week_suffix = f"_{args.week}" if args.week else ""
+    output_path = f"cluster_summary{week_suffix}.json"
     with open(output_path, "w") as f:
         json.dump(summary, f, indent=2)
     print(f"Summary written to {output_path}")

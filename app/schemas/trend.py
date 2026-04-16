@@ -32,7 +32,9 @@ class ConsensusClaim(BaseModel):
     source_count: int
     video_ids: list[str]
     transcript_excerpt: str
+    weeks: list[str] = []
     risk_score: float = 0.0
+    risk_level: str = "low"
 
 
 class DebatedClaimPerspective(BaseModel):
@@ -49,7 +51,9 @@ class DebatedClaim(BaseModel):
     perspectives: list[DebatedClaimPerspective]
     source_count: int
     framing_divergence: float
+    weeks: list[str] = []
     risk_score: float = 0.0
+    risk_level: str = "low"
 
 
 class UniqueClaim(BaseModel):
@@ -58,7 +62,9 @@ class UniqueClaim(BaseModel):
     video_id: str
     video_title: str
     transcript_excerpt: str
+    weeks: list[str] = []
     risk_score: float = 0.0
+    risk_level: str = "low"
 
 
 class ClassifiedClaims(BaseModel):

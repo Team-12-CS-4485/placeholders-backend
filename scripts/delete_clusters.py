@@ -39,6 +39,7 @@ def delete_cluster(dynamodb, cluster_id: int, dry_run: bool) -> None:
     clusters_table = dynamodb.Table("narrative-clusters")
     cluster_weeks_table = dynamodb.Table("cluster-weeks")
     articles_table = dynamodb.Table("articles")
+    videos_table = dynamodb.Table("youtube-videos")
 
     cid_dec = Decimal(str(cluster_id))
 
@@ -92,6 +93,30 @@ def delete_cluster(dynamodb, cluster_id: int, dry_run: bool) -> None:
             articles_table.delete_item(Key={"article_id": item["article_id"]})
         if art_items:
             print(f"  [articles] deleted {len(art_items)} articles")
+
+    # ── 4. youtube-videos — strip cluster fields ─────────────────────────────
+    vid_items = []
+    vid_scan: dict = {
+        "IndexName": "cluster-index",
+        "KeyConditionExpression": Key("cluster_id").eq(cid_dec),
+        "ProjectionExpression": "PartitionKey, SortKey",
+    }
+    while True:
+        r = videos_table.query(**vid_scan)
+        vid_items.extend(r.get("Items", []))
+        if "LastEvaluatedKey" not in r:
+            break
+        vid_scan["ExclusiveStartKey"] = r["LastEvaluatedKey"]
+
+    print(f"  [youtube-videos] found {len(vid_items)} videos to strip")
+    if not dry_run:
+        for item in vid_items:
+            videos_table.update_item(
+                Key={"PartitionKey": item["PartitionKey"], "SortKey": item["SortKey"]},
+                UpdateExpression="REMOVE cluster_id, cluster_label, cluster_confidence",
+            )
+        if vid_items:
+            print(f"  [youtube-videos] stripped {len(vid_items)} videos")
 
 
 def main() -> None:

@@ -77,7 +77,8 @@ class ClaimAnalysisService:
         scan_kwargs = {
             "ProjectionExpression": "SortKey, PartitionKey, channel, title, sentiment, "
             "key_claims, cluster_id, transcript, thumbnail_clickbait_score, "
-            "public_sentiment, public_sentiment_score",
+            "public_sentiment, public_sentiment_score, #wk",
+            "ExpressionAttributeNames": {"#wk": "week"},
         }
 
         while True:
@@ -95,6 +96,7 @@ class ClaimAnalysisService:
                             "sentiment": item.get("sentiment", "neutral"),
                             "key_claims": claims,
                             "transcript": item.get("transcript", ""),
+                            "week": item.get("week", "unknown"),
                             "clickbait_score": int(
                                 item.get("thumbnail_clickbait_score") or 0
                             ),
@@ -146,6 +148,7 @@ class ClaimAnalysisService:
                             "video_id": v["video_id"],
                             "video_title": v["title"],
                             "sentiment": v["sentiment"],
+                            "week": v.get("week", "unknown"),
                             "transcript_excerpt": excerpt,
                             "clickbait_score": v.get("clickbait_score", 0),
                             "public_sentiment": v.get("public_sentiment", "neutral"),
@@ -302,6 +305,8 @@ class ClaimAnalysisService:
             channels = set(c["channel"] for c in group_claims)
             representative = group_claims[0]
 
+            weeks = sorted(set(c.get("week", "unknown") for c in group_claims))
+
             if len(channels) >= 3:
                 risk_score = self._compute_risk_score(
                     "consensus",
@@ -319,6 +324,7 @@ class ClaimAnalysisService:
                         "source_count": len(channels),
                         "video_ids": [c["video_id"] for c in group_claims],
                         "transcript_excerpt": representative["transcript_excerpt"],
+                        "weeks": weeks,
                         "risk_score": risk_score,
                         "risk_level": self._risk_level(risk_score),
                     }
@@ -350,6 +356,7 @@ class ClaimAnalysisService:
                         "perspectives": perspectives,
                         "source_count": len(channels),
                         "framing_divergence": divergence,
+                        "weeks": weeks,
                         "risk_score": risk_score,
                         "risk_level": self._risk_level(risk_score),
                     }
@@ -369,6 +376,7 @@ class ClaimAnalysisService:
                         "video_id": representative["video_id"],
                         "video_title": representative["video_title"],
                         "transcript_excerpt": representative["transcript_excerpt"],
+                        "weeks": weeks,
                         "risk_score": risk_score,
                         "risk_level": self._risk_level(risk_score),
                     }
@@ -445,7 +453,12 @@ class ClaimAnalysisService:
         cluster_results: dict[int, dict],
         cluster_all_classified: dict[int, dict],
     ) -> int:
-        """Update narrative-clusters items with classified_claims + creator_risk."""
+        """
+        Write classified_claims + creator_risk to narrative-clusters (cluster level),
+        and write per-week classified_claims to each cluster-weeks row.
+        """
+        from app.services.dynamo_service import DynamoService
+        dynamo_svc = DynamoService(self._dynamodb)
         written = 0
 
         for cid, claims_data in cluster_results.items():
@@ -455,6 +468,7 @@ class ClaimAnalysisService:
             creator_risk = self._compute_creator_risk(all_claims)
             clean_risk = _clean_for_dynamo(creator_risk)
 
+            # ── 1. Write cluster-level classified_claims to narrative-clusters ──
             try:
                 self._clusters_table.update_item(
                     Key={"cluster_id": _dec(cid)},
@@ -480,6 +494,35 @@ class ClaimAnalysisService:
                 )
             except Exception as exc:
                 logger.error(f"CLAIM_WRITE_FAILED cluster={cid} error={exc}")
+                continue
+
+            # ── 2. Write per-week claims to cluster-weeks ─────────────────────
+            # A claim belongs to a week if any of its source videos are from that week.
+            # Use all_claims (full set) so no claims are silently dropped.
+            week_buckets: dict[str, dict[str, list]] = {}
+            for claim_type in ("consensus", "debated", "unique"):
+                for claim in all_claims.get(claim_type, []):
+                    for wk in claim.get("weeks", []):
+                        bucket = week_buckets.setdefault(
+                            wk, {"consensus": [], "debated": [], "unique": []}
+                        )
+                        bucket[claim_type].append(claim)
+
+            for wk, week_claims in week_buckets.items():
+                try:
+                    dynamo_svc.save_cluster_week_snapshot(
+                        cid, wk, {"classified_claims": _clean_for_dynamo(week_claims)}
+                    )
+                    logger.debug(
+                        f"CLAIM_WEEK_WRITTEN cluster={cid} week={wk} "
+                        f"c={len(week_claims['consensus'])} "
+                        f"d={len(week_claims['debated'])} "
+                        f"u={len(week_claims['unique'])}"
+                    )
+                except Exception as exc:
+                    logger.error(
+                        f"CLAIM_WEEK_WRITE_FAILED cluster={cid} week={wk} error={exc}"
+                    )
 
         return written
 

@@ -177,13 +177,8 @@ def _fetch_existing_week_headlines(
     except Exception:
         pass
 
-    # For weeks not in cluster-weeks, fall back to narrative_headline on the cluster record
-    # (same value is stored per-week in week_data as week_overview context — not ideal but best we have)
-    for wd in weeks:
-        wn = wd["week"]
-        if wn not in existing:
-            existing[wn] = wd.get("narrative_headline", "")
-
+    # Weeks not in cluster-weeks have no prior headline — leave them absent
+    # so the backfill generates a fresh one.
     return existing
 
 

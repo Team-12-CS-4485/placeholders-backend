@@ -600,5 +600,21 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
         return articles
 
     def get_article_by_id(self, article_id: str) -> Optional[dict]:
-        """Fetch a single article (including body) by article_id."""
-        return self._dynamo.get_article_by_id(article_id)
+        """Fetch a single article (including body) by article_id.
+
+        Title is overridden with the per-week narrative_headline from cluster-weeks
+        so the frontend shows the same headline as the list view.
+        """
+        article = self._dynamo.get_article_by_id(article_id)
+        if not article:
+            return None
+
+        cid = article.get("cluster_id")
+        week = article.get("week", f"week{article.get('week_number', '')}")
+        if cid is not None and week:
+            headlines = self._dynamo.get_all_cluster_week_headlines(cid)
+            headline = headlines.get(week)
+            if headline:
+                article["title"] = headline
+
+        return article
