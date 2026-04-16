@@ -58,10 +58,8 @@ SAMPLE_ARTICLE_DETAIL = {
 
 @pytest.mark.asyncio
 async def test_list_articles():
-    with patch(
-        "app.api.endpoints.articles.ArticleService.get_articles",
-        return_value=[SAMPLE_ARTICLE_ITEM],
-    ):
+    with patch("app.api.endpoints.articles.ArticleService") as MockArticle:
+        MockArticle.return_value.get_articles.return_value = [SAMPLE_ARTICLE_ITEM]
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as ac:
@@ -78,10 +76,8 @@ async def test_list_articles():
 
 @pytest.mark.asyncio
 async def test_get_article_by_id():
-    with patch(
-        "app.api.endpoints.articles.ArticleService.get_article_by_id",
-        return_value=SAMPLE_ARTICLE_DETAIL,
-    ):
+    with patch("app.api.endpoints.articles.ArticleService") as MockArticle:
+        MockArticle.return_value.get_article_by_id.return_value = SAMPLE_ARTICLE_DETAIL
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as ac:
@@ -96,10 +92,8 @@ async def test_get_article_by_id():
 
 @pytest.mark.asyncio
 async def test_get_article_by_id_not_found():
-    with patch(
-        "app.api.endpoints.articles.ArticleService.get_article_by_id",
-        return_value=None,
-    ):
+    with patch("app.api.endpoints.articles.ArticleService") as MockArticle:
+        MockArticle.return_value.get_article_by_id.return_value = None
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as ac:
