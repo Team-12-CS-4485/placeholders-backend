@@ -19,6 +19,7 @@ import math
 import re
 import time
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional  # noqa: F401
 
 import numpy as np
@@ -29,6 +30,31 @@ from app.core.config import settings
 from app.services.chunking_service import get_default_chunker
 
 logger = logging.getLogger(__name__)
+
+NUM_WORKERS = 10
+
+
+class _LabelKeysExhaustedError(Exception):
+    """Raised when a worker's key subset is fully rate-limited."""
+
+    pass
+
+
+class _WorkerState:
+    """Per-thread Gemini client with its own API key pool."""
+
+    def __init__(self, keys: list[str], fail_on_exhaustion: bool = True):
+        self.keys = keys
+        self.fail_on_exhaustion = fail_on_exhaustion
+        self.key_index = 0
+        self.client = genai.Client(api_key=keys[0])
+
+    def rotate(self) -> bool:
+        if self.key_index + 1 < len(self.keys):
+            self.key_index += 1
+            self.client = genai.Client(api_key=self.keys[self.key_index])
+            return True
+        return False
 
 
 class ClusterLabelingService:
@@ -54,6 +80,134 @@ class ClusterLabelingService:
             f"/{len(self._genai_api_keys)-1}"
         )
         return True
+
+    def _make_worker_states(
+        self, fail_on_exhaustion: bool = True
+    ) -> list[_WorkerState]:
+        """Split all API keys into up to NUM_WORKERS groups, each with its own genai client."""
+        keys = self._genai_api_keys
+        group_size = max(1, len(keys) // NUM_WORKERS)
+        states = []
+        for i in range(0, len(keys), group_size):
+            group = keys[i : i + group_size]
+            states.append(_WorkerState(group, fail_on_exhaustion=fail_on_exhaustion))
+            if len(states) == NUM_WORKERS:
+                break
+        return states
+
+    def _label_single_cluster(
+        self,
+        cid: int,
+        prompt: str,
+        prior_headlines: list[dict],
+        tfidf_label: str,
+        week_names: list[str],
+        worker: _WorkerState,
+    ) -> dict:
+        """
+        Generate Gemini label/headline/summary/week_overviews for one cluster.
+        Returns {"label": str, "narrative": {...}, "week_overviews": {...}}.
+        Raises _LabelKeysExhaustedError if worker's key pool is fully rate-limited
+        and fail_on_exhaustion is True. Falls back to tfidf_label on other errors.
+        """
+        dupe_retried = False
+        max_attempts = 6 * len(worker.keys)
+
+        for attempt in range(max_attempts):
+            try:
+                response = worker.client.models.generate_content(
+                    model=settings.gemini_model_id,
+                    contents=[prompt],
+                    config=types.GenerateContentConfig(
+                        thinking_config=types.ThinkingConfig(thinking_level="low")
+                    ),
+                )
+                time.sleep(0.5)
+                raw = getattr(response, "text", "") or str(response)
+                raw = raw.strip()
+                if raw.startswith("```"):
+                    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+                    raw = re.sub(r"\s*```$", "", raw)
+
+                parsed = json.loads(raw)
+
+                # Verbatim dupe check — retry once if headline matches a prior week
+                new_hl = parsed.get("headline", "").strip().lower()
+                recent = [p["headline"].strip().lower() for p in prior_headlines[-2:]]
+                if new_hl in recent and not dupe_retried:
+                    dupe_retried = True
+                    prompt += (
+                        "\n\nIMPORTANT: Your previous attempt returned the exact same "
+                        "headline as a prior week. You MUST write something completely different."
+                    )
+                    continue
+
+                week_overviews: dict = parsed.get("week_overviews") or {}
+                label = parsed.get("label", tfidf_label)
+                logger.info(
+                    f"GEMINI_LABEL cluster={cid} label={label!r} "
+                    f"week_overviews={list(week_overviews.keys())}"
+                )
+                return {
+                    "label": label,
+                    "narrative": {
+                        "headline": parsed.get("headline"),
+                        "summary": parsed.get("summary"),
+                    },
+                    "week_overviews": {
+                        wn: str(week_overviews.get(wn, "")) for wn in week_names
+                    },
+                }
+
+            except Exception as exc:
+                exc_str = str(exc)
+                is_rate_limit = (
+                    "429" in exc_str
+                    or "RESOURCE_EXHAUSTED" in exc_str
+                    or getattr(exc, "code", None) == 429
+                )
+                is_server_error = (
+                    "503" in exc_str
+                    or "500" in exc_str
+                    or "UNAVAILABLE" in exc_str
+                    or getattr(exc, "code", None) in (500, 503)
+                )
+
+                if is_rate_limit:
+                    if worker.rotate():
+                        logger.warning(
+                            f"GEMINI_KEY_ROTATED cluster={cid} attempt={attempt + 1} retrying"
+                        )
+                        continue
+                    if worker.fail_on_exhaustion:
+                        raise _LabelKeysExhaustedError(
+                            f"All {len(worker.keys)} keys exhausted for cluster={cid}"
+                        )
+                    logger.warning(
+                        "ALL_KEYS_EXHAUSTED resetting to key 0 and waiting 60s"
+                    )
+                    worker.key_index = 0
+                    worker.client = genai.Client(api_key=worker.keys[0])
+                    time.sleep(60)
+                    continue
+
+                if is_server_error:
+                    wait = min(5 * (attempt + 1), 30)
+                    logger.warning(
+                        f"GEMINI_LABEL_503 cluster={cid} attempt={attempt + 1} waiting {wait}s"
+                    )
+                    time.sleep(wait)
+                    continue
+
+                # Non-retryable error — log and use TF-IDF fallback
+                logger.error(f"GEMINI_LABEL_FATAL cluster={cid} error={exc}")
+                break
+
+        return {
+            "label": tfidf_label,
+            "narrative": {"headline": None, "summary": None},
+            "week_overviews": {wn: "" for wn in week_names},
+        }
 
     # ── TF-IDF + Gemini labeling ────────────────────────────────────────────
 
@@ -281,7 +435,6 @@ class ClusterLabelingService:
         # ── Gemini enrichment per cluster (skipped in dry_run) ──
         cluster_labels: dict[int, str] = dict(tfidf_labels)
         cluster_narratives: dict[int, dict] = {}
-        dupe_retried_cids: set[int] = set()
 
         from app.services.dynamo_service import DynamoService
 
@@ -301,79 +454,80 @@ class ClusterLabelingService:
                 f"LABEL_DRY_RUN skipping Gemini — using TF-IDF labels for {len(real_cids)} clusters"
             )
 
-        for cid in real_cids if not dry_run else []:
-            top_topics = [t[0] for t in cluster_topic_counts[cid].most_common(5)]
-            claims = cluster_claims.get(cid, [])
-            titles = cluster_titles.get(cid, [])
-            dominant_sentiment = (
-                cluster_stats[cid]["sentiments"].most_common(1)[0][0]
-                if cluster_stats[cid]["sentiments"]
-                else "neutral"
-            )
-            latest_week = cluster_stats[cid]["latest_week"]
-            latest_titles = cluster_stats[cid]["latest_titles"]
-            latest_claims = cluster_stats[cid]["latest_claims"]
-
-            # Look up prior headlines for this cluster from cluster-weeks
-            stable_cid = preliminary_id_map.get(cid)
-            prior_headlines: list[dict] = []
-            if stable_cid is not None:
-                prior_headlines = _dynamo_svc.get_cluster_week_headlines(
-                    stable_cid, last_n=4
-                )
-
-            # Build a compact week context to pass into the prompt
-            week_context = []
-            for wd in cluster_stats[cid]["week_data"]:
-                week_sentiments = wd.get("sentiment_breakdown", {})
-                dominant_week_sentiment = (
-                    max(week_sentiments, key=week_sentiments.get)
-                    if week_sentiments
+        if not dry_run:
+            # ── Phase 1: Build prompts + fetch prior headlines (sequential) ──
+            cluster_prep: dict[int, dict] = {}
+            for cid in real_cids:
+                top_topics = [t[0] for t in cluster_topic_counts[cid].most_common(5)]
+                claims = cluster_claims.get(cid, [])
+                titles = cluster_titles.get(cid, [])
+                dominant_sentiment = (
+                    cluster_stats[cid]["sentiments"].most_common(1)[0][0]
+                    if cluster_stats[cid]["sentiments"]
                     else "neutral"
                 )
-                week_context.append(
-                    {
-                        "week": wd["week"],
-                        "video_count": wd["video_count"],
-                        "view_count": wd["view_count"],
-                        "breaking_count": wd["breaking_count"],
-                        "dominant_sentiment": dominant_week_sentiment,
-                    }
-                )
+                latest_week = cluster_stats[cid]["latest_week"]
+                latest_titles = cluster_stats[cid]["latest_titles"]
+                latest_claims = cluster_stats[cid]["latest_claims"]
 
-            latest_week_section = ""
-            if latest_week and (latest_titles or latest_claims):
-                current_wd = next(
-                    (
-                        wd
-                        for wd in cluster_stats[cid]["week_data"]
-                        if wd["week"] == latest_week
-                    ),
-                    {},
-                )
-                week_stats = (
-                    f"{current_wd.get('video_count', 0)} videos, "
-                    f"{current_wd.get('view_count', 0):,} views"
-                )
-                latest_week_section = f"""
+                stable_cid = preliminary_id_map.get(cid)
+                prior_headlines: list[dict] = []
+                if stable_cid is not None:
+                    prior_headlines = _dynamo_svc.get_cluster_week_headlines(
+                        stable_cid, last_n=4
+                    )
+
+                week_context = []
+                for wd in cluster_stats[cid]["week_data"]:
+                    week_sentiments = wd.get("sentiment_breakdown", {})
+                    dominant_week_sentiment = (
+                        max(week_sentiments, key=week_sentiments.get)
+                        if week_sentiments
+                        else "neutral"
+                    )
+                    week_context.append(
+                        {
+                            "week": wd["week"],
+                            "video_count": wd["video_count"],
+                            "view_count": wd["view_count"],
+                            "breaking_count": wd["breaking_count"],
+                            "dominant_sentiment": dominant_week_sentiment,
+                        }
+                    )
+
+                latest_week_section = ""
+                if latest_week and (latest_titles or latest_claims):
+                    current_wd = next(
+                        (
+                            wd
+                            for wd in cluster_stats[cid]["week_data"]
+                            if wd["week"] == latest_week
+                        ),
+                        {},
+                    )
+                    week_stats = (
+                        f"{current_wd.get('video_count', 0)} videos, "
+                        f"{current_wd.get('view_count', 0):,} views"
+                    )
+                    latest_week_section = f"""
     THIS WEEK'S COVERAGE ({latest_week}) — write the headline and summary from THESE ONLY:
     Titles: {latest_titles}
     Claims: {latest_claims}
     Stats: {week_stats}"""
 
-            prior_headlines_section = ""
-            if prior_headlines:
-                lines = "\n".join(
-                    f'- {p["week"]}: "{p["headline"]}"' for p in prior_headlines
-                )
-                prior_headlines_section = f"""
+                prior_headlines_section = ""
+                if prior_headlines:
+                    lines = "\n".join(
+                        f'- {p["week"]}: "{p["headline"]}"' for p in prior_headlines
+                    )
+                    prior_headlines_section = f"""
     PRIOR HEADLINES FOR THIS CLUSTER (do NOT repeat or rephrase any of these):
     {lines}
 
     The new headline MUST describe a different angle or development than all of the above.
     If no genuinely new development exists this week, start the headline with "Continuing:" and describe what is ongoing."""
 
-            prompt = f"""You are a news editor writing narrative labels for topic clusters.
+                prompt = f"""You are a news editor writing narrative labels for topic clusters.
     Given topics, claims, and video titles from a YouTube cluster, generate:
 
     1. label: A 3-6 word desk label in Title Case. NOT a headline or sentence — no verbs, no articles like "The". Think of it as a category tag on a news desk.
@@ -397,102 +551,82 @@ class ClusterLabelingService:
     Return ONLY valid JSON, no markdown:
     {{"label": "...", "headline": "...", "summary": "...", "week_overviews": {{"week1": "...", "week2": "..."}}}}"""  # noqa: E501
 
-            max_attempts = 6 * len(self._genai_api_keys)
-            for attempt in range(max_attempts):
-                try:
-                    response = self._genai_client.models.generate_content(
-                        model=settings.gemini_model_id,
-                        contents=[prompt],
-                        config=types.GenerateContentConfig(
-                            thinking_config=types.ThinkingConfig(
-                                thinking_level="low",
+                cluster_prep[cid] = {
+                    "prompt": prompt,
+                    "prior_headlines": prior_headlines,
+                    "tfidf_label": tfidf_labels[cid],
+                    "week_names": [
+                        wd["week"] for wd in cluster_stats[cid]["week_data"]
+                    ],
+                }
+
+            # ── Phase 2: Parallel Gemini calls ──
+            worker_states = self._make_worker_states()
+            retry_cids: list[int] = []
+
+            logger.info(
+                f"LABEL_START clusters={len(real_cids)} workers={len(worker_states)}"
+            )
+
+            with ThreadPoolExecutor(max_workers=len(worker_states)) as pool:
+                futures = {}
+                for i, cid in enumerate(real_cids):
+                    worker_idx = i % len(worker_states)
+                    prep = cluster_prep[cid]
+                    fut = pool.submit(
+                        self._label_single_cluster,
+                        cid,
+                        prep["prompt"],
+                        prep["prior_headlines"],
+                        prep["tfidf_label"],
+                        prep["week_names"],
+                        worker_states[worker_idx],
+                    )
+                    futures[fut] = cid
+
+                for future in as_completed(futures):
+                    cid = futures[future]
+                    try:
+                        result = future.result()
+                        cluster_labels[cid] = result["label"]
+                        cluster_narratives[cid] = result["narrative"]
+                        for wd in cluster_stats[cid]["week_data"]:
+                            wd["week_overview"] = result["week_overviews"].get(
+                                wd["week"], ""
                             )
-                        ),
-                    )
-                    time.sleep(0.5)
-                    raw = getattr(response, "text", "") or str(response)
-                    raw = raw.strip()
-                    if raw.startswith("```"):
-                        raw = re.sub(r"^```(?:json)?\s*", "", raw)
-                        raw = re.sub(r"\s*```$", "", raw)
-
-                    parsed = json.loads(raw)
-
-                    # Verbatim dupe check — retry once if headline matches a prior week
-                    new_hl = parsed.get("headline", "").strip().lower()
-                    recent = [
-                        p["headline"].strip().lower() for p in prior_headlines[-2:]
-                    ]
-                    if new_hl in recent and cid not in dupe_retried_cids:
-                        dupe_retried_cids.add(cid)
-                        prompt += (
-                            "\n\nIMPORTANT: Your previous attempt returned the exact same "
-                            "headline as a prior week. You MUST write something completely different."
+                    except _LabelKeysExhaustedError:
+                        retry_cids.append(cid)
+                        logger.warning(
+                            f"LABEL_RETRY cluster={cid} reason=keys_exhausted"
                         )
-                        continue
+                    except Exception as exc:
+                        logger.error(f"LABEL_FAILED cluster={cid} error={exc}")
 
-                    cluster_labels[cid] = parsed.get("label", tfidf_labels[cid])
-                    cluster_narratives[cid] = {
-                        "headline": parsed.get("headline"),
-                        "summary": parsed.get("summary"),
-                    }
-
-                    week_overviews: dict = parsed.get("week_overviews") or {}
-                    for wd in cluster_stats[cid]["week_data"]:
-                        week_name = wd["week"]
-                        overview = week_overviews.get(week_name, "")
-                        wd["week_overview"] = str(overview) if overview else ""
-
-                    logger.info(
-                        f"GEMINI_LABEL cluster={cid} "
-                        f"label={cluster_labels[cid]!r} "
-                        f"week_overviews={list(week_overviews.keys())}"
-                    )
-                    break
-                except Exception as exc:
-                    exc_str = str(exc)
-                    is_rate_limit = (
-                        "429" in exc_str
-                        or "RESOURCE_EXHAUSTED" in exc_str
-                        or getattr(exc, "code", None) == 429
-                    )
-                    is_server_error = (
-                        "503" in exc_str
-                        or "500" in exc_str
-                        or "UNAVAILABLE" in exc_str
-                        or getattr(exc, "code", None) in (500, 503)
-                    )
-
-                    if is_rate_limit:
-                        if self._rotate_key():
-                            logger.warning(
-                                f"GEMINI_KEY_ROTATED cluster={cid} "
-                                f"attempt={attempt+1} retrying"
+            # ── Phase 3: Sequential retry with full key pool ──
+            if retry_cids:
+                logger.info(f"LABEL_RETRY_PASS clusters={len(retry_cids)}")
+                full_state = _WorkerState(
+                    self._genai_api_keys, fail_on_exhaustion=False
+                )
+                for cid in retry_cids:
+                    prep = cluster_prep[cid]
+                    try:
+                        result = self._label_single_cluster(
+                            cid,
+                            prep["prompt"],
+                            prep["prior_headlines"],
+                            prep["tfidf_label"],
+                            prep["week_names"],
+                            full_state,
+                        )
+                        cluster_labels[cid] = result["label"]
+                        cluster_narratives[cid] = result["narrative"]
+                        for wd in cluster_stats[cid]["week_data"]:
+                            wd["week_overview"] = result["week_overviews"].get(
+                                wd["week"], ""
                             )
-                            continue
-                        logger.warning(
-                            "ALL_KEYS_EXHAUSTED resetting to key 0 " "and waiting 60s"
-                        )
-                        self._genai_key_index = 0
-                        self._genai_client = genai.Client(
-                            api_key=self._genai_api_keys[0]
-                        )
-                        time.sleep(60)
-                        continue
-
-                    if is_server_error:
-                        wait = min(5 * (attempt + 1), 30)
-                        logger.warning(
-                            f"GEMINI_LABEL_503 cluster={cid} "
-                            f"attempt={attempt+1} "
-                            f"waiting {wait}s before retry"
-                        )
-                        time.sleep(wait)
-                        continue
-
-                    # Non-retryable error — log and use TF-IDF fallback
-                    logger.error(f"GEMINI_LABEL_FATAL cluster={cid} error={exc}")
-                    break
+                    except Exception as exc:
+                        logger.error(f"LABEL_RETRY_FAILED cluster={cid} error={exc}")
 
         # ── Build cluster_info ──
         cluster_info = {}
