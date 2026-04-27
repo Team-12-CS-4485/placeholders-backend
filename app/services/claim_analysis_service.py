@@ -98,9 +98,7 @@ class ClaimAnalysisService:
                             "clickbait_score": int(
                                 item.get("thumbnail_clickbait_score") or 0
                             ),
-                            "public_sentiment": item.get(
-                                "public_sentiment", "neutral"
-                            ),
+                            "public_sentiment": item.get("public_sentiment", "neutral"),
                             "public_sentiment_score": float(
                                 item.get("public_sentiment_score") or 0
                             ),
@@ -149,7 +147,9 @@ class ClaimAnalysisService:
                             "transcript_excerpt": excerpt,
                             "clickbait_score": v.get("clickbait_score", 0),
                             "public_sentiment": v.get("public_sentiment", "neutral"),
-                            "public_sentiment_score": v.get("public_sentiment_score", 0.0),
+                            "public_sentiment_score": v.get(
+                                "public_sentiment_score", 0.0
+                            ),
                         }
                     )
 
@@ -309,7 +309,9 @@ class ClaimAnalysisService:
                     source_count=len(channels),
                     clickbait_score=representative.get("clickbait_score", 0),
                     public_sentiment=representative.get("public_sentiment", "neutral"),
-                    public_sentiment_score=representative.get("public_sentiment_score", 0.0),
+                    public_sentiment_score=representative.get(
+                        "public_sentiment_score", 0.0
+                    ),
                 )
                 consensus.append(
                     {
@@ -331,7 +333,9 @@ class ClaimAnalysisService:
                     framing_divergence=divergence,
                     clickbait_score=representative.get("clickbait_score", 0),
                     public_sentiment=representative.get("public_sentiment", "neutral"),
-                    public_sentiment_score=representative.get("public_sentiment_score", 0.0),
+                    public_sentiment_score=representative.get(
+                        "public_sentiment_score", 0.0
+                    ),
                 )
                 perspectives = [
                     {
@@ -360,7 +364,9 @@ class ClaimAnalysisService:
                     sentiment=representative["sentiment"],
                     clickbait_score=representative.get("clickbait_score", 0),
                     public_sentiment=representative.get("public_sentiment", "neutral"),
-                    public_sentiment_score=representative.get("public_sentiment_score", 0.0),
+                    public_sentiment_score=representative.get(
+                        "public_sentiment_score", 0.0
+                    ),
                 )
                 unique.append(
                     {
@@ -445,7 +451,7 @@ class ClaimAnalysisService:
         cluster_results: dict[int, dict],
         cluster_all_classified: dict[int, dict],
     ) -> int:
-        """Update narrative-clusters items with classified_claims + creator_risk."""
+        """Update narrative-clusters items with classified_claims + top_claims + creator_risk."""
         written = 0
 
         for cid, claims_data in cluster_results.items():
@@ -455,17 +461,29 @@ class ClaimAnalysisService:
             creator_risk = self._compute_creator_risk(all_claims)
             clean_risk = _clean_for_dynamo(creator_risk)
 
+            # Derive top_claims from classified data — consensus first, then debated, then unique.
+            # This overwrites the stale snapshot written by the labeling step at cluster time.
+            top_claims = (
+                [c["claim"] for c in claims_data.get("consensus", []) if c.get("claim")]
+                or [
+                    c["claim"] for c in claims_data.get("debated", []) if c.get("claim")
+                ]
+                or [c["claim"] for c in claims_data.get("unique", []) if c.get("claim")]
+            )[:5]
+
             try:
                 self._clusters_table.update_item(
                     Key={"cluster_id": _dec(cid)},
-                    UpdateExpression="SET #claims = :claims, #risk = :risk, #updated = :updated",
+                    UpdateExpression="SET #claims = :claims, #top = :top, #risk = :risk, #updated = :updated",
                     ExpressionAttributeNames={
                         "#claims": "classified_claims",
+                        "#top": "top_claims",
                         "#risk": "creator_risk",
                         "#updated": "updated_at",
                     },
                     ExpressionAttributeValues={
                         ":claims": clean_claims,
+                        ":top": top_claims,
                         ":risk": clean_risk,
                         ":updated": datetime.now(timezone.utc).isoformat(),
                     },
@@ -476,7 +494,7 @@ class ClaimAnalysisService:
                 u = len(claims_data.get("unique", []))
                 logger.info(
                     f"CLAIM_WRITTEN cluster={cid} consensus={c} debated={d} unique={u} "
-                    f"creators={len(creator_risk)}"
+                    f"top_claims={len(top_claims)} creators={len(creator_risk)}"
                 )
             except Exception as exc:
                 logger.error(f"CLAIM_WRITE_FAILED cluster={cid} error={exc}")
