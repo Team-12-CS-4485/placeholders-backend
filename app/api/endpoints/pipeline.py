@@ -116,6 +116,13 @@ def _run_full_pipeline_background(request: PipelineRunRequest, job_id: str) -> N
             job_id=job_id,
             force_reindex=request.force_reindex,
         )
+        # Clean up articles for ghost cluster IDs before clustering rewrites
+        # cluster assignments — after renumber, orphan IDs may be reused by new
+        # clusters, making old ghost articles indistinguishable from valid ones.
+        try:
+            ArticleService().cleanup_orphaned_articles()
+        except Exception as exc:
+            logger.warning(f"ORPHAN_ARTICLE_CLEANUP_FAILED (non-fatal) error={exc}")
         ClusteringService().run_clustering()
         ClaimAnalysisService().run_claim_analysis()
         article_result = {}

@@ -709,6 +709,11 @@ class ClusterLabelingService:
         text = f"{label} {' '.join(topics)}"
         return self._chunker.embed([text], is_query=False)[0]
 
+    def embed_topics_only(self, topics: list[str]) -> list[float]:
+        """Embed topics only — used as a fallback when label drifts across runs."""
+        text = " ".join(topics) if topics else "unknown"
+        return self._chunker.embed([text], is_query=False)[0]
+
     @staticmethod
     def cosine_similarity(vec_a, vec_b) -> float:
         a = np.array(vec_a)
@@ -717,15 +722,24 @@ class ClusterLabelingService:
         norm = np.linalg.norm(a) * np.linalg.norm(b)
         return float(dot / norm) if norm > 0 else 0.0
 
+    # Similarity threshold for full label+topics match. Topics-only fallback uses
+    # TOPIC_ONLY_MATCH_THRESHOLD when the full-text sim is below this value.
+    MATCH_THRESHOLD = 0.65
+    TOPIC_ONLY_MATCH_THRESHOLD = 0.70
+
     def match_to_existing_clusters(
         self,
         new_cluster_info: dict[int, dict],
         existing_clusters: dict[int, dict],
-        threshold: float = 0.75,
+        threshold: float = MATCH_THRESHOLD,
     ) -> tuple[dict[int, int], list[int], list[int]]:
         """
         Match new HDBSCAN clusters to existing stable clusters using
         embedding similarity on label + topics.
+
+        Primary match: cosine sim on "{label} {topics}" >= threshold (0.65).
+        Fallback match: cosine sim on topics-only >= TOPIC_ONLY_MATCH_THRESHOLD (0.70).
+        This tolerates Gemini label drift when the underlying topic fingerprint is stable.
 
         Returns:
             id_map: {hdbscan_label: stable_cluster_id}
@@ -745,28 +759,44 @@ class ClusterLabelingService:
             for cid, info in existing_clusters.items()
             if info.get("status") != "inactive"
         }
+
+        # Embed all clusters — full (label+topics) and topics-only
         old_embeddings = {}
+        old_topic_embeddings = {}
         for old_cid, old_info in matchable_old.items():
             old_embeddings[old_cid] = self.embed_cluster_description(
                 old_info["label"], old_info["top_topics"]
             )
+            old_topic_embeddings[old_cid] = self.embed_topics_only(
+                old_info["top_topics"]
+            )
 
-        # Embed all new clusters
         new_embeddings = {}
+        new_topic_embeddings = {}
         for new_cid, new_info in real_new.items():
             new_embeddings[new_cid] = self.embed_cluster_description(
                 new_info["label"], new_info["top_topics"]
             )
+            new_topic_embeddings[new_cid] = self.embed_topics_only(
+                new_info["top_topics"]
+            )
 
-        # Score all (new, existing) pairs
+        # Score all (new, existing) pairs — take best of full-text and topics-only sim
         scores: list[tuple[float, int, int]] = []
         for new_cid in real_new:
             for old_cid in matchable_old:
-                sim = self.cosine_similarity(
+                full_sim = self.cosine_similarity(
                     new_embeddings[new_cid], old_embeddings[old_cid]
                 )
-                if sim >= threshold:
-                    scores.append((sim, new_cid, old_cid))
+                topic_sim = self.cosine_similarity(
+                    new_topic_embeddings[new_cid], old_topic_embeddings[old_cid]
+                )
+                # Primary: full-text above threshold
+                if full_sim >= threshold:
+                    scores.append((full_sim, new_cid, old_cid))
+                # Fallback: topics-only when label drift drops full-text below threshold
+                elif topic_sim >= self.TOPIC_ONLY_MATCH_THRESHOLD:
+                    scores.append((topic_sim, new_cid, old_cid))
 
         # Greedy 1-to-1 matching: best score first
         scores.sort(reverse=True)
@@ -786,7 +816,9 @@ class ClusterLabelingService:
                 f"label={existing_clusters[old_cid]['label']!r}"
             )
 
-        # Assign new IDs for unmatched new clusters — fill lowest available gap
+        # Assign new IDs for unmatched new clusters — fill lowest available gap.
+        # all_taken tracks every ID that is either already in use or just assigned,
+        # so the while-loop finds the next free slot and next_id stays there.
         all_taken = set(existing_clusters.keys())
         new_ids = []
         next_id = 0
@@ -802,7 +834,6 @@ class ClusterLabelingService:
                     f"→ stable={next_id} "
                     f"topics={real_new[new_cid]['top_topics']}"
                 )
-                next_id += 1
 
         # Existing clusters that weren't matched → declining
         active_old = {
