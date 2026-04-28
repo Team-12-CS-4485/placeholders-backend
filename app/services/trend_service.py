@@ -69,11 +69,25 @@ class TrendService:
         else:
             engagement_index = 0.0
 
-        # top_claims: prefer consensus claim text, fall back to raw top_claims list
-        consensus_claims = [
-            c["claim"] for c in classified_claims.get("consensus", []) if c.get("claim")
-        ]
-        top_claims = (consensus_claims or list(item.get("top_claims", [])))[:5]
+        # top_claims: consensus → stored top_claims → debated → unique
+        top_claims = (
+            [
+                c["claim"]
+                for c in classified_claims.get("consensus", [])
+                if c.get("claim")
+            ]
+            or list(item.get("top_claims", []))
+            or [
+                c["claim"]
+                for c in classified_claims.get("debated", [])
+                if c.get("claim")
+            ]
+            or [
+                c["claim"]
+                for c in classified_claims.get("unique", [])
+                if c.get("claim")
+            ]
+        )[:5]
 
         return {
             "cluster_id": int(item["cluster_id"]),

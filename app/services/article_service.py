@@ -341,6 +341,41 @@ Return ONLY a valid JSON object with exactly these keys (no markdown fences):
 
     # ── Public API ────────────────────────────────────────────────────────────
 
+    def cleanup_orphaned_articles(self) -> int:
+        """
+        Delete articles whose cluster_id no longer exists in narrative-clusters.
+        Called before article generation each pipeline run to prevent accumulation
+        of stale articles from purged or renumbered clusters.
+        Returns count of deleted articles.
+        """
+        valid_cluster_ids = {
+            int(c["cluster_id"])
+            for c in self._dynamo.get_all_clusters()
+            if c.get("cluster_id") is not None
+        }
+        articles_table = self._dynamo._articles_table()
+        deleted = 0
+        scan_kwargs: dict = {"ProjectionExpression": "article_id, cluster_id"}
+        try:
+            while True:
+                resp = articles_table.scan(**scan_kwargs)
+                for item in resp.get("Items", []):
+                    cid = item.get("cluster_id")
+                    if cid is not None and int(cid) not in valid_cluster_ids:
+                        articles_table.delete_item(
+                            Key={"article_id": item["article_id"]}
+                        )
+                        deleted += 1
+                if "LastEvaluatedKey" not in resp:
+                    break
+                scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+        except Exception as exc:
+            logger.warning(f"ORPHAN_ARTICLE_CLEANUP_WARN error={exc}")
+
+        if deleted:
+            logger.info(f"ORPHAN_ARTICLES_DELETED count={deleted}")
+        return deleted
+
     def run_article_generation(
         self,
         week: Optional[str] = None,

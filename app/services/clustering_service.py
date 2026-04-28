@@ -1,18 +1,23 @@
 """
 clustering_service.py - Narrative Clustering Service
 
-Groups related videos into narrative clusters using HDBSCAN
-on Qdrant embeddings. Writes results to DynamoDB.
+Groups related videos into narrative clusters using HDBSCAN on Qdrant embeddings.
+Writes results to DynamoDB and maintains consistent state across all 4 tables.
 
 Flow:
-1. Pull vectors from Qdrant (search data only)
-2. Pull metadata from DynamoDB (topics, channel, etc.)
-3. Deduplicate to one representative per video (mean-pool vectors)
-4. UMAP (768d → 15d) + HDBSCAN clustering
-5. Label each cluster (via ClusterLabelingService)
-6. Stable cluster matching (via ClusterLabelingService)
-7. Write cluster_id/label/confidence to DynamoDB youtube-videos
-8. Write cluster summary to DynamoDB narrative-clusters table
+ 1. Pull vectors from Qdrant
+ 2. Pull metadata from DynamoDB (topics, channel, etc.)
+ 3. Deduplicate to one representative per video (mean-pool chunks)
+ 4. UMAP (768d → 15d) + HDBSCAN clustering
+ 5. Label each cluster via Gemini (ClusterLabelingService)
+ 6. Stable cluster matching — cosine similarity on label+topics embeddings
+    (threshold 0.65 full-text, 0.70 topics-only fallback)
+ 7. Write cluster_id/label/confidence to youtube-videos
+ 8. Write cluster summaries to narrative-clusters (video_count via GSI COUNT)
+ 9. Write current-week snapshot to cluster-weeks + backfill historical weeks
+10. Mark declined clusters (active→declining→inactive)
+11. Purge inactive clusters — removes cluster row + ghost videos/cluster-weeks/articles
+12. Renumber all remaining clusters to sequential IDs across all 4 tables
 
 Labeling and matching logic lives in cluster_labeling_service.py.
 
@@ -333,8 +338,8 @@ class ClusteringService:
     def _purge_inactive_clusters(self, existing_clusters: dict) -> int:
         """
         Delete clusters with status='inactive' from narrative-clusters.
-        Articles are permanent historical records and are NOT deleted.
-        Called once per pipeline run after decline marking.
+        Also cleans up ghost references: removes cluster_id from videos pointing
+        at the deleted cluster, deletes cluster-weeks rows, and deletes articles.
         """
         inactive_ids = [
             cid
@@ -344,16 +349,122 @@ class ClusteringService:
         if not inactive_ids:
             return 0
 
-        # Delete the cluster records
+        cluster_weeks_table = self._dynamodb.Table("cluster-weeks")
+        articles_table = self._dynamodb.Table("articles")
+
         for cid in inactive_ids:
+            # 1. Delete the cluster row
             self._clusters_table.delete_item(Key={"cluster_id": _dec(cid)})
             logger.info(
                 f"DYNAMO_CLUSTER_PURGED cluster={cid} "
                 f"label={existing_clusters[cid].get('label', '?')!r}"
             )
 
+            # 2. Uncluster videos pointing at this ID via cluster-index GSI
+            try:
+                video_scan_kwargs: dict = {
+                    "IndexName": "cluster-index",
+                    "KeyConditionExpression": boto3.dynamodb.conditions.Key(
+                        "cluster_id"
+                    ).eq(_dec(cid)),
+                    "ProjectionExpression": "PartitionKey, SortKey",
+                }
+                while True:
+                    resp = self._videos_table.query(**video_scan_kwargs)
+                    for v in resp.get("Items", []):
+                        self._videos_table.update_item(
+                            Key={
+                                "PartitionKey": v["PartitionKey"],
+                                "SortKey": v["SortKey"],
+                            },
+                            UpdateExpression=(
+                                "SET #clabel = :clabel, #cconf = :cconf REMOVE #cid"
+                            ),
+                            ExpressionAttributeNames={
+                                "#cid": "cluster_id",
+                                "#clabel": "cluster_label",
+                                "#cconf": "cluster_confidence",
+                            },
+                            ExpressionAttributeValues={
+                                ":clabel": "Unclustered",
+                                ":cconf": _dec(0),
+                            },
+                        )
+                    if "LastEvaluatedKey" not in resp:
+                        break
+                    video_scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+            except Exception as exc:
+                logger.warning(f"PURGE_VIDEO_CLEANUP_WARN cluster={cid} error={exc}")
+
+            # 3. Delete cluster-weeks rows for this cluster
+            try:
+                cw_kwargs: dict = {
+                    "FilterExpression": boto3.dynamodb.conditions.Attr("cluster_id").eq(
+                        _dec(cid)
+                    ),
+                    "ProjectionExpression": "cluster_id, #wk",
+                    "ExpressionAttributeNames": {"#wk": "week"},
+                }
+                while True:
+                    resp = cluster_weeks_table.scan(**cw_kwargs)
+                    for row in resp.get("Items", []):
+                        cluster_weeks_table.delete_item(
+                            Key={"cluster_id": row["cluster_id"], "week": row["week"]}
+                        )
+                    if "LastEvaluatedKey" not in resp:
+                        break
+                    cw_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+            except Exception as exc:
+                logger.warning(f"PURGE_CW_CLEANUP_WARN cluster={cid} error={exc}")
+
+            # 4. Delete articles for this cluster
+            try:
+                art_kwargs: dict = {
+                    "FilterExpression": boto3.dynamodb.conditions.Attr("cluster_id").eq(
+                        _dec(cid)
+                    ),
+                    "ProjectionExpression": "article_id",
+                }
+                while True:
+                    resp = articles_table.scan(**art_kwargs)
+                    for art in resp.get("Items", []):
+                        articles_table.delete_item(
+                            Key={"article_id": art["article_id"]}
+                        )
+                    if "LastEvaluatedKey" not in resp:
+                        break
+                    art_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+            except Exception as exc:
+                logger.warning(f"PURGE_ARTICLE_CLEANUP_WARN cluster={cid} error={exc}")
+
         logger.info(f"CLUSTER_PURGE inactive={len(inactive_ids)}")
         return len(inactive_ids)
+
+    def _count_videos_in_cluster(self, cid: int) -> int:
+        """
+        Count all videos assigned to a cluster via the cluster-index GSI.
+        More accurate than len(vids) from the current run because it includes
+        historical videos from prior weeks that still carry this cluster_id.
+        """
+        try:
+            total = 0
+            kwargs: dict = {
+                "IndexName": "cluster-index",
+                "KeyConditionExpression": boto3.dynamodb.conditions.Key(
+                    "cluster_id"
+                ).eq(_dec(cid)),
+                "Select": "COUNT",
+            }
+            while True:
+                resp = self._videos_table.query(**kwargs)
+                total += resp.get("Count", 0)
+                if "LastEvaluatedKey" not in resp:
+                    break
+                kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+            return total
+        except Exception as exc:
+            logger.warning(f"VIDEO_COUNT_WARN cluster={cid} error={exc}")
+            return 0
 
     def _write_cluster_week_snapshots(
         self, cluster_info: dict, current_week: str
@@ -399,6 +510,72 @@ class ClusteringService:
         logger.info(f"CLUSTER_WEEK_SNAPSHOTS written={written} week={current_week}")
         return written
 
+    def _backfill_missing_cluster_week_snapshots(
+        self, cluster_info: dict, current_week: str
+    ) -> int:
+        """
+        Write cluster-weeks snapshots for historical weeks that are in a cluster's
+        week_data but have no existing row in the cluster-weeks table.
+        Only writes structural data (video/view counts, sentiment) — narrative_headline
+        is left blank and can be filled later by backfill_cluster_weeks.py if needed.
+        """
+        from app.services.dynamo_service import DynamoService
+
+        dynamo_svc = DynamoService(self._dynamodb)
+        cluster_weeks_table = self._dynamodb.Table("cluster-weeks")
+        backfilled = 0
+
+        for cid, info in cluster_info.items():
+            if cid == -1:
+                continue
+            for wd in info.get("week_data", []):
+                week = wd.get("week", "")
+                if not week or week == current_week:
+                    continue
+                # Only backfill if this (cluster_id, week) row doesn't already exist
+                try:
+                    existing = cluster_weeks_table.get_item(
+                        Key={"cluster_id": _dec(cid), "week": week}
+                    ).get("Item")
+                    if existing:
+                        continue
+                except Exception:
+                    continue
+
+                week_sentiments = wd.get("sentiment_breakdown", {})
+                dominant_sentiment = (
+                    max(week_sentiments, key=week_sentiments.get)
+                    if week_sentiments
+                    else "neutral"
+                )
+                try:
+                    dynamo_svc.save_cluster_week_snapshot(
+                        cid,
+                        week,
+                        {
+                            "narrative_headline": None,
+                            "narrative_summary": None,
+                            "week_overview": wd.get("week_overview", ""),
+                            "top_claims": info.get("top_claims", []),
+                            "top_topics": info.get("top_topics", []),
+                            "video_count": wd.get("video_count", 0),
+                            "channel_count": wd.get("channel_count", 0),
+                            "view_count": wd.get("view_count", 0),
+                            "breaking_count": wd.get("breaking_count", 0),
+                            "dominant_sentiment": dominant_sentiment,
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                        },
+                    )
+                    backfilled += 1
+                except Exception as exc:
+                    logger.warning(
+                        f"BACKFILL_CW_WARN cluster={cid} week={week} error={exc}"
+                    )
+
+        if backfilled:
+            logger.info(f"CLUSTER_WEEK_BACKFILL backfilled={backfilled}")
+        return backfilled
+
     def _write_cluster_summaries(
         self, cluster_info, existing_clusters=None, new_ids=None
     ):
@@ -422,7 +599,7 @@ class ClusteringService:
             item = {
                 "cluster_id": _dec(cid),
                 "cluster_label": info["label"],
-                "video_count": _dec(info["video_count"]),
+                "video_count": _dec(self._count_videos_in_cluster(cid)),
                 "channel_count": _dec(info["channel_count"]),
                 "channels": info["channels"],
                 "top_topics": info["top_topics"],
@@ -727,6 +904,9 @@ class ClusteringService:
             # 8b. Write per-week snapshots to cluster-weeks
             if current_week:
                 self._write_cluster_week_snapshots(cluster_info, current_week)
+                self._backfill_missing_cluster_week_snapshots(
+                    cluster_info, current_week
+                )
 
             # 9. Mark declined clusters (active→declining→inactive)
             declined_count = self._mark_declined_clusters(
