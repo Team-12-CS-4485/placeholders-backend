@@ -22,7 +22,7 @@ Each stage can also be triggered individually:
 **Tradeoffs:**
 - Simple to run and debug — one process, one log stream
 - HTTP timeouts are a real risk for large ingest runs (100+ videos × Gemini calls per video)
-- Gemini API rate limits are managed by rotating across up to 20 API keys (`GENAI_API_KEY` through `GENAI_API_KEY_20`)
+- Gemini API rate limits are managed by rotating across up to 40 API keys (`GENAI_API_KEY` through `GENAI_API_KEY_40`)
 - Videos already in Qdrant are skipped automatically to preserve quota on re-runs
 
 ---
@@ -69,11 +69,12 @@ GET /api/search?q=...
 
 | Table | PK | SK | Written by |
 |-------|----|----|------------|
-| `youtube-videos` | `PartitionKey` (channel) | `SortKey` (videoId) | YouTube ingestion scripts + pipeline ingest stage |
-| `narrative-clusters` | `cluster_id` | — | Clustering stage + claim analysis stage |
+| `youtube-videos` | `PartitionKey` (channel) | `SortKey` (videoId) | Pipeline ingest stage. GSI: `cluster-index` on `cluster_id` |
+| `narrative-clusters` | `cluster_id` | — | Clustering + claim analysis stages |
+| `cluster-weeks` | `cluster_id` | `week` | Clustering stage (per-week snapshots + historical backfill) |
 | `articles` | `article_id` | — | Article generation stage |
 
-The `narrative-clusters` table is the central aggregation table. All `/api/trends`, `/api/narratives`, `/api/weeks`, and `/api/stats` responses are derived from it.
+`narrative-clusters` is the central aggregation table — all `/api/trends`, `/api/narratives`, `/api/weeks`, and `/api/stats` responses derive from it. `cluster-weeks` stores per-week headline snapshots used by `/api/weeks/{week}` and article title substitution.
 
 ---
 

@@ -533,7 +533,9 @@ Full article including body text.
 
 ### `POST /api/pipeline/run`
 
-Runs the full pipeline in sequence: ingest → cluster → claim analysis → article generation.
+**Async.** Starts the full pipeline in a background thread and returns a job ID immediately. Poll `GET /api/pipeline/jobs/{job_id}` for status.
+
+Stages: ingest → orphan article cleanup → cluster → claim analysis → article generation.
 
 **Request Body**
 ```json
@@ -544,49 +546,106 @@ Runs the full pipeline in sequence: ingest → cluster → claim analysis → ar
 }
 ```
 
-`dry_run=true` previews all stages without writing anything.
+`dry_run=true` runs all stages synchronously without writing anything and returns results inline.
+
+**Response**
+```json
+{ "job_id": "a1b2c3d4e5f6", "status": "running" }
+```
+
+---
+
+### `GET /api/pipeline/jobs/{job_id}`
+
+Poll status of an async pipeline job.
 
 **Response**
 ```json
 {
-  "ingestion": {
-    "objects_processed": 9,
-    "videos_found": 180,
-    "videos_indexed": 175,
-    "total_chunks_stored": 458,
-    "dry_run": false
+  "job_id": "a1b2c3d4e5f6",
+  "status": "complete",
+  "result": {
+    "ingestion": { "videos_indexed": 175, "chunks_stored": 458 },
+    "articles": { "articles_generated": 22, "articles_skipped": 18 }
   },
-  "clustering": {
-    "total_videos": 175,
-    "cluster_count": 12,
-    "noise_videos": 30,
-    "total_chunks_patched": 145,
-    "dry_run": false
-  },
-  "claim_analysis": {
-    "clusters_processed": 12,
-    "total_patched": 12,
-    "dry_run": false
-  },
-  "articles": {
-    "articles_generated": 24,
-    "articles_skipped": 0,
-    "articles_failed": 0,
-    "weeks_processed": ["week1", "week2", "week3"],
-    "dry_run": false
-  }
+  "error": null
 }
 ```
+
+`status` is one of `running`, `complete`, `failed`.
 
 ---
 
 ### `POST /api/pipeline/ingest`
 
-Ingest only — S3 → Gemini intelligence + thumbnail → DynamoDB → Qdrant.
+**Async.** Same as `/run` but ingest only. Returns `{ job_id, status }`.
 
-**Request Body:** same as `/run` (`prefix`, `limit`, `dry_run`)
+---
 
-**Response:** `IngestionSummary` block from `/run` response above.
+### `POST /api/pipeline/cluster`
+
+Cluster only — UMAP/HDBSCAN → stable match → DynamoDB (synchronous).
+
+**Request Body:** `{ "dry_run": false }`
+
+**Response**
+```json
+{
+  "cluster_count": 14,
+  "total_videos": 394,
+  "noise_videos": 121,
+  "total_chunks_patched": 273,
+  "dry_run": false
+}
+```
+
+---
+
+### `POST /api/pipeline/claims`
+
+Claim analysis only (synchronous). Reads clustered videos, classifies claims, writes `classified_claims` + `top_claims` + `creator_risk`.
+
+**Request Body:** `{ "dry_run": false }`
+
+**Response**
+```json
+{
+  "clusters_processed": 14,
+  "total_patched": 14,
+  "dry_run": false
+}
+```
+
+---
+
+### `POST /api/pipeline/articles`
+
+Article generation only (synchronous). Same body/response as `POST /api/articles/generate`.
+
+---
+
+### `POST /api/pipeline/search`
+
+Raw Qdrant vector search (internal/debug). For frontend use `GET /api/search`.
+
+**Request Body:** `{ "query": "...", "limit": 5 }`
+
+**Response**
+```json
+{
+  "query": "federal reserve interest rate",
+  "limit": 5,
+  "hits": [
+    {
+      "score": 0.91,
+      "transcript_key": "youtube-data/week1/cnbc.json::abc123",
+      "channel": "CNBC",
+      "text": "...the Fed is expected to...",
+      "chunk_index": 2
+    }
+  ]
+}
+```
 
 ---
 

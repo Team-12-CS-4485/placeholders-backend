@@ -56,26 +56,17 @@ TF-IDF scoring provides a fallback label if Gemini fails.
 
 ### Stable Cluster IDs
 
-HDBSCAN assigns arbitrary integer labels on each run. After clustering, new labels are matched to existing `narrative-clusters` records using Jaccard similarity on topic lists (threshold: 0.3). Matched clusters keep their stable ID. Unmatched existing clusters are marked `status: inactive` and excluded from read APIs.
+HDBSCAN assigns arbitrary integer labels on each run. After clustering, new labels are matched to existing `narrative-clusters` records using cosine similarity on embeddings of `"{label} {top_topics}"` (threshold: 0.65). A topics-only fallback (threshold: 0.70) catches cases where the Gemini-generated label drifts between runs but the topic fingerprint stays stable. Greedy 1-to-1 matching ensures each cluster maps to at most one existing ID.
 
-### Sample Results (12 Clusters)
+Matched clusters keep their stable ID. Unmatched existing clusters transition `active → declining → inactive` over two runs and are then purged — along with their ghost references in `youtube-videos`, `cluster-weeks`, and `articles`.
 
-| ID | Label | Videos | Channels | Views | Sentiment |
-|----|-------|--------|----------|-------|-----------|
-| 9  | Middle East Conflict        | 17 | 7 | 1.66M | negative |
-| 8  | Jeffrey Epstein Investigation| 16 | 7 | 697K  | negative |
-| 4  | Inflation                   | 21 | 8 | 545K  | positive |
-| 5  | Oil Markets                 | 14 | 7 | 609K  | negative |
-| 10 | Iran Conflict               | 14 | 6 | 494K  | negative |
-| 7  | US Foreign Policy           | 13 | 7 | 428K  | negative |
-| 0  | Hezbollah                   | 11 | 4 | 818K  | negative |
-| 1  | Missing Persons             | 10 | 7 | 217K  | negative |
-| 3  | Automotive Industry*        |  8 | 4 | 322K  | negative |
-| 2  | Data Centers                |  7 | 1 | 475K  | negative |
-| 6  | Maritime Security           |  7 | 6 | 479K  | negative |
-| 11 | Nuclear Proliferation       |  7 | 4 | 1.45M | neutral  |
+### Cluster Lifecycle
 
-\* Catch-all clusters (3, 4) contain mixed/unrelated topics — improves with more data.
+```
+new → active → declining → inactive → purged
+```
+
+A cluster goes `declining` when HDBSCAN no longer matches it in a given run. After two consecutive misses it goes `inactive`. On the next run, purge deletes the cluster row and removes all ghost references (video cluster assignments, cluster-weeks snapshots, articles) from all four tables. Remaining clusters are then renumbered to sequential IDs (0, 1, 2…).
 
 ### Running Clustering
 
