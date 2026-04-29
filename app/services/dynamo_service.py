@@ -288,6 +288,31 @@ class DynamoService:
 
         return None
 
+    def get_video_weeks(self, video_ids: list[str]) -> dict[str, str]:
+        """Map a list of video_ids to their week values."""
+        if not video_ids:
+            return {}
+        result: dict[str, str] = {}
+        scan_kwargs: dict = {
+            "FilterExpression": Attr("SortKey").is_in(video_ids),
+            "ProjectionExpression": "SortKey, #w",
+            "ExpressionAttributeNames": {"#w": "week"},
+        }
+        try:
+            while True:
+                resp = self._videos_table.scan(**scan_kwargs)
+                for item in resp.get("Items", []):
+                    vid = item.get("SortKey")
+                    wk = item.get("week")
+                    if vid and wk:
+                        result[vid] = wk
+                if "LastEvaluatedKey" not in resp:
+                    break
+                scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+        except ClientError as exc:
+            logger.error(f"DYNAMO_GET_VIDEO_WEEKS_ERROR error={exc}")
+        return result
+
     # ── Clusters ─────────────────────────────────────────────────────────────
 
     def get_all_clusters(self, include_inactive: bool = False) -> list[dict]:
