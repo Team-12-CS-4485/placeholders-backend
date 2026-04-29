@@ -24,6 +24,8 @@ from typing import Optional
 
 import numpy as np
 import boto3
+from boto3.dynamodb.conditions import Attr
+from botocore.exceptions import ClientError
 
 from app.core.config import settings
 from app.services.chunking_service import get_default_chunker
@@ -475,6 +477,7 @@ class ClaimAnalysisService:
                 self._clusters_table.update_item(
                     Key={"cluster_id": _dec(cid)},
                     UpdateExpression="SET #claims = :claims, #top = :top, #risk = :risk, #updated = :updated",
+                    ConditionExpression=Attr("cluster_id").exists(),
                     ExpressionAttributeNames={
                         "#claims": "classified_claims",
                         "#top": "top_claims",
@@ -496,6 +499,13 @@ class ClaimAnalysisService:
                     f"CLAIM_WRITTEN cluster={cid} consensus={c} debated={d} unique={u} "
                     f"top_claims={len(top_claims)} creators={len(creator_risk)}"
                 )
+            except ClientError as exc:
+                if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                    logger.warning(
+                        f"CLAIM_SKIP_GHOST cluster={cid} — cluster no longer exists, skipping"
+                    )
+                else:
+                    logger.error(f"CLAIM_WRITE_FAILED cluster={cid} error={exc}")
             except Exception as exc:
                 logger.error(f"CLAIM_WRITE_FAILED cluster={cid} error={exc}")
 

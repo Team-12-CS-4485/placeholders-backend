@@ -544,16 +544,53 @@ class TrendService:
             "thumbnail_tone_breakdown": c.get("thumbnail_tone_breakdown", {}),
         }
 
-    def get_narrative_claims(self, cluster_id: int) -> dict:
-        """Classified claims for a narrative cluster."""
+    def get_narrative_claims(self, cluster_id: int, week: Optional[str] = None) -> dict:
+        """Classified claims for a narrative cluster, optionally filtered to a week."""
         c = self._find_cluster(cluster_id)
-        return {
-            "cluster_id": cluster_id,
-            "claims": c.get(
-                "claims",
-                {"consensus": [], "debated": [], "unique": []},
-            ),
-        }
+        claims = c.get("claims", {"consensus": [], "debated": [], "unique": []})
+        if week:
+            claims = self._filter_claims_by_week(claims, week)
+        return {"cluster_id": cluster_id, "claims": claims}
+
+    def _filter_claims_by_week(self, claims: dict, week: str) -> dict:
+        """Return only claims whose source video(s) belong to the given week."""
+        video_ids: list[str] = []
+        for c in claims.get("consensus", []):
+            video_ids.extend(c.get("video_ids", []))
+        for c in claims.get("debated", []):
+            for p in c.get("perspectives", []):
+                if p.get("video_id"):
+                    video_ids.append(p["video_id"])
+        for c in claims.get("unique", []):
+            if c.get("video_id"):
+                video_ids.append(c["video_id"])
+
+        if not video_ids:
+            return {"consensus": [], "debated": [], "unique": []}
+
+        vid_week_map = self.dynamo_service.get_video_weeks(list(set(video_ids)))
+        week_vids = {vid for vid, wk in vid_week_map.items() if wk == week}
+
+        filtered: dict = {"consensus": [], "debated": [], "unique": []}
+
+        for c in claims.get("consensus", []):
+            if any(v in week_vids for v in c.get("video_ids", [])):
+                filtered["consensus"].append(c)
+
+        for c in claims.get("debated", []):
+            matching = [
+                p for p in c.get("perspectives", []) if p.get("video_id") in week_vids
+            ]
+            if matching:
+                filtered["debated"].append(
+                    {**c, "perspectives": matching, "source_count": len(matching)}
+                )
+
+        for c in claims.get("unique", []):
+            if c.get("video_id") in week_vids:
+                filtered["unique"].append(c)
+
+        return filtered
 
     def get_stats(self) -> dict:
         """

@@ -45,12 +45,17 @@ def get_narratives(
 
 
 @router.get("/{cluster_id}/claims", response_model=NarrativeClaims)
-def get_narrative_claims(cluster_id: int):
+def get_narrative_claims(
+    cluster_id: int,
+    week: Optional[str] = Query(
+        default=None, description="Filter claims to a specific week (e.g. week1)."
+    ),
+):
     try:
         return get_cached(
-            f"narrative_claims:{cluster_id}",
+            f"narrative_claims:{cluster_id}:{week or 'all'}",
             ttl=300,
-            fetch_fn=lambda: TrendService().get_narrative_claims(cluster_id),
+            fetch_fn=lambda: TrendService().get_narrative_claims(cluster_id, week=week),
         )
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Narrative {cluster_id} not found")
